@@ -1,39 +1,16 @@
-workload: CameraWorkload
-
-defaults:
-  files:
-    - src/camera/common/*.cpp
-  include_dirs:
-    - include
-  compile_definitions: []
-  link_targets: [] # imported targets only (preferred)
-  cxx_standard: 17
-
 platforms:
-  ubuntu:
+  linux:
     files:
-      - systems/Camera_desktop.cpp
-    include_dirs:
-      - include/thirdparty/opencv
+      - robotick/systems/Camera_desktop.cpp
     cmake_find_packages:
-      required:
-        - SDL2
-        - OpenCV
+      required: [SDL2, OpenCV]
     link_targets:
       - SDL2::SDL2
-      - OpenCV::opencv # prefer imported target over ${OpenCV_LIBS}
+      - OpenCV::opencv
     host_packages:
-      apt:
-        - libsdl2-dev
-        - libopencv-dev
+      apt: [libsdl2-dev, libopencv-dev]
 
   esp32:
     files:
-      - systems/Camera_esp32.cpp
-    idf_components:
-      - driver
-      - esp_timer
-      # add camera/ov2640 component names if you use them
-    compile_definitions:
-      - ROBOTICK_PLATFORM_ESP32
-    link_targets: []
+      - robotick/systems/Camera_esp32.cpp
+    idf_components: [driver, esp_timer]

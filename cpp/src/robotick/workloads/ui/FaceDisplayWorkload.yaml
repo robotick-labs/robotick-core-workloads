@@ -1,0 +1,23 @@
+# FaceDisplayWorkload.yaml
+
+platforms:
+  linux:
+    files:
+      - robotick/systems/Renderer_desktop.cpp
+
+    cmake_find_packages:
+      required: [SDL2, OpenCV]
+
+    # pkg-config modules that don't ship CMake targets:
+    pkg_config:
+      - { name: sdl2_gfx, prefix: SDL2_GFX }
+      - { name: sdl2_ttf, prefix: SDL2_TTF }
+
+    # Imported targets via CMake packages:
+    link_targets:
+      - SDL2::SDL2
+      - OpenCV::opencv
+
+    # If you ever need manual include dirs, list them here (optional):
+    include_dirs: []
+
