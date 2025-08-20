@@ -95,7 +95,18 @@ namespace robotick
 
 	void Renderer::present()
 	{
-		SDL_RenderPresent(renderer);
+		SDL_Window* win = SDL_GetWindowFromID(1); // or cache your SDL_Window*
+		const Uint32 flags = SDL_GetWindowFlags(win);
+
+		const bool is_visible = (flags & SDL_WINDOW_SHOWN) && !(flags & SDL_WINDOW_MINIMIZED) && !(flags & SDL_WINDOW_HIDDEN);
+
+		int w, h;
+		SDL_GetWindowSize(window, &w, &h);
+
+		if (w > 0 && h > 0 && is_visible)
+		{
+			SDL_RenderPresent(renderer);
+		}
 
 		poll_platform_events();
 	}

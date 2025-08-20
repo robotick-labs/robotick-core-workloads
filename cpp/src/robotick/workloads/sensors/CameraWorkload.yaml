@@ -6,7 +6,10 @@ platforms:
       required: [SDL2, OpenCV]
     link_targets:
       - SDL2::SDL2
-      - OpenCV::opencv
+    include_dirs:
+      - ${OpenCV_INCLUDE_DIRS}
+    link_libraries:
+      - ${OpenCV_LIBS}
     host_packages:
       apt: [libsdl2-dev, libopencv-dev]
 

@@ -6,18 +6,16 @@ platforms:
       - robotick/systems/Renderer_desktop.cpp
 
     cmake_find_packages:
-      required: [SDL2, OpenCV]
+      required: [SDL2]
 
     # pkg-config modules that don't ship CMake targets:
     pkg_config:
-      - { name: sdl2_gfx, prefix: SDL2_GFX }
-      - { name: sdl2_ttf, prefix: SDL2_TTF }
+      - { name: SDL2_gfx, prefix: SDL2_GFX }
+      - { name: SDL2_ttf, prefix: SDL2_TTF }
 
     # Imported targets via CMake packages:
     link_targets:
       - SDL2::SDL2
-      - OpenCV::opencv
 
     # If you ever need manual include dirs, list them here (optional):
     include_dirs: []
-
