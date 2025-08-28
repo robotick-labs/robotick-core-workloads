@@ -1,21 +1,42 @@
-# FaceDisplayWorkload.yaml
-
 platforms:
   linux:
     files:
       - robotick/systems/Renderer_desktop.cpp
 
-    cmake_find_packages:
-      required: [SDL2]
+    deps:
+      - name: SDL2
+        source:
+          type: apt
+          package: libsdl2-dev
+          pin: ">=2.0.14"
+        find_package: SDL2
+        link_target: SDL2::SDL2
 
-    # pkg-config modules that don't ship CMake targets:
-    pkg_config:
-      - { name: SDL2_gfx, prefix: SDL2_GFX }
-      - { name: SDL2_ttf, prefix: SDL2_TTF }
+      - name: SDL2_gfx
+        source:
+          type: pkgconfig
+          module: SDL2_gfx
+        pkg_prefix: SDL2_GFX
 
-    # Imported targets via CMake packages:
-    link_targets:
-      - SDL2::SDL2
+      - name: SDL2_ttf
+        source:
+          type: pkgconfig
+          module: SDL2_ttf
+        pkg_prefix: SDL2_TTF
 
-    # If you ever need manual include dirs, list them here (optional):
-    include_dirs: []
+  esp32:
+    files:
+      - robotick/systems/Renderer_esp32.cpp
+
+    deps:
+      - name: M5GFX
+        source:
+          type: git
+          url: https://github.com/m5stack/M5GFX.git
+          pin: e1bf27b
+
+      - name: M5Unified
+        source:
+          type: git
+          url: https://github.com/m5stack/M5Unified.git
+          pin: bf322a0
