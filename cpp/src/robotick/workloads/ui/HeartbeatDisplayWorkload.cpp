@@ -6,12 +6,12 @@
 
 namespace robotick
 {
-	struct HeartbeatConfig
+	struct HeartbeatDisplayConfig
 	{
 		float rest_heart_rate = 60.0f;
 	};
 
-	struct HeartbeatInputs
+	struct HeartbeatDisplayInputs
 	{
 		FixedString8 bar1_label = "Ha";
 		float bar1_fraction = 0.9f;
@@ -25,7 +25,7 @@ namespace robotick
 		float heart_rate_scale = 1.0f;
 	};
 
-	struct HeartbeatOutputs
+	struct HeartbeatDisplayOutputs
 	{
 		float activation_amount = 1.0f;
 	};
@@ -38,9 +38,9 @@ namespace robotick
 
 	struct HeartbeatDisplayWorkload
 	{
-		HeartbeatConfig config;
-		HeartbeatInputs inputs;
-		HeartbeatOutputs outputs;
+		HeartbeatDisplayConfig config;
+		HeartbeatDisplayInputs inputs;
+		HeartbeatDisplayOutputs outputs;
 		State<HeartbeatState> state;
 
 		void tick(const TickInfo& tick_info)
@@ -127,7 +127,7 @@ namespace robotick
 			r.draw_triangle_filled({xo1, yo1}, {xi1, yi1}, {xi0, yi0}, c);
 		}
 
-		void draw_stats(Renderer& r, const HeartbeatInputs& in)
+		void draw_stats(Renderer& r, const HeartbeatDisplayInputs& in)
 		{
 			static constexpr int BASE_RADIUS = 90;
 			static constexpr int BASE_OFFSET = 20;
