@@ -17,8 +17,13 @@ namespace robotick
 
 	bool is_windowed_mode()
 	{
-		const char* env = std::getenv("ROBOTICK_WINDOWED");
-		return env && std::atoi(env) != 0;
+	#if defined(_WIN32)
+		return true; // Windows desktop
+	#elif defined(__linux__) && !defined(__arm__) && !defined(__aarch64__)
+		return true;
+	#else
+		return false; // Raspberry Pi, ESP32, other embedded
+	#endif
 	}
 
 	void Renderer::init()
