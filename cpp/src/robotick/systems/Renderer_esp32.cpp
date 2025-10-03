@@ -7,8 +7,10 @@ namespace robotick
 {
 	static M5Canvas* canvas = nullptr;
 
-	void Renderer::init()
+	void Renderer::init(bool texture_only))
 	{
+		(void)texture_only; // not supported yet
+
 		M5.Lcd.setRotation(3);
 		physical_w = 320;
 		physical_h = 240;
@@ -24,6 +26,11 @@ namespace robotick
 	void Renderer::present()
 	{
 		canvas->pushSprite(0, 0);
+	}
+
+	std::vector<uint8_t> Renderer::capture_as_png()
+	{
+		return {}; // Not supported on ESP32 yet
 	}
 
 	void Renderer::cleanup()
