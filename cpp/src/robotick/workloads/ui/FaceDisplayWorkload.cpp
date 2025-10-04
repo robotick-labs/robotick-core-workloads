@@ -13,10 +13,13 @@ namespace robotick
 
 		// if true, produce PNG instead of rendering to window:
 		bool render_to_texture = false;
+
+		Vec2f look_offset_scale = {-30.0f, 30.0f};
 	};
 
 	struct FaceDisplayInputs
 	{
+		Vec2f look_offset = {0.0f, 0.0f};
 	};
 
 	struct FaceDisplayOutputs
@@ -120,11 +123,13 @@ namespace robotick
 			const int eye_h = 65;
 			const int eye_spacing = 200;
 
+			const Vec2 look_offset_screen(inputs.look_offset.x * config.look_offset_scale.x, inputs.look_offset.y * config.look_offset_scale.y);
+
 			for (int i = 0; i < 2; ++i)
 			{
 				const int cx = 160 + (i == 0 ? -eye_spacing / 2 : eye_spacing / 2);
 				const float scale_y = 1.0f - 0.8f * blink[i];
-				draw_eye(r, cx, center_y, eye_w, static_cast<int>(eye_h * scale_y));
+				draw_eye(r, cx + look_offset_screen.x, center_y + look_offset_screen.y, eye_w, static_cast<int>(eye_h * scale_y));
 			}
 		}
 
