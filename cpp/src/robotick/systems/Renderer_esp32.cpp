@@ -7,7 +7,7 @@ namespace robotick
 {
 	static M5Canvas* canvas = nullptr;
 
-	void Renderer::init(bool texture_only))
+	void Renderer::init(bool texture_only)
 	{
 		(void)texture_only; // not supported yet
 
