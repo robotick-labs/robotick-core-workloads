@@ -9,7 +9,7 @@ namespace robotick
 
 	void Renderer::init(bool texture_only)
 	{
-		(void)texture_only; // not supported yet
+		ROBOTICK_WARNING_IF(texture_only, "Renderer - texture_only not yet supported on esp32 platforms");
 
 		M5.Lcd.setRotation(3);
 		physical_w = 320;
@@ -30,7 +30,8 @@ namespace robotick
 
 	std::vector<uint8_t> Renderer::capture_as_png()
 	{
-		return {}; // Not supported on ESP32 yet
+		ROBOTICK_WARNING("Renderer::capture_as_png() not yet supported on esp32 platforms");
+		return {};
 	}
 
 	void Renderer::cleanup()
