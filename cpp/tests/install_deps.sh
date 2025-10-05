@@ -14,6 +14,8 @@ apt-get install -y --no-install-recommends \
   libsdl2-gfx-dev \
   libssl-dev \
   libcurl4-openssl-dev \
+  libpaho-mqttpp3-dev \
+  libpaho-mqtt1.3-dev \
   python3-dev
 
 apt-get clean
