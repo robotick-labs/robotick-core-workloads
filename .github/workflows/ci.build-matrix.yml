@@ -59,35 +59,17 @@ jobs:
         run: |
           docker run --rm \
             --user root \
-            -v ${{ github.workspace }}:/workspace \
-            -v ${{ github.workspace }}/../robotick-engine:/engine \
-            -w /workspace \
+            -v ${{ github.workspace }}:/workspace/robotick-core-workloads \
+            -v ${{ github.workspace }}/../robotick-engine:/workspace/robotick-engine \
+            -w /workspace/robotick-core-workloads \
             ${{ matrix.docker_image }} \
             bash -c "
               set -Eeuo pipefail
               export TERM=xterm-256color
               set -x
-              ln -sfn /engine /workspace/robotick-engine
 
-              if [ '${{ matrix.platform }}' == 'esp32' ]; then
-                echo '🚧 ESP32 Setup'
-                cd tools/esp32-compile-check
-
-                if ! command -v ninja >/dev/null 2>&1; then
-                  DEBIAN_FRONTEND=noninteractive apt-get update -yq
-                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ninja-build ccache
-                  apt-get clean
-                  rm -rf /var/lib/apt/lists/*
-                fi
-
-                bash /workspace/tools/make_esp32_symlinks.sh
-                ./1_idf_clean.sh || (echo '❌ Idf Clean failed' && exit 1)
-                ./2_idf_build.sh || (echo '❌ Idf Build failed' && exit 1)
-
-              else
-                echo '🚧 Linux Setup'
-                bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
-                cmake --preset ${{ matrix.preset }}
-                cmake --build --preset ${{ matrix.preset }} -j$(nproc)
-              fi
+              echo '🚧 Linux Setup'
+              bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
+              cmake --preset ${{ matrix.preset }}
+              cmake --build --preset ${{ matrix.preset }} -j$(nproc)
             "
