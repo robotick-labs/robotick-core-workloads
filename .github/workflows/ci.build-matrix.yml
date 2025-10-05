@@ -37,14 +37,25 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Checkout robotick-engine (corresponding branch)
+      - name: Checkout robotick-engine (match target branch or fallback to main)
         run: |
-          BRANCH_NAME="${GITHUB_REF##*/}"
-          echo "Using workflow branch: $GITHUB_REF → $BRANCH_NAME"
-          git clone --depth=1 --branch "$BRANCH_NAME" https://github.com/robotick-labs/robotick-engine.git ../robotick-engine || {
-            echo "⚠️  Branch '$BRANCH_NAME' not found in robotick-engine, falling back to 'main'"
-            git clone --depth=1 --branch main https://github.com/robotick-labs/robotick-engine.git ../robotick-engine
-          }
+          BRANCH="${GITHUB_BASE_REF:-${GITHUB_REF##*/}}"
+          echo "🔄 Trying to checkout robotick-engine:$BRANCH"
+
+          mkdir -p ../robotick-engine
+          cd ../robotick-engine
+          git init
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/robotick-labs/robotick-engine.git
+
+          if git ls-remote --exit-code --heads origin "$BRANCH"; then
+            echo "✅ Found branch '$BRANCH' in robotick-engine"
+            git fetch --depth=1 origin "$BRANCH"
+            git checkout FETCH_HEAD
+          else
+            echo "⚠️ Branch '$BRANCH' not found — falling back to 'main'"
+            git fetch --depth=1 origin main
+            git checkout FETCH_HEAD
+          fi
 
       - name: Pull Docker image
         run: docker pull ${{ matrix.docker_image }}
