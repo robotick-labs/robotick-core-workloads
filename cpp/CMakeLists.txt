@@ -135,6 +135,9 @@ if(ROBOTICK_ENABLE_PYTHON)
 
     set(EXCEPTION_ENABLED_SOURCES ${PYTHON_SOURCES})
     list(APPEND EXCEPTION_ENABLED_SOURCES
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttFieldSync.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/telemetry/MqttClientWorkload.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttClient.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Renderer_desktop.cpp
@@ -163,6 +166,23 @@ if(ROBOTICK_PLATFORM_LINUX)
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_GFX_INCLUDE_DIRS})
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
 endif()
+
+# =========================
+# ✅ Add mqtt-c (lightweight C MQTT client)
+# =========================
+add_library(mqtt-c STATIC
+    tests/external/mqtt-c/src/mqtt.c
+    tests/external/mqtt-c/src/mqtt_pal.c
+)
+
+target_include_directories(mqtt-c PUBLIC tests/external/mqtt-c/include)
+
+target_compile_definitions(mqtt-c PUBLIC
+    MQTT_MALLOC=malloc
+    MQTT_FREE=free
+)
+
+target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 
 # =========================
 # ✅ ESP32 libs (if needed)

@@ -1,10 +1,7 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#if 0
-
 #include "robotick/systems/MqttFieldSync.h"
-#include "../utils/BlackboardTestUtils.h"
 #include "robotick/framework/Engine.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/data/WorkloadsBuffer.h"
@@ -153,5 +150,3 @@ namespace robotick::test
 	}
 
 } // namespace robotick::test
-
-#endif // #if 0
