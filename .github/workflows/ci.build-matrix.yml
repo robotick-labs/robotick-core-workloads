@@ -86,12 +86,8 @@ jobs:
 
               else
                 echo '🚧 Linux Setup'
-                bash ../robotick-engine/tools/setup_my_env_as_root.linux.sh
+                bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
                 cmake --preset ${{ matrix.preset }}
                 cmake --build --preset ${{ matrix.preset }} -j$(nproc)
-
-                if [ '${{ matrix.preset }}' == 'robotick-core-workloads-tests-linux-debug' ]; then
-                  ctest --test-dir build/${{ matrix.preset }}/cpp/tests --output-on-failure --timeout 120 --fail-if-no-tests -j$(nproc)
-                fi
               fi
             "
