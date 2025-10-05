@@ -37,24 +37,19 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Checkout robotick-engine (match target branch or fallback to main)
+      - name: Checkout robotick-engine (match PR target or fallback to main)
         run: |
+          set -euo pipefail
           BRANCH="${GITHUB_BASE_REF:-${GITHUB_REF##*/}}"
-          echo "🔄 Trying to checkout robotick-engine:$BRANCH"
+          echo "🔄 Trying robotick-engine branch: $BRANCH"
 
-          mkdir -p ../robotick-engine
-          cd ../robotick-engine
-          git init
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/robotick-labs/robotick-engine.git
+          ENGINE_URL="https://github.com/robotick-labs/robotick-engine.git"
 
-          if git ls-remote --exit-code --heads origin "$BRANCH"; then
-            echo "✅ Found branch '$BRANCH' in robotick-engine"
-            git fetch --depth=1 origin "$BRANCH"
-            git checkout FETCH_HEAD
+          if git ls-remote --exit-code --heads "$ENGINE_URL" "$BRANCH" >/dev/null 2>&1; then
+            git clone --depth=1 --branch "$BRANCH" "$ENGINE_URL" ../robotick-engine
           else
-            echo "⚠️ Branch '$BRANCH' not found — falling back to 'main'"
-            git fetch --depth=1 origin main
-            git checkout FETCH_HEAD
+            echo "⚠️  '$BRANCH' not found in robotick-engine — using 'main'"
+            git clone --depth=1 --branch main "$ENGINE_URL" ../robotick-engine
           fi
 
       - name: Pull Docker image
