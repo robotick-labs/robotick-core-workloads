@@ -75,6 +75,7 @@ jobs:
               echo '🚧 Linux Setup'
               bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
 
+              # install and build Paho MQTT:
               echo '📦 Installing Paho MQTT C and C++ libraries'
               cd /tmp
               git clone --depth=1 https://github.com/eclipse/paho.mqtt.c.git
@@ -87,7 +88,9 @@ jobs:
               cd paho.mqtt.cpp
               cmake -Bbuild -H. -DPAHO_BUILD_STATIC=TRUE -DPAHO_MQTT_C_PATH=/usr/local
               cmake --build build --target install
-              
+
+              # return to our repo and build our target:
+              cd /workspace/robotick-core-workloads
               cmake --preset ${{ matrix.preset }}
               cmake --build --preset ${{ matrix.preset }} -j$(nproc)
             "
