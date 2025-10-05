@@ -14,12 +14,13 @@ namespace robotick
 		// if true, produce PNG instead of rendering to window:
 		bool render_to_texture = false;
 
-		Vec2f look_offset_scale = {-30.0f, 30.0f};
+		Vec2f look_offset_scale = {30.0f, -25.0f};
 	};
 
 	struct FaceDisplayInputs
 	{
 		Vec2f look_offset = {0.0f, 0.0f};
+		bool blink_request = false;
 	};
 
 	struct FaceDisplayOutputs
@@ -30,6 +31,7 @@ namespace robotick
 
 	struct FaceDisplayState
 	{
+		bool prev_blink_request = false;
 		float eye_blink_progress[2] = {0, 0};
 		float next_blink_time[2] = {0, 0};
 
@@ -82,6 +84,14 @@ namespace robotick
 			auto& s = state.get();
 			auto& blink = s.eye_blink_progress;
 			auto& next_time = s.next_blink_time;
+
+			if (inputs.blink_request && !state->prev_blink_request)
+			{
+				next_time[0] = 0.0f; // bring the next blink forward to "now"
+				next_time[1] = 0.0f;
+			}
+
+			state->prev_blink_request = inputs.blink_request;
 
 			if (time_now_sec >= next_time[0] || time_now_sec >= next_time[1])
 			{
