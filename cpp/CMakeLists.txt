@@ -137,6 +137,7 @@ if(ROBOTICK_ENABLE_PYTHON)
     list(APPEND EXCEPTION_ENABLED_SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Renderer_desktop.cpp
     )
 
     foreach(source_file IN LISTS EXCEPTION_ENABLED_SOURCES)
