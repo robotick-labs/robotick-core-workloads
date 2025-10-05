@@ -86,7 +86,7 @@ jobs:
 
               else
                 echo '🚧 Linux Setup'
-                bash tools/setup_my_env_as_root.linux.sh
+                bash ../robotick-engine/tools/setup_my_env_as_root.linux.sh
                 cmake --preset ${{ matrix.preset }}
                 cmake --build --preset ${{ matrix.preset }} -j$(nproc)
 
