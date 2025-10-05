@@ -135,9 +135,6 @@ if(ROBOTICK_ENABLE_PYTHON)
 
     set(EXCEPTION_ENABLED_SOURCES ${PYTHON_SOURCES})
     list(APPEND EXCEPTION_ENABLED_SOURCES
-        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttFieldSync.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/telemetry/MqttClientWorkload.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttClient.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp
     )
@@ -157,8 +154,6 @@ target_link_libraries(robotick-core-workloads PUBLIC nlohmann_json::nlohmann_jso
 
 if(ROBOTICK_PLATFORM_LINUX)
     find_package(SDL2 REQUIRED)
-    find_package(PahoMqttCpp REQUIRED)
-    target_link_libraries(robotick-core-workloads PUBLIC PahoMqttCpp::paho-mqttpp3)
     target_link_libraries(robotick-core-workloads PRIVATE civetweb)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2::SDL2)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2_gfx)
