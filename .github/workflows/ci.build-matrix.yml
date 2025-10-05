@@ -1,4 +1,4 @@
-name: CI - Build Matrix (Linux + ESP32)
+name: CI - Build Matrix (Linux)
 
 on:
   push:
