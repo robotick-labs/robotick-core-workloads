@@ -1,0 +1,91 @@
+name: CI - Build Matrix (Linux + ESP32)
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    name: Build & Test (${{ matrix.platform }} - ${{ matrix.preset }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            preset: robotick-core-workloads-tests-linux-debug
+            docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
+          - platform: linux
+            preset: robotick-core-workloads-tests-linux-release
+            docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout robotick-engine (corresponding branch)
+        run: |
+          BRANCH_NAME="${GITHUB_REF##*/}"
+          echo "Using workflow branch: $GITHUB_REF → $BRANCH_NAME"
+          git clone --depth=1 --branch "$BRANCH_NAME" https://github.com/robotick-labs/robotick-engine.git ../robotick-engine || {
+            echo "⚠️  Branch '$BRANCH_NAME' not found in robotick-engine, falling back to 'main'"
+            git clone --depth=1 --branch main https://github.com/robotick-labs/robotick-engine.git ../robotick-engine
+          }
+
+      - name: Pull Docker image
+        run: docker pull ${{ matrix.docker_image }}
+
+      - name: Run Build inside Docker
+        run: |
+          docker run --rm \
+            --user root \
+            -v ${{ github.workspace }}:/workspace \
+            -v ${{ github.workspace }}/../robotick-engine:/engine \
+            -w /workspace \
+            ${{ matrix.docker_image }} \
+            bash -c "
+              set -Eeuo pipefail
+              export TERM=xterm-256color
+              set -x
+              ln -sfn /engine /workspace/robotick-engine
+
+              if [ '${{ matrix.platform }}' == 'esp32' ]; then
+                echo '🚧 ESP32 Setup'
+                cd tools/esp32-compile-check
+
+                if ! command -v ninja >/dev/null 2>&1; then
+                  DEBIAN_FRONTEND=noninteractive apt-get update -yq
+                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ninja-build ccache
+                  apt-get clean
+                  rm -rf /var/lib/apt/lists/*
+                fi
+
+                bash /workspace/tools/make_esp32_symlinks.sh
+                ./1_idf_clean.sh || (echo '❌ Idf Clean failed' && exit 1)
+                ./2_idf_build.sh || (echo '❌ Idf Build failed' && exit 1)
+
+              else
+                echo '🚧 Linux Setup'
+                bash tools/setup_my_env_as_root.linux.sh
+                cmake --preset ${{ matrix.preset }}
+                cmake --build --preset ${{ matrix.preset }} -j$(nproc)
+
+                if [ '${{ matrix.preset }}' == 'robotick-core-workloads-tests-linux-debug' ]; then
+                  ctest --test-dir build/${{ matrix.preset }}/cpp/tests --output-on-failure --timeout 120 --fail-if-no-tests -j$(nproc)
+                fi
+              fi
+            "
