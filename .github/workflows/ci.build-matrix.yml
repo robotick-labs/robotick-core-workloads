@@ -52,6 +52,10 @@ jobs:
             git clone --depth=1 --branch main "$ENGINE_URL" ../robotick-engine
           fi
 
+          echo "📦 Fetching submodules for robotick-engine..."
+          cd ../robotick-engine
+          git submodule update --init --recursive
+
       - name: Pull Docker image
         run: docker pull ${{ matrix.docker_image }}
 
