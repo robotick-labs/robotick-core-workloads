@@ -1,0 +1,34 @@
+platforms:
+  linux:
+    # files:
+    #   - robotick/systems/MuJoCoWorkload.cpp
+
+    deps:
+      - name: mujoco
+        source:
+          type: git
+          url: https://github.com/deepmind/mujoco
+          pin: release/3.1.5
+        cmake_subdir: .
+        cmake_options:
+          BUILD_TESTING: OFF
+          MJ_BUILD_PYTHON: OFF
+          MJ_BUILD_EXAMPLES: OFF
+          MJ_USE_CUDA: OFF
+          MJ_USE_AVX_INTRINSICS: OFF # optionally disable SIMD for portability
+          CMAKE_C_FLAGS: "-Wno-error=format-truncation"
+        include_dirs:
+          - ${CMAKE_CURRENT_SOURCE_DIR}/deps/mujoco/include
+        link_target: mujoco
+
+      - name: yaml-cpp
+        source:
+          type: git
+          url: git@github.com:jbeder/yaml-cpp
+          pin: yaml-cpp-0.7.0
+        cmake_subdir: .
+        cmake_options:
+          YAML_CPP_BUILD_TESTS: OFF
+        include_dirs:
+          - ${CMAKE_CURRENT_SOURCE_DIR}/deps/yaml-cpp/include
+        link_target: yaml-cpp
