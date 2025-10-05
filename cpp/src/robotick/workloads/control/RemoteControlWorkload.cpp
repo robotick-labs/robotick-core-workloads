@@ -26,6 +26,9 @@ namespace robotick
 		Vec2f scale_left{1.0f, 1.0f};
 		Vec2f scale_right{1.0f, 1.0f};
 
+		float left_trigger = 0.0f;
+		float right_trigger = 0.0f;
+
 		FixedVector128k jpeg_data;
 	};
 
@@ -33,6 +36,9 @@ namespace robotick
 	{
 		Vec2f left;
 		Vec2f right;
+
+		float left_trigger = 0.0f;
+		float right_trigger = 0.0f;
 	};
 
 	struct RemoteControlState
@@ -52,7 +58,9 @@ namespace robotick
 		void setup()
 		{
 #if defined(ROBOTICK_PLATFORM_DESKTOP)
-			state->server.start("RemoteControl", config.port, config.web_root_folder.c_str(),
+			state->server.start("RemoteControl",
+				config.port,
+				config.web_root_folder.c_str(),
 				[&](const WebRequest& request, WebResponse& response)
 				{
 					if (request.method == "POST" && request.uri == "/api/joystick_input")
@@ -89,6 +97,12 @@ namespace robotick
 						try_set_vec2_from_json("left", w.left);
 						try_set_vec2_from_json("right", w.right);
 
+						if (json.contains("left_trigger") && json["left_trigger"].is_number())
+							w.left_trigger = json["left_trigger"].get<float>();
+
+						if (json.contains("right_trigger") && json["right_trigger"].is_number())
+							w.right_trigger = json["right_trigger"].get<float>();
+
 						response.status_code = 200;
 						return true; // handled
 					}
@@ -116,6 +130,9 @@ namespace robotick
 			outputs.left.y = inputs_ref.left.y * inputs_ref.scale_left.y;
 			outputs.right.x = inputs_ref.right.x * inputs_ref.scale_right.x;
 			outputs.right.y = inputs_ref.right.y * inputs_ref.scale_right.y;
+
+			outputs.left_trigger = inputs_ref.left_trigger;
+			outputs.right_trigger = inputs_ref.right_trigger;
 		}
 
 		void stop() { state->server.stop(); }
