@@ -7,8 +7,10 @@ namespace robotick
 {
 	static M5Canvas* canvas = nullptr;
 
-	void Renderer::init()
+	void Renderer::init(bool texture_only)
 	{
+		ROBOTICK_WARNING_IF(texture_only, "Renderer - texture_only not yet supported on esp32 platforms");
+
 		M5.Lcd.setRotation(3);
 		physical_w = 320;
 		physical_h = 240;
@@ -24,6 +26,12 @@ namespace robotick
 	void Renderer::present()
 	{
 		canvas->pushSprite(0, 0);
+	}
+
+	std::vector<uint8_t> Renderer::capture_as_png()
+	{
+		ROBOTICK_WARNING("Renderer::capture_as_png() not yet supported on esp32 platforms");
+		return {};
 	}
 
 	void Renderer::cleanup()

@@ -8,6 +8,8 @@
 #include <SDL2/SDL2_gfxPrimitives.h>
 #include <SDL2/SDL_ttf.h>
 
+#include <opencv2/opencv.hpp>
+
 namespace robotick
 {
 	static SDL_Window* window = nullptr;
@@ -17,17 +19,55 @@ namespace robotick
 
 	bool is_windowed_mode()
 	{
-	#if defined(_WIN32)
+#if defined(_WIN32)
 		return true; // Windows desktop
-	#elif defined(__linux__) && !defined(__arm__) && !defined(__aarch64__)
+#elif defined(__linux__) && !defined(__arm__) && !defined(__aarch64__)
 		return true;
-	#else
+#else
 		return false; // Raspberry Pi, ESP32, other embedded
-	#endif
+#endif
 	}
 
-	void Renderer::init()
+	void Renderer::init(bool texture_only)
 	{
+		if (texture_only)
+		{
+			// Pick an explicit face texture size (or read from config).
+			// Use the same numbers you used for the on-screen render.
+			// Example: 640x400 (16:10) or 800x480 (5:3) etc.
+			// If you already have desired logical_w/h members, use those.
+			physical_w = /* your width */ 640;
+			physical_h = /* your height */ 400;
+
+			SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest, no filtering
+
+			if (SDL_Init(SDL_INIT_VIDEO) != 0)
+				ROBOTICK_FATAL_EXIT("SDL_Init failed: %s", SDL_GetError());
+
+			window =
+				SDL_CreateWindow("OffscreenRenderer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, physical_w, physical_h, SDL_WINDOW_HIDDEN);
+			if (!window)
+				ROBOTICK_FATAL_EXIT("SDL_CreateWindow (offscreen) failed: %s", SDL_GetError());
+
+			renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+			if (!renderer)
+				ROBOTICK_FATAL_EXIT("SDL_CreateRenderer (offscreen) failed: %s", SDL_GetError());
+
+			// Lock a fixed logical render size so draw_* math matches pixels exactly.
+			SDL_RenderSetLogicalSize(renderer, physical_w, physical_h);
+			SDL_RenderSetIntegerScale(renderer, SDL_TRUE);
+
+			// In case SDL adjusted anything, re-query the actual window size.
+			int w = 0, h = 0;
+			SDL_GetWindowSize(window, &w, &h);
+			physical_w = w;
+			physical_h = h;
+
+			update_scale(); // keep your existing logical->pixel conversion in sync
+			return;
+		}
+
 		SDL_SetHint(SDL_HINT_RENDER_VSYNC, "1");
 		SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
 
@@ -114,6 +154,29 @@ namespace robotick
 		}
 
 		poll_platform_events();
+	}
+
+	std::vector<uint8_t> Renderer::capture_as_png()
+	{
+		std::vector<uint8_t> png_data;
+
+		SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, physical_w, physical_h, 32, SDL_PIXELFORMAT_ABGR8888);
+		if (!surface)
+			return png_data;
+
+		// Read exactly the logical-size buffer
+		SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ABGR8888, surface->pixels, surface->pitch);
+
+		// ABGR8888 -> RGBA for PNG
+		cv::Mat abgr(surface->h, surface->w, CV_8UC4, surface->pixels, surface->pitch);
+		cv::Mat rgba;
+		cv::cvtColor(abgr, rgba, cv::COLOR_BGRA2RGBA);
+
+		// Encode to PNG
+		cv::imencode(".png", rgba, png_data);
+
+		SDL_FreeSurface(surface);
+		return png_data;
 	}
 
 	void Renderer::draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color)

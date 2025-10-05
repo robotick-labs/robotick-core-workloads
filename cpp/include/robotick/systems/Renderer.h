@@ -34,8 +34,9 @@ namespace robotick
 		~Renderer() { cleanup(); }
 
 		// Lifecycle
-		void init();
+		void init(bool texture_only);
 		void clear(const Color& color = Colors::Black);
+		std::vector<uint8_t> capture_as_png();
 		void present();
 		void cleanup();
 

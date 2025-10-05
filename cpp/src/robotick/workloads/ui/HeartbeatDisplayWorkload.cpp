@@ -49,7 +49,8 @@ namespace robotick
 
 			if (!s.has_init_renderer)
 			{
-				s.renderer.init();
+				const bool render_to_texture = false;
+				s.renderer.init(render_to_texture);
 				s.has_init_renderer = true;
 			}
 

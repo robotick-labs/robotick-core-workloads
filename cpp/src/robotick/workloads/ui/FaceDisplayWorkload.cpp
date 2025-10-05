@@ -10,14 +10,22 @@ namespace robotick
 	{
 		float blink_min_interval_sec = 1.5f;
 		float blink_max_interval_sec = 4.0f;
+
+		// if true, produce PNG instead of rendering to window:
+		bool render_to_texture = false;
+
+		Vec2f look_offset_scale = {-30.0f, 30.0f};
 	};
 
 	struct FaceDisplayInputs
 	{
+		Vec2f look_offset = {0.0f, 0.0f};
 	};
 
 	struct FaceDisplayOutputs
 	{
+		FixedVector16k face_png_data;
+		// ^- size estimate, tune as needed
 	};
 
 	struct FaceDisplayState
@@ -42,22 +50,31 @@ namespace robotick
 		{
 			auto& s = state.get();
 
-			// init the renderer if not already done so:
+			// Init renderer if needed
 			if (!s.has_init_renderer)
 			{
 				s.renderer.set_viewport(320, 240);
-				s.renderer.init();
+				s.renderer.init(config.render_to_texture);
 				s.has_init_renderer = true;
 			}
 
-			// update our animations
+			// Update blink animations
 			const float time_now_sec = tick_info.time_now;
 			update_blinks(time_now_sec);
 
-			// draw & present our face
+			// Draw face
 			s.renderer.clear(Colors::White);
 			draw_face(s.renderer);
-			s.renderer.present();
+
+			if (config.render_to_texture)
+			{
+				const auto& png = s.renderer.capture_as_png();
+				outputs.face_png_data.set(png.data(), png.size());
+			}
+			else
+			{
+				s.renderer.present();
+			}
 		}
 
 		void update_blinks(const float time_now_sec)
@@ -106,11 +123,13 @@ namespace robotick
 			const int eye_h = 65;
 			const int eye_spacing = 200;
 
+			const Vec2 look_offset_screen(inputs.look_offset.x * config.look_offset_scale.x, inputs.look_offset.y * config.look_offset_scale.y);
+
 			for (int i = 0; i < 2; ++i)
 			{
 				const int cx = 160 + (i == 0 ? -eye_spacing / 2 : eye_spacing / 2);
 				const float scale_y = 1.0f - 0.8f * blink[i];
-				draw_eye(r, cx, center_y, eye_w, static_cast<int>(eye_h * scale_y));
+				draw_eye(r, cx + look_offset_screen.x, center_y + look_offset_screen.y, eye_w, static_cast<int>(eye_h * scale_y));
 			}
 		}
 
