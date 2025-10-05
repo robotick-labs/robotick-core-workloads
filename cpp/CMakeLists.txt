@@ -158,8 +158,6 @@ target_link_libraries(robotick-core-workloads PUBLIC nlohmann_json::nlohmann_jso
 
 if(ROBOTICK_PLATFORM_LINUX)
     find_package(SDL2 REQUIRED)
-    find_package(PahoMqttCpp REQUIRED)
-    target_link_libraries(robotick-core-workloads PUBLIC PahoMqttCpp::paho-mqttpp3)
     target_link_libraries(robotick-core-workloads PRIVATE civetweb)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2::SDL2)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2_gfx)
@@ -168,6 +166,23 @@ if(ROBOTICK_PLATFORM_LINUX)
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_GFX_INCLUDE_DIRS})
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
 endif()
+
+# =========================
+# ✅ Add mqtt-c (lightweight C MQTT client)
+# =========================
+add_library(mqtt-c STATIC
+    tests/external/mqtt-c/src/mqtt.c
+    tests/external/mqtt-c/src/mqtt_pal.c
+)
+
+target_include_directories(mqtt-c PUBLIC tests/external/mqtt-c/include)
+
+target_compile_definitions(mqtt-c PUBLIC
+    MQTT_MALLOC=malloc
+    MQTT_FREE=free
+)
+
+target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 
 # =========================
 # ✅ ESP32 libs (if needed)
