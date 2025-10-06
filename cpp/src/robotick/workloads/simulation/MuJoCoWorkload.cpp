@@ -29,28 +29,25 @@ namespace robotick
 		FixedString256 model_path;
 
 		float sim_tick_rate_hz = -1.0f;
-		float initial_pause_time_sec = 0.0f;
 
 		// Optional simple pause trigger (example)
 		FixedString64 pause_body_name;
 		float pause_body_z_threshold = -1.0f;
 
-		Blackboard mj_ic;
+		Blackboard mujoco_initial;
 		// ^- config/initial-conditions snapshot read from sim at setup
 	};
 
 	struct MuJoCoInputs
 	{
-		Blackboard mj;
+		Blackboard mujoco;
 		// ^- values written into sim each tick (e.g., actuator ctrl)
 	};
 
 	struct MuJoCoOutputs
 	{
-		Blackboard mj;
+		Blackboard mujoco;
 		// ^- values read from sim each tick
-
-		bool paused_for_low_height = false; // example pause flag
 	};
 
 	// ---------- Binding model ----------
@@ -247,33 +244,26 @@ namespace robotick
 				ROBOTICK_FATAL_EXIT("Invalid YAML root: %s", path);
 			}
 
-			YAML::Node mj = root["mujoco"];
-			if (!mj || !mj.IsMap())
+			YAML::Node mujoco = root["mujoco"];
+			if (!mujoco || !mujoco.IsMap())
 			{
 				ROBOTICK_FATAL_EXIT("Missing 'mujoco' map in: %s", path);
 			}
 
-			config.model_path = mj["model_path"].as<std::string>("").c_str();
+			config.model_path = mujoco["model_path"].as<std::string>("").c_str();
 			ROBOTICK_ASSERT_MSG(!config.model_path.empty(), "mujoco.model_path is required.");
 
-			config.sim_tick_rate_hz = mj["sim_tick_rate_hz"].as<float>(-1.0f);
-			config.initial_pause_time_sec = mj["initial_pause_time_sec"].as<float>(0.0f);
-
-			if (auto pause = mj["pause_when_body_below_z"])
-			{
-				config.pause_body_name = pause["body"].as<std::string>("").c_str();
-				config.pause_body_z_threshold = pause["z_threshold"].as<float>(-1.0f);
-			}
+			config.sim_tick_rate_hz = mujoco["sim_tick_rate_hz"].as<float>(-1.0f);
 
 			// Build binding lists and field descriptors
-			configure_io_fields(mj["config"], state->config_bindings, state->config_fields, /*allow_defaults*/ true);
-			configure_io_fields(mj["inputs"], state->input_bindings, state->input_fields, /*allow_defaults*/ true);
-			configure_io_fields(mj["outputs"], state->output_bindings, state->output_fields, /*allow_defaults*/ false);
+			configure_io_fields(mujoco["config"], state->config_bindings, state->config_fields, /*allow_defaults*/ true);
+			configure_io_fields(mujoco["inputs"], state->input_bindings, state->input_fields, /*allow_defaults*/ true);
+			configure_io_fields(mujoco["outputs"], state->output_bindings, state->output_fields, /*allow_defaults*/ false);
 
 			// Initialize blackboards with those descriptors
-			config.mj_ic.initialize_fields(state->config_fields);
-			inputs.mj.initialize_fields(state->input_fields);
-			outputs.mj.initialize_fields(state->output_fields);
+			config.mujoco_initial.initialize_fields(state->config_fields);
+			inputs.mujoco.initialize_fields(state->input_fields);
+			outputs.mujoco.initialize_fields(state->output_fields);
 		}
 
 		void resolve_binding_ids(MuJoCoBinding& b)
@@ -481,9 +471,9 @@ namespace robotick
 			mj_forward(state->m, state->d);
 
 			// Initialize blackboards from sim snapshots
-			initialize_blackboard_from_mujoco(state->config_bindings, config.mj_ic);
-			initialize_blackboard_from_mujoco(state->input_bindings, inputs.mj);
-			initialize_blackboard_from_mujoco(state->output_bindings, outputs.mj);
+			initialize_blackboard_from_mujoco(state->config_bindings, config.mujoco_initial);
+			initialize_blackboard_from_mujoco(state->input_bindings, inputs.mujoco);
+			initialize_blackboard_from_mujoco(state->output_bindings, outputs.mujoco);
 		}
 
 		void start(float tick_rate_hz)
@@ -507,25 +497,10 @@ namespace robotick
 			// Write inputs to sim
 			for (const auto& b : state->input_bindings)
 			{
-				assign_mujoco_from_blackboard(b, inputs.mj);
+				assign_mujoco_from_blackboard(b, inputs.mujoco);
 			}
 
-			// Decide if paused (example: body height below z)
-			bool should_pause = false;
-			if (!config.pause_body_name.empty() && config.pause_body_z_threshold >= 0.0f)
-			{
-				const int body_id = mj_name2id(state->m, mjOBJ_BODY, config.pause_body_name.c_str());
-				if (body_id >= 0)
-				{
-					const float z = static_cast<float>(state->d->xpos[3 * body_id + 2]);
-					if (z < config.pause_body_z_threshold)
-						should_pause = true;
-				}
-			}
-			if (tick_info.time_now <= config.initial_pause_time_sec)
-				should_pause = true;
-
-			outputs.paused_for_low_height = should_pause;
+			const bool should_pause = false;
 
 			// Advance physics
 			if (!should_pause)
@@ -539,7 +514,7 @@ namespace robotick
 			// Read outputs from sim
 			for (const auto& b : state->output_bindings)
 			{
-				assign_blackboard_from_mujoco(b, outputs.mj);
+				assign_blackboard_from_mujoco(b, outputs.mujoco);
 			}
 		}
 
