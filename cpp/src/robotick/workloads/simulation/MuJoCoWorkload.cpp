@@ -4,6 +4,9 @@
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
 
+#include <mujoco/mujoco.h>
+#include <yaml-cpp/yaml.h>
+
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
@@ -12,12 +15,6 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-
-// YAML
-#include <yaml-cpp/yaml.h>
-
-// MuJoCo
-#include <mujoco/mujoco.h> // assume system has MuJoCo 3.x headers available
 
 namespace robotick
 {
@@ -34,7 +31,7 @@ namespace robotick
 		FixedString64 pause_body_name;
 		float pause_body_z_threshold = -1.0f;
 
-		Blackboard mujoco_initial;
+		Blackboard mj_initial;
 		// ^- config/initial-conditions snapshot read from sim at setup
 	};
 
@@ -60,25 +57,17 @@ namespace robotick
 		Sensor,
 		Unknown
 	};
+
 	enum class MjField : uint8_t
 	{
-		// joints:
 		QPos,
 		QVel,
-		QPosDeg,
 		QPosTarget,
+		QPosDeg,
 		QPosTargetDeg,
-		// actuators:
 		Ctrl,
-		// bodies:
-		XPosX,
-		XPosY,
-		XPosZ,
-		XQuatW,
-		XQuatX,
-		XQuatY,
-		XQuatZ,
-		// sensors (flat mjData->sensordata):
+		XPos,  // → Vec3f
+		XQuat, // → Quatf (Vec4f)
 		SensorData,
 		Unknown
 	};
@@ -102,14 +91,14 @@ namespace robotick
 
 	struct MuJoCoState
 	{
-		mjModel* m = nullptr;
-		mjData* d = nullptr;
+		mjModel* mujoco_model = nullptr;
+		mjData* mujoco_data = nullptr;
 
 		uint32_t sim_num_sub_ticks = 1;
 
-		std::vector<MuJoCoBinding> config_bindings;
-		std::vector<MuJoCoBinding> input_bindings;
-		std::vector<MuJoCoBinding> output_bindings;
+		HeapVector<MuJoCoBinding> config_bindings;
+		HeapVector<MuJoCoBinding> input_bindings;
+		HeapVector<MuJoCoBinding> output_bindings;
 
 		HeapVector<FieldDescriptor> config_fields;
 		HeapVector<FieldDescriptor> input_fields;
@@ -125,6 +114,22 @@ namespace robotick
 		MuJoCoOutputs outputs;
 
 		State<MuJoCoState> state;
+
+		MuJoCoWorkload(){};
+
+		~MuJoCoWorkload()
+		{
+			if (state->mujoco_data)
+			{
+				mj_deleteData(state->mujoco_data);
+				state->mujoco_data = nullptr;
+			}
+			if (state->mujoco_model)
+			{
+				mj_deleteModel(state->mujoco_model);
+				state->mujoco_model = nullptr;
+			}
+		}
 
 		// --- helpers: field parsing ---
 
@@ -155,20 +160,10 @@ namespace robotick
 				return MjField::QPosTargetDeg;
 			if (s == "ctrl")
 				return MjField::Ctrl;
-			if (s == "xpos_x")
-				return MjField::XPosX;
-			if (s == "xpos_y")
-				return MjField::XPosY;
-			if (s == "xpos_z")
-				return MjField::XPosZ;
-			if (s == "xquat_w")
-				return MjField::XQuatW;
-			if (s == "xquat_x")
-				return MjField::XQuatX;
-			if (s == "xquat_y")
-				return MjField::XQuatY;
-			if (s == "xquat_z")
-				return MjField::XQuatZ;
+			if (s == "xpos")
+				return MjField::XPos;
+			if (s == "xquat")
+				return MjField::XQuat;
 			if (s == "sensor")
 				return MjField::SensorData;
 			return MjField::Unknown;
@@ -177,12 +172,12 @@ namespace robotick
 		// --- YAML → binding set up ---
 
 		void configure_io_fields(YAML::Node yaml_node,
-			std::vector<MuJoCoBinding>& bindings,
+			HeapVector<MuJoCoBinding>& bindings,
 			HeapVector<FieldDescriptor>& fields,
 			bool allow_defaults /*kept for API symmetry; unused here*/)
 		{
 			const size_t num_entries = yaml_node ? yaml_node.size() : 0;
-			bindings.reserve(num_entries);
+			bindings.initialize(num_entries);
 			fields.initialize(num_entries);
 
 			size_t index = 0;
@@ -192,8 +187,8 @@ namespace robotick
 				const auto& val = item.second;
 
 				FieldDescriptor& fd = fields[index];
+				MuJoCoBinding& b = bindings[index];
 
-				MuJoCoBinding& b = bindings.emplace_back();
 				b.alias = alias.c_str();
 				b.blackboard_field = &fd;
 
@@ -210,8 +205,19 @@ namespace robotick
 				b.name = nam.c_str();
 				b.field = parse_field(fld);
 
-				// Type selection: everything here resolves to numeric scalar (float)
-				fd.type_id = TypeId(GET_TYPE_ID(float));
+				switch (b.field)
+				{
+				case MjField::XPos:
+					fd.type_id = TypeId(GET_TYPE_ID(Vec3f));
+					break;
+				case MjField::XQuat:
+					fd.type_id = TypeId(GET_TYPE_ID(Quatf));
+					break;
+				default:
+					fd.type_id = TypeId(GET_TYPE_ID(float));
+					break;
+				}
+
 				ROBOTICK_ASSERT(TypeRegistry::get().find_by_id(fd.type_id) != nullptr);
 
 				index++;
@@ -261,39 +267,39 @@ namespace robotick
 			configure_io_fields(mujoco["outputs"], state->output_bindings, state->output_fields, /*allow_defaults*/ false);
 
 			// Initialize blackboards with those descriptors
-			config.mujoco_initial.initialize_fields(state->config_fields);
+			config.mj_initial.initialize_fields(state->config_fields);
 			inputs.mujoco.initialize_fields(state->input_fields);
 			outputs.mujoco.initialize_fields(state->output_fields);
 		}
 
 		void resolve_binding_ids(MuJoCoBinding& b)
 		{
-			mjModel* m = state->m;
-			ROBOTICK_ASSERT(m != nullptr);
+			mjModel* mujoco_model = state->mujoco_model;
+			ROBOTICK_ASSERT(mujoco_model != nullptr);
 
 			switch (b.entity_type)
 			{
 			case MjEntityType::Joint:
-				b.mj_id = mj_name2id(m, mjOBJ_JOINT, b.name.c_str());
+				b.mj_id = mj_name2id(mujoco_model, mjOBJ_JOINT, b.name.c_str());
 				ROBOTICK_ASSERT_MSG(b.mj_id >= 0, "Joint '%s' not found.", b.name.c_str());
 				break;
 
 			case MjEntityType::Actuator:
-				b.mj_id = mj_name2id(m, mjOBJ_ACTUATOR, b.name.c_str());
+				b.mj_id = mj_name2id(mujoco_model, mjOBJ_ACTUATOR, b.name.c_str());
 				ROBOTICK_ASSERT_MSG(b.mj_id >= 0, "Actuator '%s' not found.", b.name.c_str());
 				break;
 
 			case MjEntityType::Body:
-				b.mj_id = mj_name2id(m, mjOBJ_BODY, b.name.c_str());
+				b.mj_id = mj_name2id(mujoco_model, mjOBJ_BODY, b.name.c_str());
 				ROBOTICK_ASSERT_MSG(b.mj_id >= 0, "Body '%s' not found.", b.name.c_str());
 				break;
 
 			case MjEntityType::Sensor:
-				b.mj_id = mj_name2id(m, mjOBJ_SENSOR, b.name.c_str());
+				b.mj_id = mj_name2id(mujoco_model, mjOBJ_SENSOR, b.name.c_str());
 				ROBOTICK_ASSERT_MSG(b.mj_id >= 0, "Sensor '%s' not found.", b.name.c_str());
 				// sensor data slice
-				b.sensor_datastart = m->sensor_adr[b.mj_id];
-				b.sensor_dim = m->sensor_dim[b.mj_id];
+				b.sensor_datastart = mujoco_model->sensor_adr[b.mj_id];
+				b.sensor_dim = mujoco_model->sensor_dim[b.mj_id];
 				break;
 
 			default:
@@ -305,16 +311,16 @@ namespace robotick
 		{
 			// Load model
 			char error[512] = {0};
-			mjModel* m = mj_loadXML(config.model_path.c_str(), nullptr, error, sizeof(error));
-			if (!m)
+			mjModel* mujoco_model = mj_loadXML(config.model_path.c_str(), nullptr, error, sizeof(error));
+			if (!mujoco_model)
 			{
 				ROBOTICK_FATAL_EXIT("mj_loadXML failed: %s", error);
 			}
-			state->m = m;
+			state->mujoco_model = mujoco_model;
 
 			// Allocate mjData
-			state->d = mj_makeData(m);
-			ROBOTICK_ASSERT(state->d != nullptr);
+			state->mujoco_data = mj_makeData(mujoco_model);
+			ROBOTICK_ASSERT(state->mujoco_data != nullptr);
 
 			// Resolve all bindings to IDs
 			for (auto& b : state->config_bindings)
@@ -328,13 +334,13 @@ namespace robotick
 		// --- Blackboard <-> MuJoCo ---
 
 		static float rad_to_deg(float r) { return r * (180.0f / static_cast<float>(M_PI)); }
-		static float deg_to_rad(float d) { return d * (static_cast<float>(M_PI) / 180.0f); }
+		static float deg_to_rad(float mujoco_data) { return mujoco_data * (static_cast<float>(M_PI) / 180.0f); }
 
 		void assign_blackboard_from_mujoco(const MuJoCoBinding& b, Blackboard& bb)
 		{
 			const FieldDescriptor& fd = *b.blackboard_field;
-			mjModel* m = state->m;
-			mjData* d = state->d;
+			mjModel* mujoco_model = state->mujoco_model;
+			mjData* mujoco_data = state->mujoco_data;
 
 			float value = 0.0f;
 
@@ -343,18 +349,18 @@ namespace robotick
 			case MjEntityType::Joint:
 			{
 				const int j = b.mj_id;
-				const int dof_qposadr = m->jnt_qposadr[j];
-				const int dof_dofadr = m->jnt_dofadr[j]; // for qvel
+				const int dof_qposadr = mujoco_model->jnt_qposadr[j];
+				const int dof_dofadr = mujoco_model->jnt_dofadr[j]; // for qvel
 
 				if (b.field == MjField::QPos || b.field == MjField::QPosDeg || b.field == MjField::QPosTarget || b.field == MjField::QPosTargetDeg)
 				{
-					value = static_cast<float>(d->qpos[dof_qposadr]);
+					value = static_cast<float>(mujoco_data->qpos[dof_qposadr]);
 					if (b.field == MjField::QPosDeg || b.field == MjField::QPosTargetDeg)
 						value = rad_to_deg(value);
 				}
 				else if (b.field == MjField::QVel)
 				{
-					value = static_cast<float>(d->qvel[dof_dofadr]);
+					value = static_cast<float>(mujoco_data->qvel[dof_dofadr]);
 				}
 				else
 				{
@@ -368,7 +374,7 @@ namespace robotick
 				const int a = b.mj_id;
 				if (b.field == MjField::Ctrl)
 				{
-					value = static_cast<float>(d->ctrl[a]);
+					value = static_cast<float>(mujoco_data->ctrl[a]);
 				}
 				else
 				{
@@ -380,15 +386,26 @@ namespace robotick
 			case MjEntityType::Body:
 			{
 				const int bidx = b.mj_id;
-				if (b.field == MjField::XPosX)
-					value = static_cast<float>(d->xpos[3 * bidx + 0]);
-				else if (b.field == MjField::XPosY)
-					value = static_cast<float>(d->xpos[3 * bidx + 1]);
-				else if (b.field == MjField::XPosZ)
-					value = static_cast<float>(d->xpos[3 * bidx + 2]);
-				else
+				if (b.field == MjField::XPos)
 				{
-					ROBOTICK_FATAL_EXIT("Unsupported body field for '%s'", b.alias.c_str());
+					Vec3f v;
+					const int i = 3 * b.mj_id;
+					v.x = static_cast<float>(mujoco_data->xpos[i + 0]);
+					v.y = static_cast<float>(mujoco_data->xpos[i + 1]);
+					v.z = static_cast<float>(mujoco_data->xpos[i + 2]);
+					bb.set<Vec3f>(fd, v);
+					return;
+				}
+				else if (b.field == MjField::XQuat)
+				{
+					Quatf q;
+					const int i = 4 * b.mj_id;
+					q.w = static_cast<float>(mujoco_data->xquat[i + 0]);
+					q.x = static_cast<float>(mujoco_data->xquat[i + 1]);
+					q.y = static_cast<float>(mujoco_data->xquat[i + 2]);
+					q.z = static_cast<float>(mujoco_data->xquat[i + 3]);
+					bb.set<Quatf>(fd, q);
+					return;
 				}
 				break;
 			}
@@ -396,7 +413,7 @@ namespace robotick
 			case MjEntityType::Sensor:
 			{
 				ROBOTICK_ASSERT(b.sensor_datastart >= 0 && b.sensor_dim > 0);
-				value = static_cast<float>(d->sensordata[b.sensor_datastart]); // take first component by convention
+				value = static_cast<float>(mujoco_data->sensordata[b.sensor_datastart]); // take first component by convention
 				break;
 			}
 
@@ -407,24 +424,24 @@ namespace robotick
 			bb.set<float>(fd, value);
 		}
 
-		void assign_mujoco_from_blackboard(const MuJoCoBinding& b, const Blackboard& bb)
+		void assign_mj_from_blackboard(const MuJoCoBinding& b, const Blackboard& bb)
 		{
 			const FieldDescriptor& fd = *b.blackboard_field;
 			const float v = bb.get<float>(fd);
 
-			mjModel* m = state->m;
-			mjData* d = state->d;
+			mjModel* mujoco_model = state->mujoco_model;
+			mjData* mujoco_data = state->mujoco_data;
 
 			switch (b.entity_type)
 			{
 			case MjEntityType::Joint:
 			{
 				const int j = b.mj_id;
-				const int qpos_adr = m->jnt_qposadr[j];
+				const int qpos_adr = mujoco_model->jnt_qposadr[j];
 				if (b.field == MjField::QPosTarget || b.field == MjField::QPosTargetDeg)
 				{
 					float rad = (b.field == MjField::QPosTargetDeg) ? deg_to_rad(v) : v;
-					d->qpos[qpos_adr] = rad; // direct set (no PD); consider mj_kinematics if changing positions directly
+					mujoco_data->qpos[qpos_adr] = rad; // direct set (no PD); consider mj_kinematics if changing positions directly
 				}
 				else
 				{
@@ -438,7 +455,7 @@ namespace robotick
 				const int a = b.mj_id;
 				if (b.field == MjField::Ctrl)
 				{
-					d->ctrl[a] = v;
+					mujoco_data->ctrl[a] = v;
 				}
 				else
 				{
@@ -452,7 +469,7 @@ namespace robotick
 			}
 		}
 
-		void initialize_blackboard_from_mujoco(const std::vector<MuJoCoBinding>& bindings, Blackboard& bb)
+		void initialize_blackboard_from_mujoco(const HeapVector<MuJoCoBinding>& bindings, Blackboard& bb)
 		{
 			for (const auto& b : bindings)
 			{
@@ -468,11 +485,16 @@ namespace robotick
 			load_model();
 
 			// Optionally run forward to make derived quantities valid
-			mj_forward(state->m, state->d);
+			mj_forward(state->mujoco_model, state->mujoco_data);
+
+			mjModel* m = state->mujoco_model;
+			mjData* d = state->mujoco_data;
+
+			// hard-reset all controls this tick
+			if (m->nu > 0)
+				std::fill(d->ctrl, d->ctrl + m->nu, 0.0);
 
 			// Initialize blackboards from sim snapshots
-			initialize_blackboard_from_mujoco(state->config_bindings, config.mujoco_initial);
-			initialize_blackboard_from_mujoco(state->input_bindings, inputs.mujoco);
 			initialize_blackboard_from_mujoco(state->output_bindings, outputs.mujoco);
 		}
 
@@ -484,20 +506,75 @@ namespace robotick
 			if (state->sim_num_sub_ticks == 0)
 				state->sim_num_sub_ticks = 1;
 
-			// MuJoCo uses dt in the model; you can override it by scaling m->opt.timestep if needed
+			// MuJoCo uses dt in the model; you can override it by scaling mujoco_model->opt.timestep if needed
 			const float final_sim_rate = tick_rate_hz * static_cast<float>(state->sim_num_sub_ticks);
 			const double dt = 1.0 / static_cast<double>(final_sim_rate);
-			state->m->opt.timestep = dt;
+			state->mujoco_model->opt.timestep = dt;
+		}
+
+		void dump_mujoco_state_debug(const mjModel* m, const mjData* d, int tick_count)
+		{
+			char filename[256];
+			snprintf(filename, sizeof(filename), "mujoco_log/mj_dump_tick_%05d.txt", tick_count);
+
+			std::ofstream out(filename);
+			if (!out.is_open())
+				return;
+
+			out << "Tick: " << tick_count << "\n";
+			out << "Time: " << d->time << "\n\n";
+
+			out << "[qpos]\n";
+			for (int i = 0; i < m->nq; ++i)
+				out << "  qpos[" << i << "]: " << d->qpos[i] << "\n";
+
+			out << "\n[qvel]\n";
+			for (int i = 0; i < m->nv; ++i)
+				out << "  qvel[" << i << "]: " << d->qvel[i] << "\n";
+
+			out << "\n[ctrl]\n";
+			for (int i = 0; i < m->nu; ++i)
+				out << "  ctrl[" << i << "]: " << d->ctrl[i] << "\n";
+
+			out << "\n[actuator_force]\n";
+			for (int i = 0; i < m->nu; ++i)
+				out << "  actuator_force[" << i << "]: " << d->actuator_force[i] << "\n";
+
+			out << "\n[xpos]\n";
+			for (int i = 0; i < m->nbody; ++i)
+			{
+				out << "  xpos[" << i << "]: " << d->xpos[3 * i + 0] << ", " << d->xpos[3 * i + 1] << ", " << d->xpos[3 * i + 2] << "\n";
+			}
+
+			out << "\n[xquat]\n";
+			for (int i = 0; i < m->nbody; ++i)
+			{
+				out << "  xquat[" << i << "]: " << d->xquat[4 * i + 0] << ", " << d->xquat[4 * i + 1] << ", " << d->xquat[4 * i + 2] << ", "
+					<< d->xquat[4 * i + 3] << "\n";
+			}
+
+			out << "\n[sensordata]\n";
+			for (int i = 0; i < m->nsensor; ++i)
+			{
+				const int start = m->sensor_adr[i];
+				const int dim = m->sensor_dim[i];
+				out << "  sensor[" << i << "]: ";
+				for (int j = 0; j < dim; ++j)
+					out << d->sensordata[start + j] << " ";
+				out << "\n";
+			}
+
+			out.close();
 		}
 
 		void tick(const TickInfo& tick_info)
 		{
-			mjData* d = state->d;
+			mjData* mujoco_data = state->mujoco_data;
 
 			// Write inputs to sim
 			for (const auto& b : state->input_bindings)
 			{
-				assign_mujoco_from_blackboard(b, inputs.mujoco);
+				assign_mj_from_blackboard(b, inputs.mujoco);
 			}
 
 			const bool should_pause = false;
@@ -507,7 +584,7 @@ namespace robotick
 			{
 				for (uint32_t i = 0; i < state->sim_num_sub_ticks; ++i)
 				{
-					mj_step(state->m, d);
+					mj_step(state->mujoco_model, mujoco_data);
 				}
 			}
 
@@ -516,22 +593,9 @@ namespace robotick
 			{
 				assign_blackboard_from_mujoco(b, outputs.mujoco);
 			}
-		}
 
-		// --- teardown ---
-
-		~MuJoCoWorkload()
-		{
-			if (state->d)
-			{
-				mj_deleteData(state->d);
-				state->d = nullptr;
-			}
-			if (state->m)
-			{
-				mj_deleteModel(state->m);
-				state->m = nullptr;
-			}
+			static int tick_debug_counter = 0;
+			dump_mujoco_state_debug(state->mujoco_model, state->mujoco_data, tick_debug_counter++);
 		}
 	};
 
