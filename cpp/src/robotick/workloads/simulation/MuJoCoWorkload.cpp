@@ -228,8 +228,59 @@ namespace robotick
 
 		void pre_load()
 		{
-			// parse YAML first so engine can size blackboards
+			// 1) Parse YAML first (so fields exist)
 			configure_from_config_file();
+
+			// 2) Load model now so we can query sensor_dims before blackboard sizing lock-in
+			load_model();
+
+			// 3) After ids are resolved by load_model(), adjust sensor field types and re-init outputs BB
+			finalize_sensor_output_field_types();
+		}
+
+		void finalize_sensor_output_field_types()
+		{
+			mjModel* m = state->mujoco_model;
+			ROBOTICK_ASSERT(m != nullptr);
+
+			bool changed = false;
+
+			for (auto& b : state->output_bindings)
+			{
+				if (b.entity_type != MjEntityType::Sensor)
+					continue;
+				ROBOTICK_ASSERT(b.mj_id >= 0);
+				const int dim = m->sensor_dim[b.mj_id];
+
+				TypeId desired = TypeId(GET_TYPE_ID(float));
+				if (dim == 3)
+					desired = TypeId(GET_TYPE_ID(Vec3f));
+				else if (dim == 4)
+					desired = TypeId(GET_TYPE_ID(Quatf));
+				else if (dim == 1)
+					desired = TypeId(GET_TYPE_ID(float));
+				else
+				{
+					ROBOTICK_FATAL_EXIT("Sensor '%s' has unsupported dimension %d. "
+										"Currently supported: 1->float, 3->Vec3f, 4->Quatf.",
+						b.name.c_str(),
+						dim);
+				}
+
+				FieldDescriptor* fd = b.blackboard_field;
+				ROBOTICK_ASSERT(fd != nullptr);
+				if (fd->type_id != desired)
+				{
+					fd->type_id = desired;
+					changed = true;
+				}
+			}
+
+			// If any types changed, reinitialize outputs blackboard with updated descriptors
+			if (changed)
+			{
+				outputs.mujoco.initialize_fields(state->output_fields);
+			}
 		}
 
 		void configure_from_config_file()
@@ -318,11 +369,9 @@ namespace robotick
 			}
 			state->mujoco_model = mujoco_model;
 
-			// Allocate mjData
 			state->mujoco_data = mj_makeData(mujoco_model);
 			ROBOTICK_ASSERT(state->mujoco_data != nullptr);
 
-			// Resolve all bindings to IDs
 			for (auto& b : state->config_bindings)
 				resolve_binding_ids(b);
 			for (auto& b : state->input_bindings)
@@ -413,8 +462,40 @@ namespace robotick
 			case MjEntityType::Sensor:
 			{
 				ROBOTICK_ASSERT(b.sensor_datastart >= 0 && b.sensor_dim > 0);
-				value = static_cast<float>(mujoco_data->sensordata[b.sensor_datastart]); // take first component by convention
-				break;
+
+				const TypeId tFloat = TypeId(GET_TYPE_ID(float));
+				const TypeId tV3 = TypeId(GET_TYPE_ID(Vec3f));
+				const TypeId tQuat = TypeId(GET_TYPE_ID(Quatf));
+
+				const int start = b.sensor_datastart;
+
+				if (fd.type_id == tV3)
+				{
+					ROBOTICK_ASSERT(b.sensor_dim >= 3);
+					Vec3f v;
+					v.x = static_cast<float>(mujoco_data->sensordata[start + 0]);
+					v.y = static_cast<float>(mujoco_data->sensordata[start + 1]);
+					v.z = static_cast<float>(mujoco_data->sensordata[start + 2]);
+					bb.set<Vec3f>(fd, v);
+					return;
+				}
+				else if (fd.type_id == tQuat)
+				{
+					ROBOTICK_ASSERT(b.sensor_dim >= 4);
+					Quatf q;
+					q.w = static_cast<float>(mujoco_data->sensordata[start + 0]);
+					q.x = static_cast<float>(mujoco_data->sensordata[start + 1]);
+					q.y = static_cast<float>(mujoco_data->sensordata[start + 2]);
+					q.z = static_cast<float>(mujoco_data->sensordata[start + 3]);
+					bb.set<Quatf>(fd, q);
+					return;
+				}
+				else // float fallback (dim==1)
+				{
+					float value = static_cast<float>(mujoco_data->sensordata[start + 0]);
+					bb.set<float>(fd, value);
+					return;
+				}
 			}
 
 			default:
@@ -482,8 +563,6 @@ namespace robotick
 
 		void setup()
 		{
-			load_model();
-
 			// Optionally run forward to make derived quantities valid
 			mj_forward(state->mujoco_model, state->mujoco_data);
 
