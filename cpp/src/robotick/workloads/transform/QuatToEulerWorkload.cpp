@@ -11,9 +11,9 @@ namespace robotick
 	struct QuatToEulerConfig
 	{
 		// Which computed angle feeds each output? 0: roll, 1: pitch, 2: yaw
-		int roll_from = 0;
-		int pitch_from = 1;
-		int yaw_from = 2;
+		int output_roll_source = 0;
+		int output_pitch_source = 1;
+		int output_yaw_source = 2;
 	};
 
 	struct QuatToEulerInputs
@@ -47,7 +47,7 @@ namespace robotick
 			const float y = quat_norm.y;
 			const float z = quat_norm.z;
 
-			// Standard aerospace convention (YXZ intrinsic)
+			// Standard aerospace convention (ZYX extrinsic / XYZ intrinsic)
 			const float sinr_cosp = 2.0f * (w * x + y * z);
 			const float cosr_cosp = 1.0f - 2.0f * (x * x + y * y);
 			const float roll = std::atan2(sinr_cosp, cosr_cosp);
@@ -62,9 +62,9 @@ namespace robotick
 
 			// Remap outputs according to config
 			const float euler_angles[3] = {roll, pitch, yaw};
-			const int index_roll = clamp_index(config.roll_from);
-			const int index_pitch = clamp_index(config.pitch_from);
-			const int index_yaw = clamp_index(config.yaw_from);
+			const int index_roll = clamp_index(config.output_roll_source);
+			const int index_pitch = clamp_index(config.output_pitch_source);
+			const int index_yaw = clamp_index(config.output_yaw_source);
 
 			outputs.roll = euler_angles[index_roll];
 			outputs.pitch = euler_angles[index_pitch];

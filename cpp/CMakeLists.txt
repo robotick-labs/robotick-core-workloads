@@ -156,7 +156,7 @@ endif()
 # ✅ Mujoco
 # =========================
 
-if (DEFINED ROBOTICK_PLATFORM_LINUX)
+if (ROBOTICK_PLATFORM_LINUX)
     FetchContent_Declare(
         mujoco
         GIT_REPOSITORY https://github.com/deepmind/mujoco.git
