@@ -10,10 +10,9 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
-#include <limits.h>
 #include <string>
-#include <unistd.h>
 #include <vector>
 
 namespace robotick
@@ -26,10 +25,6 @@ namespace robotick
 		FixedString256 model_path;
 
 		float sim_tick_rate_hz = -1.0f;
-
-		// Optional simple pause trigger (example)
-		FixedString64 pause_body_name;
-		float pause_body_z_threshold = -1.0f;
 
 		Blackboard mj_initial;
 		// ^- config/initial-conditions snapshot read from sim at setup
@@ -287,10 +282,8 @@ namespace robotick
 			std::ifstream fin(path);
 			if (!fin.is_open())
 			{
-				char cwd[512] = "?";
-				getcwd(cwd, sizeof(cwd));
-
-				ROBOTICK_FATAL_EXIT("Failed to open YAML config file: %s (cwd: %s)", path, cwd);
+				auto cwd = std::filesystem::current_path().string();
+				ROBOTICK_FATAL_EXIT("Failed to open YAML config file: %s (cwd: %s)", path, cwd.c_str());
 			}
 			YAML::Node root = YAML::Load(fin);
 			if (!root || !root.IsMap())
@@ -379,8 +372,8 @@ namespace robotick
 
 		// --- Blackboard <-> MuJoCo ---
 
-		static float rad_to_deg(float r) { return r * (180.0f / static_cast<float>(M_PI)); }
-		static float deg_to_rad(float mujoco_data) { return mujoco_data * (static_cast<float>(M_PI) / 180.0f); }
+		static float rad_to_deg(float rad) { return rad * (180.0f / static_cast<float>(M_PI)); }
+		static float deg_to_rad(float deg) { return deg * (static_cast<float>(M_PI) / 180.0f); }
 
 		void assign_blackboard_from_mujoco(const MuJoCoBinding& b, Blackboard& bb)
 		{
@@ -517,7 +510,8 @@ namespace robotick
 				if (b.field == MjField::QPosTarget || b.field == MjField::QPosTargetDeg)
 				{
 					float rad = (b.field == MjField::QPosTargetDeg) ? deg_to_rad(v) : v;
-					mujoco_data->qpos[qpos_adr] = rad; // direct set (no PD); consider mj_kinematics if changing positions directly
+					mujoco_data->qpos[qpos_adr] = rad;
+					mj_kinematics(mujoco_model, mujoco_data);
 				}
 				else
 				{

@@ -14,8 +14,6 @@ platforms:
           BUILD_TESTING: OFF
           MJ_BUILD_PYTHON: OFF
           MJ_BUILD_EXAMPLES: OFF
-          MJ_USE_CUDA: OFF
-          MJ_USE_AVX_INTRINSICS: OFF # optionally disable SIMD for portability
           CMAKE_C_FLAGS: "-Wno-error=format-truncation"
         include_dirs:
           - ${CMAKE_CURRENT_SOURCE_DIR}/deps/mujoco/include
