@@ -163,13 +163,12 @@ if (ROBOTICK_PLATFORM_LINUX)
         mujoco
         GIT_REPOSITORY https://github.com/deepmind/mujoco.git
         GIT_TAG        3.1.5
+        CMAKE_ARGS
+            -DMJ_BUILD_PYTHON=OFF
+            -DMJ_BUILD_EXAMPLES=OFF
+            -DMJ_USE_AVX_INTRINSICS=OFF
+            -DMJ_USE_CUDA=OFF
     )
-
-    # Optional override: disable CUDA/AVX etc
-    set(MJ_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
-    set(MJ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(MJ_USE_AVX_INTRINSICS OFF CACHE BOOL "" FORCE)
-    set(MJ_USE_CUDA OFF CACHE BOOL "" FORCE)
 
     FetchContent_MakeAvailable(mujoco)
 

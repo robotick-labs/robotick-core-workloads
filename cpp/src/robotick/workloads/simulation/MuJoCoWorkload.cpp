@@ -586,61 +586,6 @@ namespace robotick
 			state->mujoco_model->opt.timestep = dt;
 		}
 
-		void dump_mujoco_state_debug(const mjModel* m, const mjData* d, int tick_count)
-		{
-			char filename[256];
-			snprintf(filename, sizeof(filename), "mujoco_log/mj_dump_tick_%05d.txt", tick_count);
-
-			std::ofstream out(filename);
-			if (!out.is_open())
-				return;
-
-			out << "Tick: " << tick_count << "\n";
-			out << "Time: " << d->time << "\n\n";
-
-			out << "[qpos]\n";
-			for (int i = 0; i < m->nq; ++i)
-				out << "  qpos[" << i << "]: " << d->qpos[i] << "\n";
-
-			out << "\n[qvel]\n";
-			for (int i = 0; i < m->nv; ++i)
-				out << "  qvel[" << i << "]: " << d->qvel[i] << "\n";
-
-			out << "\n[ctrl]\n";
-			for (int i = 0; i < m->nu; ++i)
-				out << "  ctrl[" << i << "]: " << d->ctrl[i] << "\n";
-
-			out << "\n[actuator_force]\n";
-			for (int i = 0; i < m->nu; ++i)
-				out << "  actuator_force[" << i << "]: " << d->actuator_force[i] << "\n";
-
-			out << "\n[xpos]\n";
-			for (int i = 0; i < m->nbody; ++i)
-			{
-				out << "  xpos[" << i << "]: " << d->xpos[3 * i + 0] << ", " << d->xpos[3 * i + 1] << ", " << d->xpos[3 * i + 2] << "\n";
-			}
-
-			out << "\n[xquat]\n";
-			for (int i = 0; i < m->nbody; ++i)
-			{
-				out << "  xquat[" << i << "]: " << d->xquat[4 * i + 0] << ", " << d->xquat[4 * i + 1] << ", " << d->xquat[4 * i + 2] << ", "
-					<< d->xquat[4 * i + 3] << "\n";
-			}
-
-			out << "\n[sensordata]\n";
-			for (int i = 0; i < m->nsensor; ++i)
-			{
-				const int start = m->sensor_adr[i];
-				const int dim = m->sensor_dim[i];
-				out << "  sensor[" << i << "]: ";
-				for (int j = 0; j < dim; ++j)
-					out << d->sensordata[start + j] << " ";
-				out << "\n";
-			}
-
-			out.close();
-		}
-
 		void tick(const TickInfo& tick_info)
 		{
 			(void)tick_info;
@@ -669,9 +614,6 @@ namespace robotick
 			{
 				assign_blackboard_from_mujoco(b, outputs.mujoco);
 			}
-
-			static int tick_debug_counter = 0;
-			dump_mujoco_state_debug(state->mujoco_model, state->mujoco_data, tick_debug_counter++);
 		}
 	};
 
