@@ -8,7 +8,7 @@ platforms:
         source:
           type: git
           url: https://github.com/deepmind/mujoco
-          pin: release/3.1.5
+          pin: 3.1.5
         cmake_subdir: .
         cmake_options:
           BUILD_TESTING: OFF
@@ -24,7 +24,7 @@ platforms:
       - name: yaml-cpp
         source:
           type: git
-          url: git@github.com:jbeder/yaml-cpp
+          url: https://github.com/jbeder/yaml-cpp.git
           pin: yaml-cpp-0.7.0
         cmake_subdir: .
         cmake_options:

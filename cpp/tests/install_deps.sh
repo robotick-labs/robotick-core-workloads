@@ -12,7 +12,8 @@ apt-get install -y --no-install-recommends \
   libopencv-dev \
   libsdl2-dev libsdl2-ttf-dev libsdl2-gfx-dev \
   libssl-dev libcurl4-openssl-dev \
-  python3-dev
+  python3-dev \
+  libyaml-cpp-dev
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*

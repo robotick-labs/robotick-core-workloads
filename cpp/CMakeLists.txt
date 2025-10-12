@@ -151,6 +151,25 @@ else()
 endif()
 
 # =========================
+# ✅ Mujoco
+# =========================
+
+FetchContent_Declare(
+    mujoco
+    GIT_REPOSITORY https://github.com/deepmind/mujoco.git
+    GIT_TAG        3.1.5
+)
+
+# Optional override: disable CUDA/AVX etc
+set(MJ_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+set(MJ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(MJ_USE_AVX_INTRINSICS OFF CACHE BOOL "" FORCE)
+set(MJ_USE_CUDA OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(mujoco)
+
+# =========================
 # ✅ Additional libs
 # =========================
 
@@ -162,9 +181,11 @@ if(ROBOTICK_PLATFORM_LINUX)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2::SDL2)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2_gfx)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2_ttf)
+    target_link_libraries(robotick-core-workloads PRIVATE mujoco)
     target_include_directories(robotick-core-workloads PRIVATE /usr/include/SDL2)
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_GFX_INCLUDE_DIRS})
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
+    target_include_directories(robotick-core-workloads PRIVATE ${mujoco_SOURCE_DIR}/include)
 endif()
 
 # =========================
