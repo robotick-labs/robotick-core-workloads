@@ -138,6 +138,7 @@ if(ROBOTICK_ENABLE_PYTHON)
     list(APPEND EXCEPTION_ENABLED_SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttFieldSync.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/telemetry/MqttClientWorkload.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/simulation/MuJoCoWorkload.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttClient.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp
@@ -155,19 +156,21 @@ endif()
 # ✅ Mujoco
 # =========================
 
-FetchContent_Declare(
-    mujoco
-    GIT_REPOSITORY https://github.com/deepmind/mujoco.git
-    GIT_TAG        3.1.5
-)
+if (DEFINED ROBOTICK_PLATFORM_LINUX)
+    FetchContent_Declare(
+        mujoco
+        GIT_REPOSITORY https://github.com/deepmind/mujoco.git
+        GIT_TAG        3.1.5
+    )
 
-# Optional override: disable CUDA/AVX etc
-set(MJ_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
-set(MJ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(MJ_USE_AVX_INTRINSICS OFF CACHE BOOL "" FORCE)
-set(MJ_USE_CUDA OFF CACHE BOOL "" FORCE)
+    # Optional override: disable CUDA/AVX etc
+    set(MJ_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+    set(MJ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(MJ_USE_AVX_INTRINSICS OFF CACHE BOOL "" FORCE)
+    set(MJ_USE_CUDA OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(mujoco)
+    FetchContent_MakeAvailable(mujoco)
+endif()
 
 # =========================
 # ✅ Additional libs

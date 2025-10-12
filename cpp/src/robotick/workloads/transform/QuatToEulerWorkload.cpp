@@ -50,15 +50,15 @@ namespace robotick
 			// Standard aerospace convention (YXZ intrinsic)
 			const float sinr_cosp = 2.0f * (w * x + y * z);
 			const float cosr_cosp = 1.0f - 2.0f * (x * x + y * y);
-			float roll = std::atan2(sinr_cosp, cosr_cosp);
+			const float roll = std::atan2(sinr_cosp, cosr_cosp);
 
 			float sinp = 2.0f * (w * y - z * x);
 			sinp = std::clamp(sinp, -1.0f, 1.0f); // Clamp to handle gimbal lock at pitch = ±90°
-			float pitch = std::asin(sinp);
+			const float pitch = std::asin(sinp);
 
 			const float siny_cosp = 2.0f * (w * z + x * y);
 			const float cosy_cosp = 1.0f - 2.0f * (y * y + z * z);
-			float yaw = std::atan2(siny_cosp, cosy_cosp);
+			const float yaw = std::atan2(siny_cosp, cosy_cosp);
 
 			// Remap outputs according to config
 			const float euler_angles[3] = {roll, pitch, yaw};
