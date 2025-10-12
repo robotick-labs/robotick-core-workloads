@@ -118,9 +118,10 @@ target_link_libraries(robotick-core-workloads PRIVATE robotick-engine)
 # ✅ Optional Python Workloads
 # =========================
 
+include(FetchContent)
+
 if(ROBOTICK_ENABLE_PYTHON)
     message(STATUS "✅ ROBOTICK_ENABLE_PYTHON - ON")
-    include(FetchContent)
     FetchContent_Declare(
         pybind11
         GIT_REPOSITORY https://github.com/pybind/pybind11.git
@@ -163,7 +164,6 @@ FetchContent_Declare(
 # Optional override: disable CUDA/AVX etc
 set(MJ_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
 set(MJ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(MJ_USE_AVX_INTRINSICS OFF CACHE BOOL "" FORCE)
 set(MJ_USE_CUDA OFF CACHE BOOL "" FORCE)
 

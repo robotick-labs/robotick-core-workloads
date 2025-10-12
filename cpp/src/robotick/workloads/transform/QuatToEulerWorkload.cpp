@@ -34,16 +34,18 @@ namespace robotick
 		QuatToEulerInputs inputs;
 		QuatToEulerOutputs outputs;
 
-		static inline int clamp_index(int i) { return (i < 0) ? 0 : (i > 2 ? 2 : i); }
+		static inline int clamp_index(int index) { return std::clamp(index, 0, 2); }
 
 		void tick(const TickInfo& info)
 		{
 			(void)info; // unused
 
-			const float w = inputs.quat.w;
-			const float x = inputs.quat.x;
-			const float y = inputs.quat.y;
-			const float z = inputs.quat.z;
+			const Quatf quat_norm = inputs.quat.normalized();
+
+			const float w = quat_norm.w;
+			const float x = quat_norm.x;
+			const float y = quat_norm.y;
+			const float z = quat_norm.z;
 
 			// Standard aerospace convention (YXZ intrinsic)
 			const float sinr_cosp = 2.0f * (w * x + y * z);
@@ -51,7 +53,7 @@ namespace robotick
 			float roll = std::atan2(sinr_cosp, cosr_cosp);
 
 			float sinp = 2.0f * (w * y - z * x);
-			sinp = std::clamp(sinp, -1.0f, 1.0f);
+			sinp = std::clamp(sinp, -1.0f, 1.0f); // Clamp to handle gimbal lock at pitch = ±90°
 			float pitch = std::asin(sinp);
 
 			const float siny_cosp = 2.0f * (w * z + x * y);
