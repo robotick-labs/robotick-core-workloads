@@ -171,10 +171,7 @@ namespace robotick
 
 		// --- YAML → binding set up ---
 
-		void configure_io_fields(YAML::Node yaml_node,
-			HeapVector<MuJoCoBinding>& bindings,
-			HeapVector<FieldDescriptor>& fields,
-			bool allow_defaults /*kept for API symmetry; unused here*/)
+		void configure_io_fields(YAML::Node yaml_node, HeapVector<MuJoCoBinding>& bindings, HeapVector<FieldDescriptor>& fields)
 		{
 			const size_t num_entries = yaml_node ? yaml_node.size() : 0;
 			bindings.initialize(num_entries);
@@ -313,9 +310,9 @@ namespace robotick
 			config.sim_tick_rate_hz = mujoco["sim_tick_rate_hz"].as<float>(-1.0f);
 
 			// Build binding lists and field descriptors
-			configure_io_fields(mujoco["config"], state->config_bindings, state->config_fields, /*allow_defaults*/ true);
-			configure_io_fields(mujoco["inputs"], state->input_bindings, state->input_fields, /*allow_defaults*/ true);
-			configure_io_fields(mujoco["outputs"], state->output_bindings, state->output_fields, /*allow_defaults*/ false);
+			configure_io_fields(mujoco["config"], state->config_bindings, state->config_fields);
+			configure_io_fields(mujoco["inputs"], state->input_bindings, state->input_fields);
+			configure_io_fields(mujoco["outputs"], state->output_bindings, state->output_fields);
 
 			// Initialize blackboards with those descriptors
 			config.mj_initial.initialize_fields(state->config_fields);
@@ -434,7 +431,6 @@ namespace robotick
 
 			case MjEntityType::Body:
 			{
-				const int bidx = b.mj_id;
 				if (b.field == MjField::XPos)
 				{
 					Vec3f v;
@@ -463,7 +459,6 @@ namespace robotick
 			{
 				ROBOTICK_ASSERT(b.sensor_datastart >= 0 && b.sensor_dim > 0);
 
-				const TypeId tFloat = TypeId(GET_TYPE_ID(float));
 				const TypeId tV3 = TypeId(GET_TYPE_ID(Vec3f));
 				const TypeId tQuat = TypeId(GET_TYPE_ID(Quatf));
 
@@ -648,6 +643,8 @@ namespace robotick
 
 		void tick(const TickInfo& tick_info)
 		{
+			(void)tick_info;
+
 			mjData* mujoco_data = state->mujoco_data;
 
 			// Write inputs to sim
