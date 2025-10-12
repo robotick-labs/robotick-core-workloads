@@ -13,9 +13,9 @@ namespace robotick
 
 	struct QuatToEulerOutputs
 	{
-		float roll = 0.0f;	// rad or deg
-		float pitch = 0.0f; // rad or deg
-		float yaw = 0.0f;	// rad or deg
+		float roll = 0.0f;	// radians
+		float pitch = 0.0f; // radians
+		float yaw = 0.0f;	// radians
 	};
 
 	struct QuatToEulerWorkload
