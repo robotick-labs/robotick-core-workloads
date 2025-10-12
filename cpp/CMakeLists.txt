@@ -41,9 +41,6 @@ endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    add_compile_options(
-        "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Werror;-fno-rtti>"
-    )
 endif()
 
 # -----------------------------------------------
@@ -102,6 +99,11 @@ endif()
 # =========================
 
 add_library(robotick-core-workloads SHARED ${CORE_SOURCES})
+
+target_compile_options(robotick-core-workloads PRIVATE
+    -Wall -Wextra -Werror -fno-rtti
+)
+
 set_target_properties(robotick-core-workloads PROPERTIES OUTPUT_NAME robotick-core-workloads)
 target_compile_definitions(robotick-core-workloads PRIVATE ROBOTICK_EXPORTS)
 
@@ -118,9 +120,10 @@ target_link_libraries(robotick-core-workloads PRIVATE robotick-engine)
 # ✅ Optional Python Workloads
 # =========================
 
+include(FetchContent)
+
 if(ROBOTICK_ENABLE_PYTHON)
     message(STATUS "✅ ROBOTICK_ENABLE_PYTHON - ON")
-    include(FetchContent)
     FetchContent_Declare(
         pybind11
         GIT_REPOSITORY https://github.com/pybind/pybind11.git
@@ -137,6 +140,7 @@ if(ROBOTICK_ENABLE_PYTHON)
     list(APPEND EXCEPTION_ENABLED_SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttFieldSync.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/telemetry/MqttClientWorkload.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/simulation/MuJoCoWorkload.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttClient.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp
@@ -151,6 +155,35 @@ else()
 endif()
 
 # =========================
+# ✅ Mujoco
+# =========================
+
+if (ROBOTICK_PLATFORM_LINUX)
+    FetchContent_Declare(
+        mujoco
+        GIT_REPOSITORY https://github.com/deepmind/mujoco.git
+        GIT_TAG        3.1.5
+        CMAKE_ARGS
+            -DMJ_BUILD_PYTHON=OFF
+            -DMJ_BUILD_EXAMPLES=OFF
+            -DMJ_USE_AVX_INTRINSICS=OFF
+            -DMJ_USE_CUDA=OFF
+    )
+
+    FetchContent_MakeAvailable(mujoco)
+
+    if (TARGET mujoco)
+        target_compile_options(mujoco PRIVATE -Wno-unused-parameter)
+
+        # For CMake >= 3.24, also disable Werror for mujoco if leaked from higher up
+        if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+            set_property(TARGET mujoco PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+        endif()
+    endif()
+
+endif()
+
+# =========================
 # ✅ Additional libs
 # =========================
 
@@ -162,9 +195,11 @@ if(ROBOTICK_PLATFORM_LINUX)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2::SDL2)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2_gfx)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2_ttf)
+    target_link_libraries(robotick-core-workloads PRIVATE mujoco)
     target_include_directories(robotick-core-workloads PRIVATE /usr/include/SDL2)
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_GFX_INCLUDE_DIRS})
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
+    target_include_directories(robotick-core-workloads PRIVATE ${mujoco_SOURCE_DIR}/include)
 endif()
 
 # =========================

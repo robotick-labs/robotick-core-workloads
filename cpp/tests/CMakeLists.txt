@@ -35,22 +35,8 @@ file(GLOB_RECURSE ROBOTICK_TEST_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/*.test.cpp
 )
 
-if(false) # enable to debug test-sources
-    foreach(source ${ROBOTICK_TEST_SOURCES})
-        message(STATUS "Test source: ${source} from ${CMAKE_CURRENT_SOURCE_DIR}")
-    endforeach()
-endif()
-
 # Build test executable
 add_executable(robotick_core_workloads_tests ${ROBOTICK_TEST_SOURCES})
-
-# AddressSanitizer (optional runtime debug support)
-# Uncomment to enable memory error detection during testing (impacts performance)
-# if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-#   message(STATUS "🔎 Enabling AddressSanitizer for robotick_core_workloads_tests")
-#   target_compile_options(robotick_core_workloads_tests PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-#   target_link_options(robotick_core_workloads_tests PRIVATE -fsanitize=address)
-# endif()
 
 # Link against core framework and Catch2
 target_link_libraries(robotick_core_workloads_tests

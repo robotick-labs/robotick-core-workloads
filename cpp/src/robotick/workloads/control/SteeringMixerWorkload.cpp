@@ -21,7 +21,7 @@ namespace robotick
 	struct SteeringMixerInputs
 	{
 		float speed = 0.0f;
-		float turn_rate = 0.0f;
+		float angular_speed = 0.0f;
 	};
 
 	struct SteeringMixerOutputs
@@ -41,7 +41,7 @@ namespace robotick
 		void tick(const TickInfo&)
 		{
 			const float speed = inputs.speed;
-			const float turn = inputs.turn_rate;
+			const float turn = inputs.angular_speed;
 
 			float left = speed + turn * config.max_speed_differential;
 			float right = speed - turn * config.max_speed_differential;
