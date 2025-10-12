@@ -41,9 +41,6 @@ endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_STANDARD 17)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    add_compile_options(
-        "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Werror;-fno-rtti>"
-    )
 endif()
 
 # -----------------------------------------------
@@ -102,6 +99,11 @@ endif()
 # =========================
 
 add_library(robotick-core-workloads SHARED ${CORE_SOURCES})
+
+target_compile_options(robotick-core-workloads PRIVATE
+    -Wall -Wextra -Werror -fno-rtti
+)
+
 set_target_properties(robotick-core-workloads PROPERTIES OUTPUT_NAME robotick-core-workloads)
 target_compile_definitions(robotick-core-workloads PRIVATE ROBOTICK_EXPORTS)
 
@@ -170,6 +172,16 @@ if (ROBOTICK_PLATFORM_LINUX)
     set(MJ_USE_CUDA OFF CACHE BOOL "" FORCE)
 
     FetchContent_MakeAvailable(mujoco)
+
+    if (TARGET mujoco)
+        target_compile_options(mujoco PRIVATE -Wno-unused-parameter)
+
+        # For CMake >= 3.24, also disable Werror for mujoco if leaked from higher up
+        if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+            set_property(TARGET mujoco PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+        endif()
+    endif()
+
 endif()
 
 # =========================
