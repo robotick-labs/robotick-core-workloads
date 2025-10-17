@@ -24,6 +24,16 @@ platforms:
           module: SDL2_ttf
         pkg_prefix: SDL2_TTF
 
+      - name: OpenCV
+        source:
+          type: apt
+          package: libopencv-dev
+        find_package: OpenCV
+        include_dirs:
+          - ${OpenCV_INCLUDE_DIRS}
+        link_libraries:
+          - ${OpenCV_LIBS}
+
   esp32:
     files:
       - robotick/systems/Renderer_esp32.cpp
