@@ -105,7 +105,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 		const robotick::Blackboard* output_blackboard = nullptr;
 		for (const auto& field : outputs_desc->get_struct_desc()->fields)
 		{
-			if (field.name == "blackboard")
+			if (field.name == "script")
 			{
 				ROBOTICK_ASSERT(field.offset_within_container != OFFSET_UNBOUND && "Field offset should have been correctly set by now");
 

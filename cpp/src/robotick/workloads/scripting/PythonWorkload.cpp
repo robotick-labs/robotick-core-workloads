@@ -23,17 +23,17 @@ namespace robotick
 	{
 		FixedString128 script_name;
 		FixedString64 class_name;
-		Blackboard blackboard;
+		Blackboard script;
 	};
 
 	struct PythonInputs
 	{
-		Blackboard blackboard;
+		Blackboard script;
 	};
 
 	struct PythonOutputs
 	{
-		Blackboard blackboard;
+		Blackboard script;
 	};
 
 	struct __attribute__((visibility("hidden"))) PythonInternalState
@@ -56,7 +56,10 @@ namespace robotick
 
 		std::unique_ptr<PythonInternalState> internal_state;
 
-		PythonWorkload() : internal_state(std::make_unique<PythonInternalState>()) {}
+		PythonWorkload()
+			: internal_state(std::make_unique<PythonInternalState>())
+		{
+		}
 
 		~PythonWorkload()
 		{
@@ -137,13 +140,13 @@ namespace robotick
 			}
 
 			parse_blackboard_schema(desc["config"], internal_state->config_fields, internal_state->string_storage);
-			config.blackboard.initialize_fields(internal_state->config_fields);
+			config.script.initialize_fields(internal_state->config_fields);
 
 			parse_blackboard_schema(desc["inputs"], internal_state->input_fields, internal_state->string_storage);
-			inputs.blackboard.initialize_fields(internal_state->input_fields);
+			inputs.script.initialize_fields(internal_state->input_fields);
 
 			parse_blackboard_schema(desc["outputs"], internal_state->output_fields, internal_state->string_storage);
-			outputs.blackboard.initialize_fields(internal_state->output_fields);
+			outputs.script.initialize_fields(internal_state->output_fields);
 		}
 
 		void pre_load()
@@ -165,7 +168,7 @@ namespace robotick
 			robotick::ensure_python_runtime();
 			py::gil_scoped_acquire gil;
 
-			const StructDescriptor& struct_desc = config.blackboard.get_struct_descriptor();
+			const StructDescriptor& struct_desc = config.script.get_struct_descriptor();
 
 			py::dict py_cfg;
 			for (size_t i = 0; i < struct_desc.fields.size(); ++i)
@@ -175,15 +178,15 @@ namespace robotick
 				const auto& type = field.type_id;
 
 				if (type == GET_TYPE_ID(int))
-					py_cfg[key] = config.blackboard.get<int>(key);
+					py_cfg[key] = config.script.get<int>(key);
 				else if (type == GET_TYPE_ID(float))
-					py_cfg[key] = config.blackboard.get<float>(key);
+					py_cfg[key] = config.script.get<float>(key);
 				else if (type == GET_TYPE_ID(double))
-					py_cfg[key] = config.blackboard.get<double>(key);
+					py_cfg[key] = config.script.get<double>(key);
 				else if (type == GET_TYPE_ID(FixedString64))
-					py_cfg[key] = config.blackboard.get<FixedString64>(key).c_str();
+					py_cfg[key] = config.script.get<FixedString64>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString128))
-					py_cfg[key] = config.blackboard.get<FixedString128>(key).c_str();
+					py_cfg[key] = config.script.get<FixedString128>(key).c_str();
 				else
 					ROBOTICK_FATAL_EXIT("Unsupported config field type for key '%s' in PythonWorkload", key);
 			}
@@ -210,7 +213,7 @@ namespace robotick
 			py::dict py_in;
 			py::dict py_out;
 
-			const StructDescriptor& struct_desc = inputs.blackboard.get_struct_descriptor();
+			const StructDescriptor& struct_desc = inputs.script.get_struct_descriptor();
 
 			for (size_t i = 0; i < struct_desc.fields.size(); ++i)
 			{
@@ -219,15 +222,15 @@ namespace robotick
 				const auto& type = field.type_id;
 
 				if (type == GET_TYPE_ID(int))
-					py_in[key] = inputs.blackboard.get<int>(key);
+					py_in[key] = inputs.script.get<int>(key);
 				else if (type == GET_TYPE_ID(float))
-					py_in[key] = inputs.blackboard.get<float>(key);
+					py_in[key] = inputs.script.get<float>(key);
 				else if (type == GET_TYPE_ID(double))
-					py_in[key] = inputs.blackboard.get<double>(key);
+					py_in[key] = inputs.script.get<double>(key);
 				else if (type == GET_TYPE_ID(FixedString64))
-					py_in[key] = inputs.blackboard.get<FixedString64>(key).c_str();
+					py_in[key] = inputs.script.get<FixedString64>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString128))
-					py_in[key] = inputs.blackboard.get<FixedString128>(key).c_str();
+					py_in[key] = inputs.script.get<FixedString128>(key).c_str();
 			}
 
 			// (note - we allow exceptions in PythonWorkload/Runtime only since Python libs require them - so the below is fine even with the wider
@@ -247,22 +250,22 @@ namespace robotick
 				const char* key = key_str.c_str();
 				auto val = item.second;
 
-				const StructDescriptor& struct_desc = outputs.blackboard.get_struct_descriptor();
+				const StructDescriptor& struct_desc = outputs.script.get_struct_descriptor();
 				const FieldDescriptor* found_field = struct_desc.find_field(key);
 
 				if (!found_field)
 					continue;
 
 				if (found_field->type_id == GET_TYPE_ID(int))
-					outputs.blackboard.set<int>(key, val.cast<int>());
+					outputs.script.set<int>(key, val.cast<int>());
 				else if (found_field->type_id == GET_TYPE_ID(float))
-					outputs.blackboard.set<float>(key, val.cast<float>());
+					outputs.script.set<float>(key, val.cast<float>());
 				else if (found_field->type_id == GET_TYPE_ID(double))
-					outputs.blackboard.set<double>(key, val.cast<double>());
+					outputs.script.set<double>(key, val.cast<double>());
 				else if (found_field->type_id == GET_TYPE_ID(FixedString64))
-					outputs.blackboard.set<FixedString64>(key, FixedString64(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString64>(key, FixedString64(py::str(val).cast<std::string>().c_str()));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString128))
-					outputs.blackboard.set<FixedString128>(key, FixedString128(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString128>(key, FixedString128(py::str(val).cast<std::string>().c_str()));
 			}
 		}
 	};
@@ -272,15 +275,15 @@ namespace robotick
 	ROBOTICK_REGISTER_STRUCT_BEGIN(PythonConfig)
 	ROBOTICK_STRUCT_FIELD(PythonConfig, FixedString128, script_name)
 	ROBOTICK_STRUCT_FIELD(PythonConfig, FixedString64, class_name)
-	ROBOTICK_STRUCT_FIELD(PythonConfig, Blackboard, blackboard)
+	ROBOTICK_STRUCT_FIELD(PythonConfig, Blackboard, script)
 	ROBOTICK_REGISTER_STRUCT_END(PythonConfig)
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(PythonInputs)
-	ROBOTICK_STRUCT_FIELD(PythonInputs, Blackboard, blackboard)
+	ROBOTICK_STRUCT_FIELD(PythonInputs, Blackboard, script)
 	ROBOTICK_REGISTER_STRUCT_END(PythonInputs)
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(PythonOutputs)
-	ROBOTICK_STRUCT_FIELD(PythonOutputs, Blackboard, blackboard)
+	ROBOTICK_STRUCT_FIELD(PythonOutputs, Blackboard, script)
 	ROBOTICK_REGISTER_STRUCT_END(PythonOutputs)
 
 	ROBOTICK_REGISTER_WORKLOAD(PythonWorkload, PythonConfig, PythonInputs, PythonOutputs)
