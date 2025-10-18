@@ -1,0 +1,20 @@
+# PythonWorkload.yaml
+platforms:
+  linux:
+    files:
+      - robotick/systems/PythonRuntime.cpp
+    deps:
+      - name: python3-dev
+        source:
+          type: apt
+          package: python3-dev
+        find_package: Python3
+        components: [Interpreter, Development]
+        link_target: Python3::Python
+
+      - name: pybind11
+        source:
+          type: apt
+          package: pybind11-dev
+        find_package: pybind11
+        link_target: pybind11::embed
