@@ -99,10 +99,22 @@ namespace robotick
 					field_desc.type_id = TypeId(GET_TYPE_ID(float));
 				else if (type_str == "double")
 					field_desc.type_id = TypeId(GET_TYPE_ID(double));
+				else if (type_str == "fixedstring8")
+					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString8));
+				else if (type_str == "fixedstring16")
+					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString16));
+				else if (type_str == "fixedstring32")
+					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString32));
 				else if (type_str == "fixedstring64")
 					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString64));
 				else if (type_str == "fixedstring128")
 					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString128));
+				else if (type_str == "fixedstring256")
+					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString256));
+				else if (type_str == "fixedstring512")
+					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString512));
+				else if (type_str == "fixedstring1024")
+					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString1024));
 				else
 					ROBOTICK_FATAL_EXIT("Unsupported field type: %s", type_str.c_str());
 
@@ -183,10 +195,23 @@ namespace robotick
 					py_cfg[key] = config.script.get<float>(key);
 				else if (type == GET_TYPE_ID(double))
 					py_cfg[key] = config.script.get<double>(key);
+				else if (type == GET_TYPE_ID(FixedString8))
+					py_cfg[key] = config.script.get<FixedString8>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString16))
+					py_cfg[key] = config.script.get<FixedString16>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString32))
+					py_cfg[key] = config.script.get<FixedString32>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString64))
 					py_cfg[key] = config.script.get<FixedString64>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString128))
 					py_cfg[key] = config.script.get<FixedString128>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString256))
+					py_cfg[key] = config.script.get<FixedString256>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString512))
+					py_cfg[key] = config.script.get<FixedString512>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString1024))
+					py_cfg[key] = config.script.get<FixedString1024>(key).c_str();
+
 				else
 					ROBOTICK_FATAL_EXIT("Unsupported config field type for key '%s' in PythonWorkload", key);
 			}
@@ -197,9 +222,35 @@ namespace robotick
 			{
 				internal_state->py_instance = internal_state->py_class(py_cfg);
 			}
-			catch (const py::error_already_set& e)
+			catch (py::error_already_set& e)
 			{
-				ROBOTICK_FATAL_EXIT("Failed to instantiate Python class '%s': %s", config.class_name.c_str(), e.what());
+				// Force error printing to stderr (optional, for developer visibility)
+				e.restore(); // Restores the Python error indicator
+
+				// Try to extract richer info manually
+				std::string error_summary = e.what();
+
+				// Get traceback string (if available)
+				std::string traceback_str;
+				try
+				{
+					py::gil_scoped_acquire gil; // Already held here, but safe
+
+					py::object traceback = py::module_::import("traceback");
+					py::object tb_list = traceback.attr("format_exception")(e.type(), e.value(), e.trace());
+
+					traceback_str = py::str("").attr("join")(tb_list).cast<std::string>();
+				}
+				catch (...)
+				{
+					traceback_str = "<failed to get Python traceback>";
+				}
+
+				ROBOTICK_FATAL_EXIT("Python class '%s' instantiation failed.\n"
+									"Exception: %s\n\nTraceback:\n%s",
+					config.class_name.c_str(),
+					error_summary.c_str(),
+					traceback_str.c_str());
 			}
 		}
 
@@ -227,10 +278,22 @@ namespace robotick
 					py_in[key] = inputs.script.get<float>(key);
 				else if (type == GET_TYPE_ID(double))
 					py_in[key] = inputs.script.get<double>(key);
+				else if (type == GET_TYPE_ID(FixedString8))
+					py_in[key] = inputs.script.get<FixedString8>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString16))
+					py_in[key] = inputs.script.get<FixedString16>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString32))
+					py_in[key] = inputs.script.get<FixedString32>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString64))
 					py_in[key] = inputs.script.get<FixedString64>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString128))
 					py_in[key] = inputs.script.get<FixedString128>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString256))
+					py_in[key] = inputs.script.get<FixedString256>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString512))
+					py_in[key] = inputs.script.get<FixedString512>(key).c_str();
+				else if (type == GET_TYPE_ID(FixedString1024))
+					py_in[key] = inputs.script.get<FixedString1024>(key).c_str();
 			}
 
 			// (note - we allow exceptions in PythonWorkload/Runtime only since Python libs require them - so the below is fine even with the wider
@@ -262,10 +325,22 @@ namespace robotick
 					outputs.script.set<float>(key, val.cast<float>());
 				else if (found_field->type_id == GET_TYPE_ID(double))
 					outputs.script.set<double>(key, val.cast<double>());
+				else if (found_field->type_id == GET_TYPE_ID(FixedString8))
+					outputs.script.set<FixedString8>(key, FixedString8(py::str(val).cast<std::string>().c_str()));
+				else if (found_field->type_id == GET_TYPE_ID(FixedString16))
+					outputs.script.set<FixedString16>(key, FixedString16(py::str(val).cast<std::string>().c_str()));
+				else if (found_field->type_id == GET_TYPE_ID(FixedString32))
+					outputs.script.set<FixedString32>(key, FixedString32(py::str(val).cast<std::string>().c_str()));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString64))
 					outputs.script.set<FixedString64>(key, FixedString64(py::str(val).cast<std::string>().c_str()));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString128))
 					outputs.script.set<FixedString128>(key, FixedString128(py::str(val).cast<std::string>().c_str()));
+				else if (found_field->type_id == GET_TYPE_ID(FixedString256))
+					outputs.script.set<FixedString256>(key, FixedString256(py::str(val).cast<std::string>().c_str()));
+				else if (found_field->type_id == GET_TYPE_ID(FixedString512))
+					outputs.script.set<FixedString512>(key, FixedString512(py::str(val).cast<std::string>().c_str()));
+				else if (found_field->type_id == GET_TYPE_ID(FixedString1024))
+					outputs.script.set<FixedString1024>(key, FixedString1024(py::str(val).cast<std::string>().c_str()));
 			}
 		}
 	};
