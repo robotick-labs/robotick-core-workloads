@@ -115,7 +115,9 @@ namespace robotick
 						ctx->impl->child_tick_loop(*ctx->child);
 						delete ctx;
 					},
-					ctx, thread_name, -1);
+					ctx,
+					thread_name,
+					-1);
 			}
 		}
 
@@ -164,6 +166,7 @@ namespace robotick
 
 			TickInfo tick_info;
 			tick_info.workload_stats = &child.mutable_stats;
+			tick_info.tick_rate_hz = child.seed->tick_rate_hz;
 
 			auto workload_tick_fn = child.workload_descriptor->tick_fn;
 
@@ -214,7 +217,10 @@ namespace robotick
 	{
 		SyncedGroupWorkloadImpl* impl = nullptr;
 
-		SyncedGroupWorkload() : impl(new SyncedGroupWorkloadImpl()) {}
+		SyncedGroupWorkload()
+			: impl(new SyncedGroupWorkloadImpl())
+		{
+		}
 		~SyncedGroupWorkload()
 		{
 			stop();
