@@ -99,6 +99,8 @@ namespace robotick
 					field_desc.type_id = TypeId(GET_TYPE_ID(float));
 				else if (type_str == "double")
 					field_desc.type_id = TypeId(GET_TYPE_ID(double));
+				else if (type_str == "bool")
+					field_desc.type_id = TypeId(GET_TYPE_ID(bool));
 				else if (type_str == "fixedstring8")
 					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString8));
 				else if (type_str == "fixedstring16")
@@ -195,6 +197,8 @@ namespace robotick
 					py_cfg[key] = config.script.get<float>(key);
 				else if (type == GET_TYPE_ID(double))
 					py_cfg[key] = config.script.get<double>(key);
+				else if (type == GET_TYPE_ID(bool))
+					py_cfg[key] = config.script.get<bool>(key);
 				else if (type == GET_TYPE_ID(FixedString8))
 					py_cfg[key] = config.script.get<FixedString8>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString16))
@@ -278,6 +282,8 @@ namespace robotick
 					py_in[key] = inputs.script.get<float>(key);
 				else if (type == GET_TYPE_ID(double))
 					py_in[key] = inputs.script.get<double>(key);
+				else if (type == GET_TYPE_ID(bool))
+					py_in[key] = inputs.script.get<bool>(key);
 				else if (type == GET_TYPE_ID(FixedString8))
 					py_in[key] = inputs.script.get<FixedString8>(key).c_str();
 				else if (type == GET_TYPE_ID(FixedString16))
@@ -325,6 +331,8 @@ namespace robotick
 					outputs.script.set<float>(key, val.cast<float>());
 				else if (found_field->type_id == GET_TYPE_ID(double))
 					outputs.script.set<double>(key, val.cast<double>());
+				else if (found_field->type_id == GET_TYPE_ID(bool))
+					outputs.script.set<bool>(key, val.cast<bool>());
 				else if (found_field->type_id == GET_TYPE_ID(FixedString8))
 					outputs.script.set<FixedString8>(key, FixedString8(py::str(val).cast<std::string>().c_str()));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString16))
