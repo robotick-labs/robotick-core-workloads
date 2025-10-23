@@ -47,8 +47,8 @@ namespace robotick
 			float right = speed - turn * config.max_speed_differential;
 
 			// Clamp to [-1, 1]
-			left = std::max(-1.0f, std::min(1.0f, left));
-			right = std::max(-1.0f, std::min(1.0f, right));
+			left = max(-1.0f, min(1.0f, left));
+			right = max(-1.0f, min(1.0f, right));
 
 			left *= config.power_scale_both * config.power_scale_left;
 			right *= config.power_scale_both * config.power_scale_right;

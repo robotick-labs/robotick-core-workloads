@@ -76,7 +76,7 @@ namespace robotick
 			{
 				float mean_dt = internal_state.sum_dt / (float)internal_state.count;
 				float mean_dt2 = internal_state.sum_dt2 / (float)internal_state.count;
-				const float variance = std::max(0.0f, mean_dt2 - mean_dt * mean_dt);
+				const float variance = max(0.0f, mean_dt2 - mean_dt * mean_dt);
 				const float stddev = std::sqrt(variance);
 
 				outputs.avg_tick_rate = 1.0f / mean_dt;

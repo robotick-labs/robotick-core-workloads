@@ -58,7 +58,7 @@ namespace robotick
 		{
 			const float scale_x = static_cast<float>(physical_w) / logical_w;
 			const float scale_y = static_cast<float>(physical_h) / logical_h;
-			scale = std::min(scale_x, scale_y);
+			scale = min(scale_x, scale_y);
 
 			offset_x = (physical_w - static_cast<int>(logical_w * scale)) / 2;
 			offset_y = (physical_h - static_cast<int>(logical_h * scale)) / 2;
