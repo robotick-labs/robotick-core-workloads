@@ -139,7 +139,7 @@ namespace robotick
 			for (int i = 0; i < 2; ++i)
 			{
 				const int cx = 160 + (i == 0 ? -eye_spacing / 2 : eye_spacing / 2);
-				const float scale_y = (1.0f - 0.8f * blink[i]) * std::clamp(inputs.max_eyes_open_norm, 0.0f, 1.0f);
+				const float scale_y = (1.0f - 0.8f * blink[i]) * clamp(inputs.max_eyes_open_norm, 0.0f, 1.0f);
 				draw_eye(r, cx + look_offset_screen.x, center_y + look_offset_screen.y, eye_w, static_cast<int>(eye_h * scale_y));
 			}
 		}

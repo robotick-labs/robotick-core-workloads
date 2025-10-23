@@ -60,10 +60,10 @@ namespace robotick
 
 			// Create duty values
 			uint8_t duties[4] = {
-				static_cast<uint8_t>(std::clamp(inputs.motor1_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
-				static_cast<uint8_t>(std::clamp(inputs.motor2_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
-				static_cast<uint8_t>(std::clamp(inputs.motor3_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
-				static_cast<uint8_t>(std::clamp(inputs.motor4_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor1_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor2_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor3_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor4_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
 			};
 
 			constexpr uint32_t BASEX_I2C_FREQ = 400000;

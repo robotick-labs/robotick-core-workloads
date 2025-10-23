@@ -34,7 +34,7 @@ namespace robotick
 		QuatToEulerInputs inputs;
 		QuatToEulerOutputs outputs;
 
-		static inline int clamp_index(int index) { return std::clamp(index, 0, 2); }
+		static inline int clamp_index(int index) { return clamp(index, 0, 2); }
 
 		void tick(const TickInfo& info)
 		{
@@ -53,7 +53,7 @@ namespace robotick
 			const float roll = std::atan2(sinr_cosp, cosr_cosp);
 
 			float sinp = 2.0f * (w * y - z * x);
-			sinp = std::clamp(sinp, -1.0f, 1.0f); // Clamp to handle gimbal lock at pitch = ±90°
+			sinp = clamp(sinp, -1.0f, 1.0f); // Clamp to handle gimbal lock at pitch = ±90°
 			const float pitch = std::asin(sinp);
 
 			const float siny_cosp = 2.0f * (w * z + x * y);

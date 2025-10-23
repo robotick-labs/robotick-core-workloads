@@ -105,7 +105,7 @@ namespace robotick
 			else
 			{
 				const float settle = (beat_phase - (dub_start + dub_up + dub_down)) / (1.0f - (dub_start + dub_up + dub_down));
-				outputs.activation_amount = min_activation_lo + (min_activation_hi - min_activation_lo) * (1.0f - std::clamp(settle, 0.0f, 1.0f));
+				outputs.activation_amount = min_activation_lo + (min_activation_hi - min_activation_lo) * (1.0f - clamp(settle, 0.0f, 1.0f));
 			}
 		}
 
@@ -167,7 +167,7 @@ namespace robotick
 
 				const int r0 = BASE_RADIUS + BASE_OFFSET + index * (BAR_THICKNESS + BAR_SPACING);
 				const int r1 = r0 + BAR_THICKNESS;
-				const int fill_steps = static_cast<int>(std::round(std::clamp(b.frac, 0.0f, 1.0f) * ANGLE_STEPS));
+				const int fill_steps = static_cast<int>(std::round(clamp(b.frac, 0.0f, 1.0f) * ANGLE_STEPS));
 
 				float cos_table[ANGLE_STEPS + 1], sin_table[ANGLE_STEPS + 1];
 				for (int i = 0; i <= ANGLE_STEPS; ++i)
