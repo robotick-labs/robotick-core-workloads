@@ -3,6 +3,7 @@
 
 #include "robotick/api.h"
 #include "robotick/systems/AudioBuffer.h"
+#include "robotick/systems/AudioSystem.h"
 
 #include <cmath>
 #include <cstring>
@@ -18,7 +19,6 @@ namespace robotick
 	{
 		float frequency_hz = 440.0f;
 		float amplitude = 0.1f;
-		int samples_per_tick = 44; // ~44.1kHz @ 1000Hz tick
 	};
 
 	struct SineWaveGeneratorOutputs
@@ -26,26 +26,53 @@ namespace robotick
 		AudioBuffer64 samples;
 	};
 
+	struct SineWaveGeneratorState
+	{
+		int sample_rate = 0;
+		double samples_per_tick_exact = 0.0f;
+
+		double phase = 0.0;
+		double sample_accumulator = 0.0;
+	};
+
 	struct SineWaveGeneratorWorkload
 	{
 		SineWaveGeneratorOutputs outputs;
 		SineWaveGeneratorConfig config;
 
-		float phase = 0.0f;
+		State<SineWaveGeneratorState> state;
 
-		void setup() { outputs.samples.set_size(config.samples_per_tick); }
+		void load() { AudioSystem::init(); }
 
-		void tick(const TickInfo& info)
+		void start(float tick_rate_hz)
 		{
-			const float sample_rate = info.tick_rate_hz * config.samples_per_tick;
-			const float phase_step = 2.0f * 3.14159265f * config.frequency_hz / sample_rate;
+			state->sample_rate = AudioSystem::get_sample_rate();
+			state->samples_per_tick_exact = static_cast<double>(state->sample_rate) / tick_rate_hz;
+		}
 
-			for (int i = 0; i < outputs.samples.size(); ++i)
+		void tick(const TickInfo&)
+		{
+			// Accumulate fractional sample count based on exact samples-per-tick (e.g. 44.1)
+			state->sample_accumulator += state->samples_per_tick_exact;
+
+			// Emit integer number of samples this tick
+			// (usually 44, sometimes 45 - since due to rounding of sample-rate we sometimes need a "leap tick")
+			int emit_samples = static_cast<int>(state->sample_accumulator);
+			state->sample_accumulator -= emit_samples; // retain fractional remainder for next tick
+
+			// Resize output buffer to match number of samples this tick
+			outputs.samples.set_size(emit_samples);
+
+			// Compute phase increment per sample
+			const double phase_step = 2.0 * M_PI * config.frequency_hz / state->sample_rate;
+
+			// Generate sine wave samples
+			for (int i = 0; i < emit_samples; ++i)
 			{
-				outputs.samples[i] = config.amplitude * std::sin(phase);
-				phase += phase_step;
-				if (phase > 2.0f * 3.14159265f)
-					phase -= 2.0f * 3.14159265f;
+				outputs.samples[i] = static_cast<float>(config.amplitude * std::sin(state->phase));
+				state->phase += phase_step;
+				if (state->phase >= 2.0 * M_PI)
+					state->phase -= 2.0 * M_PI;
 			}
 		}
 	};
