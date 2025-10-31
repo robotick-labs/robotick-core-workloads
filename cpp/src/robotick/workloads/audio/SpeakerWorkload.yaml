@@ -1,0 +1,13 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/AudioBuffer.cpp
+
+    deps:
+      - name: SDL2
+        source:
+          type: apt
+          package: libsdl2-dev
+          pin: ">=2.0.14"
+        find_package: SDL2
+        link_target: SDL2::SDL2
