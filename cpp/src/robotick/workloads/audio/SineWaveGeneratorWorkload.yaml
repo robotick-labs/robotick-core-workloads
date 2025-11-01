@@ -1,8 +1,8 @@
 platforms:
   linux:
     files:
-      - robotick/systems/AudioBuffer.cpp
-      - robotick/systems/AudioSystem.cpp
+      - robotick/systems/audio/AudioBuffer.cpp
+      - robotick/systems/audio/AudioSystem.cpp
 
     deps:
       - name: SDL2

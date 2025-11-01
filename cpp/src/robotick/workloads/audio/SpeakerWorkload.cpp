@@ -3,8 +3,8 @@
 
 #include "robotick/api.h"
 
-#include "robotick/systems/AudioBuffer.h"
-#include "robotick/systems/AudioSystem.h"
+#include "robotick/systems/audio/AudioBuffer.h"
+#include "robotick/systems/audio/AudioSystem.h"
 
 #include <SDL2/SDL.h>
 #include <cmath>

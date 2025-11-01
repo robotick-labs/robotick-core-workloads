@@ -1,7 +1,7 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#include "robotick/systems/AudioSystem.h"
+#include "robotick/systems/audio/AudioSystem.h"
 
 #include <SDL2/SDL.h>
 #include <cstring>
