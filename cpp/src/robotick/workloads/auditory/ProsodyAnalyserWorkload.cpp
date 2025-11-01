@@ -22,8 +22,8 @@ namespace robotick
 	struct ProsodyAnalyserConfig
 	{
 		// Pitch search range (human speech)
-		float min_f0_hz = 80.0f;
-		float max_f0_hz = 400.0f;
+		float min_f0_hz = 60.0f;
+		float max_f0_hz = 1000.0f;
 
 		// Simple VAD threshold (RMS)
 		float vad_rms_threshold = 0.01f;
@@ -127,48 +127,109 @@ namespace robotick
 				state->hann[i] = 0.5f * (1.0f - std::cos(two_pi * (float)i / (float)(n - 1)));
 		}
 
-		// Simple autocorrelation pitch detection within [min_f0, max_f0]
+		// YIN with overlap-normalized difference and safe τ ceiling.
+		// Uses unwindowed samples; call with the raw mono frame.
 		float estimate_pitch_hz(const float* x, int n, int sample_rate)
 		{
-			if (n < 8)
+			if (!x || n < 32)
 				return 0.0f;
 
-			const int max_lag = std::max(1, (int)std::floor((float)sample_rate / config.min_f0_hz));
-			const int min_lag = std::max(1, (int)std::floor((float)sample_rate / config.max_f0_hz));
-			if (min_lag >= n)
+			// --- Bounds from config, with headroom and half-frame cap ---
+			const float maxF = std::max(config.max_f0_hz, 1.0f) * 1.10f; // 10% slack so 440 isn't clipped by 400
+			const float minF = std::max(config.min_f0_hz, 1.0f);
+
+			int min_lag = std::max(2, (int)std::floor((float)sample_rate / maxF)); // smallest τ (highest f)
+			int max_lag = std::max(3, (int)std::floor((float)sample_rate / minF)); // largest τ (lowest f)
+
+			// Critical: don't search beyond N/2 to avoid false minima at frame length.
+			const int max_tau = std::min({max_lag, n / 2, n - 3});
+			if (min_lag >= max_tau)
 				return 0.0f;
 
-			// Zero-mean normalize to reduce bias
-			double mean = 0.0;
-			for (int i = 0; i < n; ++i)
-				mean += x[i];
-			mean /= std::max(1, n);
-			std::vector<float> xx(n);
-			for (int i = 0; i < n; ++i)
-				xx[i] = (float)(x[i] - mean);
+			// Threshold for the first dip; 0.10–0.20 typical.
+			const float kThresh = 0.12f;
 
-			// Autocorrelation over limited lag range
-			float best_val = 0.0f;
-			int best_lag = 0;
+			// Work buffers
+			static std::vector<float> diff;	 // overlap-normalized difference
+			static std::vector<float> cmndf; // cumulative mean normalized difference
+			diff.assign(max_tau + 1, 0.0f);
+			cmndf.assign(max_tau + 1, 1.0f);
 
-			for (int lag = min_lag; lag <= std::min(max_lag, n - 1); ++lag)
+			// --- Overlap-normalized difference: d'(τ) = (1/(N-τ)) * Σ (x[i] - x[i+τ])^2
+			for (int tau = 1; tau <= max_tau; ++tau)
 			{
+				const int limit = n - tau;
 				double acc = 0.0;
-				int limit = n - lag;
 				for (int i = 0; i < limit; ++i)
-					acc += (double)xx[i] * (double)xx[i + lag];
-
-				float val = (float)acc;
-				if (val > best_val)
 				{
-					best_val = val;
-					best_lag = lag;
+					const float d = x[i] - x[i + tau];
+					acc += (double)d * (double)d;
+				}
+				diff[tau] = (float)(acc / (double)std::max(1, limit));
+			}
+			diff[0] = 0.0f;
+
+			// --- CMNDF
+			double running_sum = 0.0;
+			cmndf[0] = 1.0f;
+			for (int tau = 1; tau <= max_tau; ++tau)
+			{
+				running_sum += (double)diff[tau];
+				const double denom = running_sum / (double)tau + 1e-20;
+				cmndf[tau] = (float)((double)diff[tau] / denom);
+			}
+
+			// --- First dip below threshold (with local-min walk)
+			int tau_est = 0;
+			for (int tau = min_lag; tau <= max_tau; ++tau)
+			{
+				if (cmndf[tau] < kThresh)
+				{
+					int t = tau;
+					while (t + 1 <= max_tau && cmndf[t + 1] <= cmndf[t])
+						++t;
+					tau_est = t;
+					break;
 				}
 			}
 
-			if (best_lag <= 0)
+			// Fallback: global minimum in [min_lag, max_tau]
+			if (tau_est == 0)
+			{
+				float best = FLT_MAX;
+				for (int tau = min_lag; tau <= max_tau; ++tau)
+					if (cmndf[tau] < best)
+					{
+						best = cmndf[tau];
+						tau_est = tau;
+					}
+			}
+
+			// --- Parabolic refinement around τ (on CMNDF)
+			float tau_refined = (float)tau_est;
+			if (tau_est > 1 && tau_est < max_tau)
+			{
+				const float ym1 = cmndf[tau_est - 1];
+				const float y0 = cmndf[tau_est + 0];
+				const float yp1 = cmndf[tau_est + 1];
+				const float denom = (ym1 - 2.0f * y0 + yp1);
+				if (std::fabs(denom) > 1e-12f)
+				{
+					const float delta = 0.5f * (ym1 - yp1) / denom; // ∈ [-1,1]
+					tau_refined = (float)tau_est + std::clamp(delta, -1.0f, 1.0f);
+				}
+			}
+
+			if (tau_refined <= 0.0f)
 				return 0.0f;
-			return (float)sample_rate / (float)best_lag;
+
+			const float f0 = (float)sample_rate / tau_refined;
+
+			// Enforce final bounds with slack
+			if (f0 < minF * 0.8f || f0 > maxF * 1.25f)
+				return 0.0f;
+
+			return f0;
 		}
 
 		// -------------------------
@@ -226,7 +287,7 @@ namespace robotick
 
 			// --- Pitch (autocorrelation) + slope ---
 			{
-				const float f0 = outputs.prosody_state.voiced ? estimate_pitch_hz(frame.data(), (int)N, fs) : 0.0f;
+				const float f0 = outputs.prosody_state.voiced ? estimate_pitch_hz(x, (int)N, fs) : 0.0f;
 
 				if (state->prev_had_pitch && f0 > 0.0f)
 				{

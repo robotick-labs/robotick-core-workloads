@@ -105,7 +105,7 @@ namespace robotick
 			const auto& p = inputs.prosody_state;
 
 			// Loudness from RMS (already linear), then apply global dB gain:
-			const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			const float gain = inputs.prosody_state.voiced ? std::pow(10.0f, config.amplitude_gain_db / 20.0f) : 0.0f;
 			const float target_amp_lin = std::max(0.0f, p.rms) * gain; // keep overall loudness tied to RMS only
 
 			// Pick carrier frequency
@@ -136,7 +136,7 @@ namespace robotick
 
 			// --- energy-driven spectral shaping (does NOT change overall loudness) ---
 			// Use normalized spectral energy to decide how "tonal" vs "noisy" to sound.
-			const float energy_ratio = std::clamp(p.spectral_energy_ratio, 0.5f, 2.0f); // 1.0 = neutral
+			const float energy_ratio = std::clamp(p.spectral_energy_ratio, 0.0f, 2.0f); // 1.0 = neutral
 			// Bias: more spectral energy → more tone; less → more noise.
 			float tone_biased = base_tone * energy_ratio;
 			float noise_biased = base_noise * (2.0f - energy_ratio);
@@ -226,7 +226,7 @@ namespace robotick
 				float w = state->noise_uniform_pm1();
 				z1 = z1 + alpha * (w - z1);
 
-				const double s = (double)tone_mix * tone + (double)noise_mix * (double)z1;
+				const double s = (double)tone_mix * tone; // + (double)noise_mix * (double)z1;
 
 				outputs.mono[0] = (float)(amp * s);
 			}
