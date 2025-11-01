@@ -12,8 +12,8 @@ namespace robotick
 	{
 	  public:
 		bool load(const char* path);
-		int get_sample_rate() const { return sampleRate; }
-		size_t get_frame_count() const { return left_samples.size(); }
+		uint32_t get_sample_rate() const { return sample_rate; }
+		size_t get_frame_count() const { return frame_count; }
 		float get_duration_seconds() const;
 
 		const HeapVector<float>& get_left_samples() const { return left_samples; }
@@ -22,7 +22,8 @@ namespace robotick
 	  private:
 		HeapVector<float> left_samples;
 		HeapVector<float> right_samples;
-		int sampleRate = 44100;
+		uint32_t sample_rate = 44100;
+		size_t frame_count = 0;
 	};
 
 } // namespace robotick

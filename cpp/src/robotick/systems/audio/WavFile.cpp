@@ -50,7 +50,7 @@ namespace robotick
 		// Chunk scanning
 		bool have_fmt = false, have_data = false;
 		uint16_t audio_format = 0, num_channels = 0, bits_per_sample = 0;
-		uint32_t sample_rate = 0, data_size = 0;
+		uint32_t data_size = 0;
 		std::streampos data_pos;
 
 		while (f && (!have_fmt || !have_data))
@@ -99,12 +99,10 @@ namespace robotick
 
 		f.seekg(data_pos);
 		size_t bytes_per_sample = bits_per_sample / 8;
-		size_t frame_count = data_size / (num_channels * bytes_per_sample);
+		this->frame_count = data_size / (num_channels * bytes_per_sample);
 
 		left_samples.initialize(frame_count);
 		right_samples.initialize(frame_count);
-
-		sampleRate = static_cast<int>(sample_rate);
 
 		for (size_t i = 0; i < frame_count; ++i)
 		{
@@ -124,7 +122,7 @@ namespace robotick
 
 	float WavFile::get_duration_seconds() const
 	{
-		return sampleRate > 0 ? static_cast<float>(get_frame_count()) / sampleRate : 0.0f;
+		return sample_rate > 0 ? static_cast<float>(get_frame_count()) / sample_rate : 0.0f;
 	}
 
 } // namespace robotick

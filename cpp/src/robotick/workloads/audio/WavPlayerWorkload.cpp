@@ -18,6 +18,7 @@ namespace robotick
 		FixedString256 file_path; // Path to WAV file (16-bit PCM, stereo)
 
 		bool looping = false;
+		float loop_delay_sec = 0.0f;
 	};
 
 	struct WavPlayerOutputs
@@ -33,6 +34,8 @@ namespace robotick
 	{
 		WavFile wav_file;
 		size_t current_frame = 0;
+
+		float time_to_loop_sec = 0.0f;
 	};
 
 	struct WavPlayerWorkload
@@ -60,38 +63,47 @@ namespace robotick
 				wav_file.get_sample_rate());
 		}
 
-		void start(float tick_rate_hz)
-		{
-			// nothing needed yet
-		}
+		void start(float tick_rate_hz) { state->time_to_loop_sec = config.loop_delay_sec; }
 
-		void tick(const TickInfo& info)
+		void tick(const TickInfo& tick_info)
 		{
 			const WavFile& wav_file = state->wav_file;
 
-			int target_rate = wav_file.get_sample_rate();
-			int samples_per_tick = target_rate / static_cast<int>(info.tick_rate_hz);
+			const int frame_count = wav_file.get_frame_count();
+			const int target_rate = wav_file.get_sample_rate();
+			const int samples_per_tick = target_rate / static_cast<int>(tick_info.tick_rate_hz);
 
-			outputs.left.set_size(0);
-			outputs.right.set_size(0);
+			int remaining = frame_count - static_cast<int>(state->current_frame);
+			int emit_samples = std::min(samples_per_tick, remaining);
 
-			for (int i = 0; i < samples_per_tick; ++i)
+			if (emit_samples > 0)
 			{
-				if (state->current_frame >= wav_file.get_left_samples().size())
-				{
-					if (config.looping)
-					{
-						state->current_frame = 0;
-					}
-					else
-					{
-						break;
-					}
-				}
+				const float* left_ptr = &wav_file.get_left_samples()[state->current_frame];
+				const float* right_ptr = &wav_file.get_right_samples()[state->current_frame];
 
-				outputs.left.add(wav_file.get_left_samples()[state->current_frame]);
-				outputs.right.add(wav_file.get_right_samples()[state->current_frame]);
-				state->current_frame++;
+				outputs.left.set(left_ptr, emit_samples);
+				outputs.right.set(right_ptr, emit_samples);
+
+				state->current_frame += emit_samples;
+			}
+			else
+			{
+				outputs.left.set_size(0);
+				outputs.right.set_size(0);
+			}
+
+			// Loop if enabled and we're at the end
+			if (state->current_frame >= frame_count && config.looping)
+			{
+				if (state->time_to_loop_sec > 0.0f)
+				{
+					state->time_to_loop_sec -= tick_info.delta_time;
+				}
+				else
+				{
+					state->current_frame = 0;
+					state->time_to_loop_sec = config.loop_delay_sec;
+				}
 			}
 		}
 	};
