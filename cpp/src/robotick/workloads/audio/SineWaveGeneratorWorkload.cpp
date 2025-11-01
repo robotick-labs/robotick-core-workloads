@@ -23,7 +23,7 @@ namespace robotick
 
 	struct SineWaveGeneratorOutputs
 	{
-		AudioBuffer64 samples;
+		AudioBuffer512 samples;
 	};
 
 	struct SineWaveGeneratorState

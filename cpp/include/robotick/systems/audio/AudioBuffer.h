@@ -8,9 +8,9 @@
 namespace robotick
 {
 	/**
-	 * @brief AudioBuffer64 is a fixed-size audio sample buffer used for audio streaming workloads.
-	 * It holds up to 64 float samples (mono).
+	 * @brief AudioBuffer512 is a fixed-size audio sample buffer used for audio streaming workloads.
+	 * It holds up to 512 float samples (mono).
 	 */
-	using AudioBuffer64 = FixedVector<float, 64>;
+	using AudioBuffer512 = FixedVector<float, 512>;
 
 } // namespace robotick

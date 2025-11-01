@@ -14,8 +14,8 @@ namespace robotick
 {
 	struct SpeakerInputs
 	{
-		AudioBuffer64 left;
-		AudioBuffer64 right;
+		AudioBuffer512 left;
+		AudioBuffer512 right;
 	};
 
 	struct SpeakerWorkload

@@ -23,8 +23,8 @@ namespace robotick
 
 	struct WavPlayerOutputs
 	{
-		AudioBuffer64 left;
-		AudioBuffer64 right;
+		AudioBuffer512 left;
+		AudioBuffer512 right;
 
 		float total_duration_sec = 0.0f;
 		uint64_t total_frame_count = 0;
