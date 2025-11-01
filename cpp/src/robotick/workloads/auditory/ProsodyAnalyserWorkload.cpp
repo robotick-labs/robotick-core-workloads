@@ -257,7 +257,15 @@ namespace robotick
 
 			// --- Pitch ---
 			{
-				const float f0 = outputs.prosody_state.voiced ? estimate_pitch_hz(frame.data(), int(frame.size()), fs) : 0.0f;
+				const float flat = outputs.prosody_state.spectral_flatness;
+				const float zcr = outputs.prosody_state.zcr;
+				const float ratio = outputs.prosody_state.spectral_energy_ratio;
+
+				const bool tonality_good = (flat < 0.6f && zcr < 0.2f && ratio > 0.5f);
+				const bool allow_pitch = outputs.prosody_state.voiced && tonality_good;
+
+				const float f0 = allow_pitch ? estimate_pitch_hz(frame.data(), int(frame.size()), fs) : 0.0f;
+
 				if (state->prev_had_pitch && f0 > 0.0f)
 				{
 					float dp = f0 - state->prev_pitch_hz;
