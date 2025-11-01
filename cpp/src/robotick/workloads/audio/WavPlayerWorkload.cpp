@@ -17,6 +17,8 @@ namespace robotick
 	{
 		FixedString256 file_path; // Path to WAV file (16-bit PCM, stereo)
 
+		float amplitude_gain_db = 0.0f; // Linear gain multiplier = pow(10, amplitude_gain_db / 20)
+
 		bool looping = false;
 		float loop_delay_sec = 0.0f;
 	};
@@ -81,8 +83,23 @@ namespace robotick
 				const float* left_ptr = &wav_file.get_left_samples()[state->current_frame];
 				const float* right_ptr = &wav_file.get_right_samples()[state->current_frame];
 
-				outputs.left.set(left_ptr, emit_samples);
-				outputs.right.set(right_ptr, emit_samples);
+				const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+
+				if (gain == 1.0f)
+				{
+					outputs.left.set(left_ptr, emit_samples);
+					outputs.right.set(right_ptr, emit_samples);
+				}
+				else
+				{
+					outputs.left.set_size(emit_samples);
+					outputs.right.set_size(emit_samples);
+					for (int i = 0; i < emit_samples; ++i)
+					{
+						outputs.left[i] = gain * left_ptr[i];
+						outputs.right[i] = gain * right_ptr[i];
+					}
+				}
 
 				state->current_frame += emit_samples;
 			}

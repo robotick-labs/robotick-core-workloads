@@ -4,6 +4,7 @@
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioBuffer.h"
 #include "robotick/systems/audio/AudioSystem.h"
+#include "robotick/systems/auditory/ProsodyState.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -15,10 +16,10 @@
 namespace robotick
 {
 	// ==============================
-	// Prosidy (Prosody) Workload
+	// Prosody (Prosody) Workload
 	// ==============================
 
-	struct ProsidyConfig
+	struct ProsodyAnalyserConfig
 	{
 		// Pitch search range (human speech)
 		float min_f0_hz = 80.0f;
@@ -34,37 +35,18 @@ namespace robotick
 		bool use_hann_window = true;
 	};
 
-	struct ProsidyInputs
+	struct ProsodyAnalyserInputs
 	{
-		// Single-channel frame for analysis (e.g., 256 samples @ 44.1k)
+		// Single-channel frame for analysis (e.g., 256/512 samples @ 44.1k)
 		AudioBuffer512 mono;
 	};
 
-	struct ProsidyOutputs
+	struct ProsodyAnalyserOutputs
 	{
-		// --- Core, computed now ---
-		float rms = 0.0f;
-		float zcr = 0.0f;	   // zero-crossing rate (per-sample fraction)
-		float pitch_hz = 0.0f; // F0
-		float pitch_slope_hz_per_s = 0.0f;
-		bool voiced = false;
-
-		// Spectral (computed if KissFFT available; else 0)
-		float spectral_centroid_hz = 0.0f;
-		float spectral_bandwidth_hz = 0.0f;
-		float spectral_flatness = 0.0f;
-
-		// --- Declared for future completeness (currently stubbed to 0) ---
-		float speaking_rate_sps = 0.0f; // syllables per second (stub)
-		float jitter = 0.0f;			// cycle-to-cycle F0 variance (stub)
-		float shimmer = 0.0f;			// cycle-to-cycle amp variance (stub)
-		float harmonicity_hnr = 0.0f;	// harmonic-to-noise ratio (stub)
-		float formant_f1_hz = 0.0f;		// (stub)
-		float formant_f2_hz = 0.0f;		// (stub)
-		float formant_f3_hz = 0.0f;		// (stub)
+		ProsodyState prosody_state;
 	};
 
-	struct ProsidyState
+	struct ProsodyAnalyserState
 	{
 		float prev_pitch_hz = 0.0f;
 		bool prev_had_pitch = false;
@@ -78,28 +60,55 @@ namespace robotick
 		std::vector<float> fft_in;
 		std::vector<kiss_fft_cpx> fft_out; // N/2+1 complex bins
 
-		void ensure_fft(int n)
+		// Returns true when a valid plan is available for even n >= 16
+		bool ensure_fft(int n)
 		{
-			if (n == fft_n && fft_cfg != nullptr)
-				return;
+			// KissFFT real-FFT requires even n and a sensible minimum size
+			if (n < 16 || (n & 1))
+			{
+				if (fft_cfg)
+				{
+					kiss_fftr_free(fft_cfg);
+					fft_cfg = nullptr;
+				}
+				fft_n = 0;
+				fft_in.clear();
+				fft_out.clear();
+				return false;
+			}
+
+			if (n == fft_n && fft_cfg)
+				return true;
+
 			if (fft_cfg)
 			{
 				kiss_fftr_free(fft_cfg);
 				fft_cfg = nullptr;
 			}
-			fft_n = n;
+
 			fft_cfg = kiss_fftr_alloc(n, 0, nullptr, nullptr);
+			if (!fft_cfg)
+			{
+				fft_n = 0;
+				fft_in.clear();
+				fft_out.clear();
+				return false; // allocation failed (soft fail)
+			}
+
+			fft_n = n;
 			fft_in.resize(n);
 			fft_out.resize(n / 2 + 1);
+			return true;
 		}
 	};
 
-	struct ProsidyWorkload
+	struct ProsodyAnalyserWorkload
 	{
-		ProsidyInputs inputs;
-		ProsidyOutputs outputs;
-		ProsidyConfig config;
-		State<ProsidyState> state;
+		ProsodyAnalyserConfig config;
+		ProsodyAnalyserInputs inputs;
+		ProsodyAnalyserOutputs outputs;
+
+		State<ProsodyAnalyserState> state;
 
 		// -------------------------
 		// Helpers
@@ -176,7 +185,7 @@ namespace robotick
 			// Guard
 			if (N == 0 || x == nullptr)
 			{
-				outputs = ProsidyOutputs{}; // reset to zeros/stubs
+				outputs = ProsodyAnalyserOutputs{}; // reset to zeros/stubs
 				return;
 			}
 
@@ -201,7 +210,7 @@ namespace robotick
 				double sumsq = 0.0;
 				for (size_t i = 0; i < N; ++i)
 					sumsq += (double)frame[i] * (double)frame[i];
-				outputs.rms = (float)std::sqrt(sumsq / (double)N);
+				outputs.prosody_state.rms = (float)std::sqrt(sumsq / (double)N);
 			}
 
 			// --- ZCR ---
@@ -209,93 +218,111 @@ namespace robotick
 				int crossings = 0;
 				for (size_t i = 1; i < N; ++i)
 					crossings += (sgnf(frame[i]) != sgnf(frame[i - 1]));
-				outputs.zcr = (float)crossings / (float)(N - 1);
+				outputs.prosody_state.zcr = (float)crossings / (float)(N - 1);
 			}
 
 			// --- VAD (simple RMS threshold) ---
-			outputs.voiced = (outputs.rms >= config.vad_rms_threshold);
+			outputs.prosody_state.voiced = (outputs.prosody_state.rms >= config.vad_rms_threshold);
 
 			// --- Pitch (autocorrelation) + slope ---
 			{
-				const float f0 = outputs.voiced ? estimate_pitch_hz(frame.data(), (int)N, fs) : 0.0f;
+				const float f0 = outputs.prosody_state.voiced ? estimate_pitch_hz(frame.data(), (int)N, fs) : 0.0f;
 
 				if (state->prev_had_pitch && f0 > 0.0f)
 				{
 					const float dp = f0 - state->prev_pitch_hz;
-					outputs.pitch_slope_hz_per_s = dp / std::max(1e-6f, info.delta_time);
+					outputs.prosody_state.pitch_slope_hz_per_s = dp / std::max(1e-6f, info.delta_time);
 				}
 				else
 				{
-					outputs.pitch_slope_hz_per_s = 0.0f;
+					outputs.prosody_state.pitch_slope_hz_per_s = 0.0f;
 				}
 
-				outputs.pitch_hz = f0;
+				outputs.prosody_state.pitch_hz = f0;
 				state->prev_pitch_hz = f0;
 				state->prev_had_pitch = (f0 > 0.0f);
 			}
 
-			// --- Spectral features ---
-			if (N >= 8)
+			// --- Spectral features (safe, even-N only) ---
 			{
-				state->ensure_fft((int)N);
+				// Prefer analyzing up to the input capacity (e.g., ring/window size),
+				// but never exceed the current frame size.
+				const int targetWin = (int)inputs.mono.capacity(); // e.g., 512
+				int evenN = std::min((int)N, targetWin) & ~1;	   // force even length
 
-				// Copy frame to FFT input
-				for (int i = 0; i < (int)N; ++i)
-					state->fft_in[i] = frame[i];
-
-				kiss_fftr(state->fft_cfg, state->fft_in.data(), state->fft_out.data());
-
-				// Magnitudes for bins 0..N/2
-				const int K = (int)N / 2 + 1;
-				const float bin_hz = (float)fs / (float)N;
-
-				double sum_mag = 0.0;
-				double sum_f_mag = 0.0;
-				for (int k = 0; k < K; ++k)
+				if (evenN >= 16 && state->ensure_fft(evenN) && state->fft_cfg)
 				{
-					const float re = state->fft_out[k].r;
-					const float im = state->fft_out[k].i;
-					const double mag = std::sqrt((double)re * re + (double)im * im) + 1e-12;
-					sum_mag += mag;
-					sum_f_mag += (double)k * bin_hz * mag;
-				}
+					// Fill FFT input with the first evenN samples of 'frame'
+					for (int i = 0; i < evenN; ++i)
+						state->fft_in[i] = frame[i];
 
-				if (sum_mag > 0.0)
-				{
-					const double centroid = sum_f_mag / sum_mag;
-					outputs.spectral_centroid_hz = (float)centroid;
+					kiss_fftr(state->fft_cfg, state->fft_in.data(), state->fft_out.data());
 
-					// Bandwidth: sqrt( sum( (f - c)^2 * mag ) / sum(mag) )
-					double sum_bw = 0.0;
+					const int K = evenN / 2 + 1;
+					const float bin_hz = (float)fs / (float)evenN;
+
+					double sum_mag = 0.0;
+					double sum_f_mag = 0.0;
+
+					// First pass: centroid
 					for (int k = 0; k < K; ++k)
 					{
 						const float re = state->fft_out[k].r;
 						const float im = state->fft_out[k].i;
 						const double mag = std::sqrt((double)re * re + (double)im * im) + 1e-12;
-						const double fk = (double)k * bin_hz;
-						const double d = fk - centroid;
-						sum_bw += d * d * mag;
+						sum_mag += mag;
+						sum_f_mag += (double)k * bin_hz * mag;
 					}
-					outputs.spectral_bandwidth_hz = (float)std::sqrt(sum_bw / sum_mag);
 
-					// Flatness: exp(mean(log(mag))) / mean(mag)
-					double sum_log = 0.0;
-					for (int k = 0; k < K; ++k)
+					if (sum_mag > 0.0)
 					{
-						const float re = state->fft_out[k].r;
-						const float im = state->fft_out[k].i;
-						const double mag = std::sqrt((double)re * re + (double)im * im) + 1e-12;
-						sum_log += std::log(mag);
+						const double centroid = sum_f_mag / sum_mag;
+						outputs.prosody_state.spectral_centroid_hz = (float)centroid;
+
+						// Second pass: bandwidth + flatness + energy
+						double sum_bw = 0.0;
+						double sum_log = 0.0;
+						double energy_sum = 0.0;
+
+						for (int k = 0; k < K; ++k)
+						{
+							const float re = state->fft_out[k].r;
+							const float im = state->fft_out[k].i;
+							const double mag = std::sqrt((double)re * re + (double)im * im) + 1e-12;
+							const double fk = (double)k * bin_hz;
+							const double d = fk - centroid;
+
+							sum_bw += d * d * mag;
+							sum_log += std::log(mag);
+							energy_sum += re * re + im * im;
+						}
+
+						const double gm = std::exp(sum_log / (double)K);
+						const double am = (sum_mag / (double)K);
+
+						outputs.prosody_state.spectral_bandwidth_hz = (float)std::sqrt(sum_bw / sum_mag);
+						outputs.prosody_state.spectral_flatness = (float)(gm / (am + 1e-12));
+
+						// New: spectral energy and ratio
+						const float spectral_rms = (float)std::sqrt(energy_sum / (double)K);
+						outputs.prosody_state.spectral_energy_rms = spectral_rms;
+						outputs.prosody_state.spectral_energy_ratio = spectral_rms / (outputs.prosody_state.rms + 1e-6f);
 					}
-					const double gm = std::exp(sum_log / (double)K);
-					const double am = (sum_mag / (double)K);
-					outputs.spectral_flatness = (float)(gm / (am + 1e-12));
+					else
+					{
+						outputs.prosody_state.spectral_centroid_hz = 0.0f;
+						outputs.prosody_state.spectral_bandwidth_hz = 0.0f;
+						outputs.prosody_state.spectral_flatness = 0.0f;
+						outputs.prosody_state.spectral_energy_rms = 0.0f;
+						outputs.prosody_state.spectral_energy_ratio = 0.0f;
+					}
 				}
 				else
 				{
-					outputs.spectral_centroid_hz = 0.0f;
-					outputs.spectral_bandwidth_hz = 0.0f;
-					outputs.spectral_flatness = 0.0f;
+					// Preconditions not met (odd/too-small N) or plan alloc failed -> soft zero
+					outputs.prosody_state.spectral_centroid_hz = 0.0f;
+					outputs.prosody_state.spectral_bandwidth_hz = 0.0f;
+					outputs.prosody_state.spectral_flatness = 0.0f;
 				}
 			}
 

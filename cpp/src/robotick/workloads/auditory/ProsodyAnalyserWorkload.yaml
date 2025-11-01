@@ -3,6 +3,7 @@ platforms:
     files:
       - robotick/systems/audio/AudioBuffer.cpp
       - robotick/systems/audio/AudioSystem.cpp
+      - robotick/systems/auditory/ProsodyState.cpp
 
     deps:
       - name: SDL2

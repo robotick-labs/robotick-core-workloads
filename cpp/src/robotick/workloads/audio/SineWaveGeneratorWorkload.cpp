@@ -5,6 +5,7 @@
 #include "robotick/systems/audio/AudioBuffer.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -15,65 +16,125 @@ namespace robotick
 	// === SineWaveGeneratorWorkload ========================
 	// ======================================================
 
+	struct SineWaveGeneratorConfig
+	{
+		float amplitude_gain_db = 0.0f; // Linear gain multiplier = pow(10, amplitude_gain_db / 20)
+	};
+
 	struct SineWaveGeneratorInputs
 	{
-		float frequency_hz = 440.0f;
-		float amplitude = 0.1f;
+		float frequency_hz = 440.0f; // can change every tick
+		float amplitude = 0.1f;		 // can change every tick
 	};
 
 	struct SineWaveGeneratorOutputs
 	{
-		AudioBuffer512 samples;
+		AudioBuffer512 mono; // emit-size varies per tick (leap-tick aware)
 	};
 
 	struct SineWaveGeneratorState
 	{
-		int sample_rate = 0;
-		double samples_per_tick_exact = 0.0f;
+		int sample_rate = 44100;
 
-		double phase = 0.0;
+		// Fractional “leap-tick” accumulator (handles non-integer samples/tick)
 		double sample_accumulator = 0.0;
+
+		// Continuous oscillator phase (radians)
+		double phase = 0.0;
+
+		// Previous controls (for per-block linear ramp)
+		float prev_frequency_hz = 440.0f;
+		float prev_amplitude = 0.1f;
 	};
 
 	struct SineWaveGeneratorWorkload
 	{
+		SineWaveGeneratorConfig config;
 		SineWaveGeneratorInputs inputs;
 		SineWaveGeneratorOutputs outputs;
-
 		State<SineWaveGeneratorState> state;
 
 		void load() { AudioSystem::init(); }
 
-		void start(float tick_rate_hz)
+		void start(float /*tick_rate_hz*/)
 		{
 			state->sample_rate = AudioSystem::get_sample_rate();
-			state->samples_per_tick_exact = static_cast<double>(state->sample_rate) / tick_rate_hz;
+			// Leave sample_accumulator, phase, and prev_ controls as-is (cold start defaults above)
 		}
 
-		void tick(const TickInfo&)
+		void tick(const TickInfo& tick_info)
 		{
-			// Accumulate fractional sample count based on exact samples-per-tick (e.g. 44.1)
-			state->sample_accumulator += state->samples_per_tick_exact;
+			const int fs = state->sample_rate;
+			const double nyquist = 0.5 * fs;
+			const double two_pi = 6.28318530717958647692;
 
-			// Emit integer number of samples this tick
-			// (usually 44, sometimes 45 - since due to rounding of sample-rate we sometimes need a "leap tick")
-			const int emit_samples = static_cast<int>(state->sample_accumulator);
-			state->sample_accumulator -= emit_samples; // retain fractional remainder for next tick
+			// Clamp inputs safely (no throws)
+			const float target_amp = max(0.0f, inputs.amplitude);
+			const float target_freq = clamp(inputs.frequency_hz, 0.0f, (float)(nyquist - 1.0));
 
-			// Resize output buffer to match number of samples this tick
-			outputs.samples.set_size(emit_samples);
+			// Apply global gain factor from config
+			const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			const float scaled_a0 = state->prev_amplitude * gain;
+			const float scaled_a1 = target_amp * gain;
 
-			// Compute phase increment per sample
-			const double phase_step = 2.0 * M_PI * inputs.frequency_hz / state->sample_rate;
+			// Always update prev values, even on silent ticks
+			const float f0 = state->prev_frequency_hz;
+			const float f1 = target_freq;
+			state->prev_amplitude = target_amp;
+			state->prev_frequency_hz = target_freq;
 
-			// Generate sine wave samples
-			for (int i = 0; i < emit_samples; ++i)
+			// Early out if silent
+			if (scaled_a1 <= 0.0f || f1 <= 0.0f)
 			{
-				outputs.samples[i] = static_cast<float>(inputs.amplitude * std::sin(state->phase));
-				state->phase += phase_step;
-				if (state->phase >= 2.0 * M_PI)
-					state->phase -= 2.0 * M_PI;
+				outputs.mono.clear();
+				return;
 			}
+
+			// Sample count this tick (leap-tick aware)
+			const double exact_samples_this_tick = (double)fs * (double)tick_info.delta_time;
+			state->sample_accumulator += exact_samples_this_tick;
+			int emit_samples = (int)state->sample_accumulator;
+			state->sample_accumulator -= emit_samples;
+
+			if (emit_samples <= 0)
+			{
+				outputs.mono.set_size(0);
+				return;
+			}
+
+			emit_samples = min(emit_samples, (int)outputs.mono.capacity());
+			outputs.mono.set_size(emit_samples);
+
+			double phase = state->phase;
+
+			if (emit_samples == 1)
+			{
+				const double step = two_pi * (double)f1 / (double)fs;
+				outputs.mono[0] = (float)(scaled_a1 * std::sin(phase));
+				phase += step;
+				if (phase >= two_pi)
+					phase -= two_pi;
+			}
+			else
+			{
+				for (int i = 0; i < emit_samples; ++i)
+				{
+					const double t = (double)i / (double)(emit_samples - 1);
+					const double amp = (double)scaled_a0 + (double)(scaled_a1 - scaled_a0) * t;
+					const double freq = (double)f0 + (double)(f1 - f0) * t;
+					const double step = two_pi * freq / (double)fs;
+
+					outputs.mono[i] = (float)(amp * std::sin(phase));
+					phase += step;
+
+					if (phase >= two_pi)
+						phase -= two_pi;
+					else if (phase < 0.0)
+						phase += two_pi;
+				}
+			}
+
+			state->phase = phase;
 		}
 	};
 
