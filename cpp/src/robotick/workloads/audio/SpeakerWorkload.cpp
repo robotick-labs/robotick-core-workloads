@@ -3,7 +3,7 @@
 
 #include "robotick/api.h"
 
-#include "robotick/systems/audio/AudioBuffer.h"
+#include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <SDL2/SDL.h>
@@ -14,8 +14,8 @@ namespace robotick
 {
 	struct SpeakerInputs
 	{
-		AudioBuffer512 left;
-		AudioBuffer512 right;
+		AudioFrame left;
+		AudioFrame right;
 	};
 
 	struct SpeakerWorkload
@@ -26,24 +26,27 @@ namespace robotick
 
 		void tick(const TickInfo&)
 		{
-			const bool hasL = inputs.left.size() > 0;
-			const bool hasR = inputs.right.size() > 0;
-			if (!hasL && !hasR)
-				return;
-
-			const size_t frames =
-				hasL && hasR ? std::min(inputs.left.size(), inputs.right.size()) : (hasL ? inputs.left.size() : inputs.right.size());
-
-			std::vector<float> interleaved(frames * 2);
-			for (size_t i = 0; i < frames; ++i)
+			const bool hasL = inputs.left.samples.size() > 0;
+			const bool hasR = inputs.right.samples.size() > 0;
+			if (hasL && hasR)
 			{
-				const float l = hasL ? inputs.left[i] : 0.0f;
-				const float r = hasR ? inputs.right[i] : 0.0f;
-				interleaved[2 * i + 0] = l;
-				interleaved[2 * i + 1] = r;
-			}
+				ROBOTICK_ASSERT(inputs.left.samples.size() == inputs.right.samples.size());
 
-			AudioSystem::write_interleaved_stereo(interleaved.data(), frames);
+				ROBOTICK_ASSERT(inputs.left.sample_rate == inputs.right.sample_rate);
+				ROBOTICK_ASSERT(inputs.left.sample_rate == AudioSystem::get_sample_rate());
+
+				AudioSystem::write_stereo(inputs.left.samples.data(), inputs.right.samples.data(), inputs.left.samples.size());
+			}
+			else if (hasL)
+			{
+				ROBOTICK_ASSERT(inputs.left.sample_rate == AudioSystem::get_sample_rate());
+				AudioSystem::write_mono_to_channel(0, inputs.left.samples.data(), inputs.left.samples.size());
+			}
+			else if (hasR)
+			{
+				ROBOTICK_ASSERT(inputs.right.sample_rate == AudioSystem::get_sample_rate());
+				AudioSystem::write_mono_to_channel(1, inputs.right.samples.data(), inputs.right.samples.size());
+			}
 		}
 	};
 

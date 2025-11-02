@@ -1,7 +1,7 @@
 platforms:
   linux:
     files:
-      - robotick/systems/audio/AudioBuffer.cpp
+      - robotick/systems/audio/AudioFrame.cpp
       - robotick/systems/audio/AudioSystem.cpp
       - robotick/systems/audio/WavFile.cpp
 

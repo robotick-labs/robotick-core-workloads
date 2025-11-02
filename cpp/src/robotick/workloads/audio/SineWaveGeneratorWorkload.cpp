@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-#include "robotick/systems/audio/AudioBuffer.h"
+#include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <algorithm>
@@ -29,13 +29,11 @@ namespace robotick
 
 	struct SineWaveGeneratorOutputs
 	{
-		AudioBuffer512 mono; // emit-size varies per tick (leap-tick aware)
+		AudioFrame mono; // emit-size varies per tick (leap-tick aware)
 	};
 
 	struct SineWaveGeneratorState
 	{
-		int sample_rate = 44100;
-
 		// Fractional “leap-tick” accumulator (handles non-integer samples/tick)
 		double sample_accumulator = 0.0;
 
@@ -56,15 +54,11 @@ namespace robotick
 
 		void load() { AudioSystem::init(); }
 
-		void start(float /*tick_rate_hz*/)
-		{
-			state->sample_rate = AudioSystem::get_sample_rate();
-			// Leave sample_accumulator, phase, and prev_ controls as-is (cold start defaults above)
-		}
+		void start(float /*tick_rate_hz*/) { outputs.mono.sample_rate = AudioSystem::get_sample_rate(); }
 
 		void tick(const TickInfo& tick_info)
 		{
-			const int fs = state->sample_rate;
+			const int fs = outputs.mono.sample_rate;
 			const double nyquist = 0.5 * fs;
 			const double two_pi = 6.28318530717958647692;
 
@@ -86,7 +80,7 @@ namespace robotick
 			// Early out if silent
 			if (scaled_a1 <= 0.0f || f1 <= 0.0f)
 			{
-				outputs.mono.clear();
+				outputs.mono.samples.clear();
 				return;
 			}
 
@@ -98,19 +92,19 @@ namespace robotick
 
 			if (emit_samples <= 0)
 			{
-				outputs.mono.set_size(0);
+				outputs.mono.samples.clear();
 				return;
 			}
 
-			emit_samples = min(emit_samples, (int)outputs.mono.capacity());
-			outputs.mono.set_size(emit_samples);
+			emit_samples = min(emit_samples, (int)outputs.mono.samples.capacity());
+			outputs.mono.samples.set_size(emit_samples);
 
 			double phase = state->phase;
 
 			if (emit_samples == 1)
 			{
 				const double step = two_pi * (double)f1 / (double)fs;
-				outputs.mono[0] = (float)(scaled_a1 * std::sin(phase));
+				outputs.mono.samples[0] = (float)(scaled_a1 * std::sin(phase));
 				phase += step;
 				if (phase >= two_pi)
 					phase -= two_pi;
@@ -124,7 +118,7 @@ namespace robotick
 					const double freq = (double)f0 + (double)(f1 - f0) * t;
 					const double step = two_pi * freq / (double)fs;
 
-					outputs.mono[i] = (float)(amp * std::sin(phase));
+					outputs.mono.samples[i] = (float)(amp * std::sin(phase));
 					phase += step;
 
 					if (phase >= two_pi)

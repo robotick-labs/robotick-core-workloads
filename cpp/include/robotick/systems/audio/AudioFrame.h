@@ -13,4 +13,11 @@ namespace robotick
 	 */
 	using AudioBuffer512 = FixedVector<float, 512>;
 
+	struct AudioFrame
+	{
+		AudioBuffer512 samples;
+		double timestamp = 0.0;
+		uint32_t sample_rate = 44100;
+	};
+
 } // namespace robotick

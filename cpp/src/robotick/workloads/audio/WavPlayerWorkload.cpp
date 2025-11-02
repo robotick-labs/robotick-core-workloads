@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-#include "robotick/systems/audio/AudioBuffer.h"
+#include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/audio/WavFile.h"
 
@@ -25,8 +25,8 @@ namespace robotick
 
 	struct WavPlayerOutputs
 	{
-		AudioBuffer512 left;
-		AudioBuffer512 right;
+		AudioFrame left;
+		AudioFrame right;
 
 		float total_duration_sec = 0.0f;
 		uint64_t total_frame_count = 0;
@@ -54,6 +54,9 @@ namespace robotick
 
 			if (!wav_file.load(config.file_path.c_str()))
 				ROBOTICK_FATAL_EXIT("Failed to open WAV file: %s", config.file_path.c_str());
+
+			outputs.left.sample_rate = AudioSystem::get_sample_rate();
+			outputs.right.sample_rate = outputs.left.sample_rate;
 
 			outputs.total_duration_sec = wav_file.get_duration_seconds();
 			outputs.total_frame_count = wav_file.get_frame_count();
@@ -87,17 +90,17 @@ namespace robotick
 
 				if (gain == 1.0f)
 				{
-					outputs.left.set(left_ptr, emit_samples);
-					outputs.right.set(right_ptr, emit_samples);
+					outputs.left.samples.set(left_ptr, emit_samples);
+					outputs.right.samples.set(right_ptr, emit_samples);
 				}
 				else
 				{
-					outputs.left.set_size(emit_samples);
-					outputs.right.set_size(emit_samples);
+					outputs.left.samples.set_size(emit_samples);
+					outputs.right.samples.set_size(emit_samples);
 					for (int i = 0; i < emit_samples; ++i)
 					{
-						outputs.left[i] = gain * left_ptr[i];
-						outputs.right[i] = gain * right_ptr[i];
+						outputs.left.samples[i] = gain * left_ptr[i];
+						outputs.right.samples[i] = gain * right_ptr[i];
 					}
 				}
 
@@ -105,8 +108,8 @@ namespace robotick
 			}
 			else
 			{
-				outputs.left.set_size(0);
-				outputs.right.set_size(0);
+				outputs.left.samples.clear();
+				outputs.right.samples.clear();
 			}
 
 			// Loop if enabled and we're at the end

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "robotick/api.h"
-#include "robotick/systems/audio/AudioBuffer.h"
+#include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/ProsodyState.h"
 
@@ -67,7 +67,7 @@ namespace robotick
 
 	struct ProsodyWaveGeneratorOutputs
 	{
-		AudioBuffer512 mono;
+		AudioFrame mono;
 	};
 
 	struct ProsodyWaveGeneratorState
