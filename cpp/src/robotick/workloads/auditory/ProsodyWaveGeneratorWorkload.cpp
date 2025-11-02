@@ -76,11 +76,12 @@ namespace robotick
 
 		double sample_accum = 0.0;
 
+		double last_step_fund = 0.0;
+
 		double phase[MaxOsc] = {0.0};
 		float noise_z1 = 0.0f;
 
 		float prev_amp_linear = 0.0f;
-		float smoothed_pitch_hz = 0.0f;
 
 		float tone_gain_z = 0.0f;
 		float part_gain_z = 0.0f;
@@ -107,13 +108,49 @@ namespace robotick
 
 		static inline float clamp01(float v) { return v < 0 ? 0.f : (v > 1 ? 1.f : v); }
 
+		int emit_smooth_zero(AudioFrame& out, ProsodyWaveGeneratorState& s, int max_tail_samples)
+		{
+			const int cap = static_cast<int>(out.samples.capacity());
+			if (cap <= 0)
+				return 0;
+
+			// Always fill the entire buffer
+			out.samples.set_size(cap);
+
+			// Estimate the instantaneous amplitude and slope of the current tone
+			const double v0 = std::sin(s.phase[0]) * (double)s.tone_gain_z * (double)s.prev_amp_linear;
+			const double g = std::cos(s.phase[0]) * s.last_step_fund * (double)s.tone_gain_z * (double)s.prev_amp_linear;
+
+			// Predict zero-cross length (guard against divide-by-zero)
+			int N = 0;
+			if (std::fabs(g) > 1e-9)
+				N = static_cast<int>(std::ceil(std::fabs(v0 / g)));
+
+			N = std::clamp(N, 4, std::min(max_tail_samples, cap));
+
+			// --- First part: smooth ramp to zero ---
+			double val = v0;
+			for (int i = 0; i < N; ++i)
+			{
+				out.samples[i] = static_cast<float>(val);
+				val -= g; // linear continuation to zero
+			}
+
+			// --- Remaining samples: silence ---
+			for (int i = N; i < cap; ++i)
+				out.samples[i] = 0.0f;
+
+			// Reset amplitude tracking
+			s.prev_amp_linear = 0.0f;
+			return cap;
+		}
+
 		void load()
 		{
 			AudioSystem::init();
 			std::fill(std::begin(state->phase), std::end(state->phase), 0.0);
 			state->noise_z1 = 0.0f;
 			state->prev_amp_linear = 0.0f;
-			state->smoothed_pitch_hz = 0.0f;
 			state->tone_gain_z = state->part_gain_z = state->noise_gain_z = 0.0f;
 			state->sample_accum = 0.0;
 		}
@@ -126,20 +163,17 @@ namespace robotick
 			outputs.mono.timestamp = ns_to_sec * (double)tick_info.time_now_ns;
 
 			const auto& p = inputs.prosody_state;
+
+			if (config.use_voiced_gate && !p.voiced)
+			{
+				emit_smooth_zero(outputs.mono, state.get(), 64); // short tail to zero (click-free)
+				return;
+			}
+
 			const int fs = outputs.mono.sample_rate;
 			const double nyq = 0.5 * (double)fs;
 			const double guard = 0.98 * nyq;
 			const double two_pi = 6.28318530717958647692;
-
-			// Gate: if requested, output nothing when not voiced
-			if (config.use_voiced_gate && !p.voiced)
-			{
-				outputs.mono.samples.clear();
-				state->prev_amp_linear = 0.0f;
-				// Also reset smoothed pitch to avoid carry-over
-				state->smoothed_pitch_hz = 0.0f;
-				return;
-			}
 
 			// Global amplitude
 			float lin_gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
@@ -151,21 +185,12 @@ namespace robotick
 			if (config.use_pitch_hz && p.pitch_hz > 0.0f)
 				f0_measured = p.pitch_hz;
 
-			// Smooth pitch only when we have a valid measurement; else drop to 0
-			if (f0_measured > 0.0f)
-			{
-				const float a = clamp01(config.pitch_smooth_alpha);
-				if (state->smoothed_pitch_hz <= 0.0f)
-					state->smoothed_pitch_hz = f0_measured;
-				state->smoothed_pitch_hz = (1.0f - a) * state->smoothed_pitch_hz + a * f0_measured;
-			}
-			else
-			{
-				state->smoothed_pitch_hz = 0.0f;
-			}
-
-			const double f0 = (double)state->smoothed_pitch_hz;
+			const double f0 = f0_measured;
 			const double step_fund = (f0 > 0.0) ? (two_pi * std::min(f0, guard) / (double)fs) : 0.0;
+			if (step_fund > 0.0)
+			{
+				state->last_step_fund = step_fund;
+			}
 
 			// Prosody helpers
 			auto sane = [](float v, float def)
@@ -228,8 +253,7 @@ namespace robotick
 
 			if (count <= 0)
 			{
-				outputs.mono.samples.clear();
-				state->prev_amp_linear = lin_gain;
+				emit_smooth_zero(outputs.mono, state.get(), 16); // short tail to zero (click-free)
 				return;
 			}
 
@@ -274,7 +298,7 @@ namespace robotick
 
 						// If analyser supplied absolute frequencies, use them;
 						// else, we require f0>0 (already checked) and assume (h+2)*f0
-						const double hf = use_abs_freq ? (double)p.partial_freq_hz[h] : (double)state->smoothed_pitch_hz * (double)(h + 2);
+						const double hf = use_abs_freq ? (double)p.partial_freq_hz[h] : (double)f0_measured * (double)(h + 2);
 						if (hf <= 0.0 || hf >= guard)
 							continue;
 

@@ -80,7 +80,7 @@ namespace robotick
 			// Early out if silent
 			if (scaled_a1 <= 0.0f || f1 <= 0.0f)
 			{
-				outputs.mono.samples.clear();
+				outputs.mono.samples.fill(0.0f);
 				return;
 			}
 
@@ -92,7 +92,7 @@ namespace robotick
 
 			if (emit_samples <= 0)
 			{
-				outputs.mono.samples.clear();
+				outputs.mono.samples.fill(0.0f);
 				return;
 			}
 

@@ -112,8 +112,8 @@ namespace robotick
 			}
 			else
 			{
-				outputs.left.samples.clear();
-				outputs.right.samples.clear();
+				outputs.left.samples.fill(0.0f);
+				outputs.right.samples.fill(0.0f);
 			}
 
 			// Loop if enabled and we're at the end
