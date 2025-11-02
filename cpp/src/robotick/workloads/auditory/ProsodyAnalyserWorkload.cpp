@@ -19,36 +19,39 @@
 namespace robotick
 {
 	// ======================================================
-	// ProsodyAnalyserWorkload
-	// - Fixed-size FFT (N=512) via kissfftr
-	// - Heap-free, real-time safe
-	// - Fills ProsodyState including partials & HNR(dB)
-	// - Pitch via CMNDf (YIN) + One-Euro smoothing
+	// ProsodyAnalyserWorkload (consistency-gated pitch, latched with grace)
+	// - YIN/CMNDf pitch
+	// - Stability window in cents (stddev + drift) with 1-outlier trimming
+	// - Latching + off-grace to prevent crackly on/off
+	// - Partials relative to fundamental; HNR from absolute peaks
+	// - Heap-free, fixed footprint
 	// ======================================================
 
 	struct ProsodyAnalyserConfig
 	{
 		// === Frame / FFT ===
-		int fft_size = 512; // power-of-two; 256..1024 practical here
+		int fft_size = 512; // power-of-two; up to 512 here
 		bool use_hann_window = true;
 
 		// === Pitch search (CMNDf/YIN) ===
 		float min_f0_hz = 60.0f;
 		float max_f0_hz = 2500.0f;
-		float yin_threshold = 0.12f;   // absolute threshold (classic YIN)
-		float pitch_conf_gate = 0.45f; // if confidence < gate → hold last (0..1)
+		float yin_threshold = 0.12f; // absolute threshold (classic YIN)
 
-		// === One-Euro smoothing for pitch ===
-		// cutoff = min_cutoff + beta * |dx_hat|
-		float one_euro_min_cutoff_hz = 4.0f; // base smoothing cutoff (Hz)
-		float one_euro_beta = 0.1f;			 // speed coefficient
-		float one_euro_dcutoff_hz = 4.0f;	 // derivative LPF cutoff (Hz)
+		// === Consistency Gate (no smoothing; require stability over a window) ===
+		int cg_window_ms = 200;					 // lookback window size
+		int cg_min_locked_ms = 50;				 // must be consistently voiced ≥ this long to lock
+		int cg_off_grace_ms = 180;				 // keep output during brief instability (prevents crackle)
+		float cg_min_confidence = 0.25f;		 // min CMNDf confidence to accept a sample
+		float cg_max_spread_cents = 50.0f;		 // stddev in cents across window (after trimming)
+		float cg_max_end_to_end_cents = 140.0f;	 // total drift allowed across window
+		bool cg_gate_voiced_if_unstable = false; // avoid slamming voiced=false during brief breaks
 
 		// === VAD / gate ===
-		float vad_rms_threshold = 0.006f; // scale to your input (post-AGC)
+		float vad_rms_threshold = 0.006f; // scale to input (post-AGC)
 
 		// === Partials ===
-		int peak_search_half_width_bins = 1; // ±bins around integer multiple
+		int peak_search_half_width_bins = 1; // ±bins round harmonic
 		float partial_min_gain = 0.0f;		 // linear magnitude threshold
 		uint8_t max_num_partials = Prosody::MaxPartials;
 
@@ -66,8 +69,7 @@ namespace robotick
 
 	struct ProsodyAnalyserInputs
 	{
-		// Provide a mono frame each tick (0..N samples; analyser consumes available)
-		AudioBuffer512 mono;
+		AudioBuffer512 mono; // provide a mono frame (0..N samples)
 	};
 
 	struct ProsodyAnalyserOutputs
@@ -80,7 +82,7 @@ namespace robotick
 		// runtime
 		int sample_rate = 44100;
 
-		// FFT setup
+		// FFT setup (max footprint fixed)
 		static constexpr int MaxN = 512; // keep in sync with default
 		int N = 512;					 // actual size chosen from config
 		int K = (MaxN / 2) + 1;			 // real FFT output length (for MaxN)
@@ -91,22 +93,29 @@ namespace robotick
 		float window[MaxN] = {0.0f};
 		kiss_fft_cpx freq_out[(MaxN / 2) + 1] = {}; // K bins
 
-		// YIN/CMNDf buffers (heap-free)
-		float diff[MaxN + 1] = {0.0f};
-		float cmndf[MaxN + 1] = {1.0f};
-
 		// Rolling helpers
 		float last_sample = 0.0f;			// for pre-emphasis
 		float speaking_rate_tracker = 0.0f; // crude envelope tracker
 
-		// One-Euro filter state for pitch
-		bool pitch_initialized = false;
-		float f0_raw_prev = 0.0f;
-		float f0_smooth = 0.0f;
-		float dx_smooth = 0.0f;
+		// === Consistency-gate ring buffer (fixed-size) ===
+		static constexpr int CG_MaxObs = 256;
+		int cg_head = 0;				// next write index
+		int cg_size = 0;				// number of valid samples
+		float cg_f0[CG_MaxObs] = {0};	// Hz (0 if no estimate)
+		float cg_conf[CG_MaxObs] = {0}; // 0..1 (CMNDf confidence)
+		float cg_rms[CG_MaxObs] = {0};	// block RMS
+		float cg_dt[CG_MaxObs] = {0};	// seconds
+
+		// Latch state to avoid crackle
+		bool cg_locked = false;
+		float cg_hold_f0_hz = 0.0f;		 // robust f0 to hold during short instability
+		float cg_unstable_time_s = 0.0f; // time spent unstable (for grace)
 
 		// Utility
 		inline static float clamp01(float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
+		inline static float log2f_safe(float x) { return (x > 1e-20f) ? (std::log(x) / std::log(2.0f)) : -1e9f; }
+		inline static float hz_to_cents(float hz) { return 1200.0f * log2f_safe(std::max(hz, 1e-12f)); }
+		inline static float cents_to_hz(float c) { return std::pow(2.0f, c / 1200.0f); }
 	};
 
 	struct ProsodyAnalyserWorkload
@@ -118,13 +127,6 @@ namespace robotick
 
 		// ---------- Helpers ----------
 		static inline float safe_div(float num, float den, float def = 0.0f) { return (std::fabs(den) > 1e-20f) ? (num / den) : def; }
-
-		static inline float alpha_from_cutoff(float cutoff_hz, float dt)
-		{
-			// One-Euro LPF alpha
-			const float tau = 1.0f / (2.0f * 3.14159265358979323846f * std::max(1e-6f, cutoff_hz));
-			return 1.0f / (1.0f + tau / std::max(1e-6f, dt));
-		}
 
 		void build_window()
 		{
@@ -165,20 +167,27 @@ namespace robotick
 			state->last_sample = 0.0f;
 			state->speaking_rate_tracker = 0.0f;
 
-			// One-Euro init
-			state->pitch_initialized = false;
-			state->f0_raw_prev = 0.0f;
-			state->f0_smooth = 0.0f;
-			state->dx_smooth = 0.0f;
-
 			// Clear outputs
 			std::memset(&outputs.prosody_state, 0, sizeof(outputs.prosody_state));
+
+			// Reset consistency-gate ring + latch
+			state->cg_head = 0;
+			state->cg_size = 0;
+			state->cg_locked = false;
+			state->cg_hold_f0_hz = 0.0f;
+			state->cg_unstable_time_s = 0.0f;
+			for (int i = 0; i < ProsodyAnalyserState::CG_MaxObs; ++i)
+			{
+				state->cg_f0[i] = 0.0f;
+				state->cg_conf[i] = 0.0f;
+				state->cg_rms[i] = 0.0f;
+				state->cg_dt[i] = 0.0f;
+			}
 		}
 
 		void start(float /*tick_rate_hz*/) { state->sample_rate = AudioSystem::get_sample_rate(); }
 
-		// ---------- Pitch via CMNDf (YIN), heap-free using state buffers ----------
-		// Returns f0 in Hz and fills out_conf in [0..1] (1 ~ strong periodicity).
+		// ---------- Pitch via CMNDf (YIN), heap-free using local stack ----------
 		float estimate_pitch_hz_cmndf(const float* x, int n, int fs, float* out_conf)
 		{
 			if (out_conf)
@@ -186,20 +195,18 @@ namespace robotick
 			if (!x || n < 32 || fs <= 0)
 				return 0.0f;
 
-			const float maxF = std::max(config.max_f0_hz, 1.0f) * 1.10f; // small headroom
+			const float maxF = std::max(config.max_f0_hz, 1.0f) * 1.10f;
 			const float minF = std::max(config.min_f0_hz, 1.0f);
 
-			int min_lag = std::max(2, int((float)fs / maxF)); // high f → small lag
-			int max_lag = std::max(3, int((float)fs / minF)); // low  f → big   lag
+			int min_lag = std::max(2, int((float)fs / maxF));
+			int max_lag = std::max(3, int((float)fs / minF));
 			int max_tau = std::min(max_lag, n - 3);
 			if (min_lag >= max_tau)
 				return 0.0f;
 
-			// Local scratch to avoid touching state in a const context
 			float diff[ProsodyAnalyserState::MaxN + 1];
 			float cmndf[ProsodyAnalyserState::MaxN + 1];
 
-			// Difference function d(tau)
 			for (int tau = 1; tau <= max_tau; ++tau)
 			{
 				double acc = 0.0;
@@ -222,7 +229,6 @@ namespace robotick
 			}
 			diff[0] = 0.0f;
 
-			// CMNDf(tau)
 			double running_sum = 0.0;
 			cmndf[0] = 1.0f;
 			for (int tau = 1; tau <= max_tau; ++tau)
@@ -232,7 +238,6 @@ namespace robotick
 				cmndf[tau] = (float)(diff[tau] / denom);
 			}
 
-			// Threshold and local-min walk (YIN)
 			const float kThresh = config.yin_threshold;
 			int tau_est = 0;
 			for (int tau = min_lag; tau <= max_tau; ++tau)
@@ -247,7 +252,6 @@ namespace robotick
 				}
 			}
 
-			// Fallback: global minimum in search band
 			if (tau_est == 0)
 			{
 				float best = FLT_MAX;
@@ -259,7 +263,6 @@ namespace robotick
 					}
 			}
 
-			// Parabolic interpolation around tau_est
 			float tau_refined = (float)tau_est;
 			if (tau_est > 1 && tau_est < max_tau)
 			{
@@ -276,15 +279,13 @@ namespace robotick
 			if (!(tau_refined > 0.0f))
 				return 0.0f;
 
-			// Confidence: 1 - CMNDf at chosen tau
 			const int t_idx = std::clamp((int)std::round(tau_refined), 1, max_tau);
 			const float cm = std::clamp(cmndf[t_idx], 0.0f, 1.0f);
 			if (out_conf)
 				*out_conf = std::clamp(1.0f - cm, 0.0f, 1.0f);
 
-			// Convert to frequency and sanity-check with loose bounds
 			const float f0 = (float)fs / tau_refined;
-			if (f0 < minF * 0.8f || f0 > maxF * 1.25f)
+			if (f0 < config.min_f0_hz * 0.8f || f0 > config.max_f0_hz * 1.25f)
 				return 0.0f;
 
 			return f0;
@@ -300,30 +301,24 @@ namespace robotick
 
 			const int inCount = (int)inputs.mono.size();
 			if (inCount <= 0)
-			{
-				// No new data; output nothing this tick.
 				return;
-			}
 
-			// --- Copy & preprocess into frame buffer (last N samples) ---
+			// --- Copy & preprocess last N samples ---
 			const float* src = inputs.mono.data();
 			const int take = (inCount >= N) ? N : inCount;
 			if (take < N)
 			{
-				// shift existing left and append
 				const int shift = N - take;
 				if (shift > 0)
 				{
 					for (int i = 0; i < shift; ++i)
 						state->time_in[i] = state->time_in[i + take];
 				}
-				// append new samples to end
 				for (int i = 0; i < take; ++i)
 					state->time_in[N - take + i] = src[inCount - take + i];
 			}
 			else
 			{
-				// copy last N directly
 				for (int i = 0; i < N; ++i)
 					state->time_in[i] = src[inCount - N + i];
 			}
@@ -356,7 +351,7 @@ namespace robotick
 					state->time_in[i] -= mean;
 			}
 
-			// --- Basic time-domain features (RMS, ZCR) ---
+			// --- Time-domain features (RMS, ZCR) ---
 			double e_sum = 0.0;
 			int zc = 0;
 			{
@@ -374,61 +369,165 @@ namespace robotick
 			ps.rms = rms;
 			ps.zcr = (float)zc / (float)N;
 
-			// --- VAD ---
-			ps.voiced = (rms >= config.vad_rms_threshold);
-			ps.voiced_confidence = ProsodyAnalyserState::clamp01((rms - config.vad_rms_threshold) * 10.0f);
+			// --- VAD (time-domain gate) ---
+			const bool voiced_td = (rms >= config.vad_rms_threshold);
 
 			// --- Pitch (YIN CMNDf) ---
 			float f0_conf = 0.0f;
 			const float f0_raw = estimate_pitch_hz_cmndf(state->time_in, N, fs, &f0_conf);
 
-			// --- One-Euro smoothing with hold-on-low-confidence ---
+			// --- Push observation into ring ---
 			const float dt = (float)std::max(1e-6f, info.delta_time);
-			float f0_s = state->f0_smooth;
-
-			if (!state->pitch_initialized || true)
 			{
-				state->pitch_initialized = true;
-				state->f0_raw_prev = f0_raw;
-				state->dx_smooth = 0.0f;
-				state->f0_smooth = f0_raw;
-				f0_s = f0_raw;
+				const int i = state->cg_head;
+				state->cg_f0[i] = f0_raw;
+				state->cg_conf[i] = f0_conf;
+				state->cg_rms[i] = rms;
+				state->cg_dt[i] = dt;
+				state->cg_head = (state->cg_head + 1) % ProsodyAnalyserState::CG_MaxObs;
+				state->cg_size = std::min(state->cg_size + 1, ProsodyAnalyserState::CG_MaxObs);
 			}
-			else
+
+			// --- Collect window, compute trimmed stats in cents ---
+			const float window_s = 0.001f * (float)std::max(0, config.cg_window_ms);
+			const float min_lock_s = 0.001f * (float)std::max(0, config.cg_min_locked_ms);
+
+			float total_s = 0.0f;
+			float locked_s = 0.0f;
+			float cents_buf[ProsodyAnalyserState::CG_MaxObs];
+			int cents_n = 0;
+			float first_cents = 0.0f, last_cents = 0.0f;
+			bool first_set = false;
+
+			int idx = (state->cg_head - 1 + ProsodyAnalyserState::CG_MaxObs) % ProsodyAnalyserState::CG_MaxObs;
+			for (int n = 0; n < state->cg_size; ++n)
 			{
-				// Only update if confidence is decent; else hold last smooth
-				if (f0_raw > 0.0f && f0_conf >= config.pitch_conf_gate)
+				const float dti = state->cg_dt[idx];
+				const float f0i = state->cg_f0[idx];
+				const float cfi = state->cg_conf[idx];
+
+				total_s += dti;
+
+				if (f0i > 0.0f && cfi >= config.cg_min_confidence)
 				{
-					// derivative estimate
-					const float dx = (f0_raw - state->f0_raw_prev) / dt;
-
-					// low-pass derivative
-					const float alpha_d = alpha_from_cutoff(config.one_euro_dcutoff_hz, dt);
-					state->dx_smooth = (1.0f - alpha_d) * state->dx_smooth + alpha_d * dx;
-
-					// adaptive cutoff
-					const float cutoff = config.one_euro_min_cutoff_hz + config.one_euro_beta * std::fabs(state->dx_smooth);
-					const float alpha = alpha_from_cutoff(cutoff, dt);
-
-					// smooth f0
-					state->f0_smooth = (1.0f - alpha) * state->f0_smooth + alpha * f0_raw;
-					state->f0_raw_prev = f0_raw;
-					f0_s = state->f0_smooth;
+					const float ci = ProsodyAnalyserState::hz_to_cents(f0i);
+					cents_buf[cents_n++] = ci;
+					locked_s += dti;
+					if (!first_set)
+					{
+						first_cents = ci;
+						last_cents = ci;
+						first_set = true;
+					}
+					else
+					{
+						last_cents = ci;
+					}
 				}
-				// else: keep f0_s as previous smoothed value (hold)
+
+				if (total_s >= window_s)
+					break;
+				idx = (idx - 1 + ProsodyAnalyserState::CG_MaxObs) % ProsodyAnalyserState::CG_MaxObs;
 			}
 
-			// Write pitch out (smoothed), slope from smoothed series
-			const float prev_pitch = ps.pitch_hz;
-			ps.pitch_hz = std::max(0.0f, f0_s);
+			// Robust stats: trim the single largest deviation if we have enough samples
+			auto compute_trimmed_std = [&](const float* arr, int n, double mean_c) -> double
+			{
+				if (n <= 2)
+					return 1e9;
+				int max_i = 0;
+				double max_dev = 0.0;
+				for (int i = 0; i < n; ++i)
+				{
+					const double d = std::fabs((double)arr[i] - mean_c);
+					if (d > max_dev)
+					{
+						max_dev = d;
+						max_i = i;
+					}
+				}
+				double var = 0.0;
+				int cnt = 0;
+				for (int i = 0; i < n; ++i)
+				{
+					if (i == max_i && n >= 5)
+						continue; // drop 1 outlier only if enough points
+					const double d = (double)arr[i] - mean_c;
+					var += d * d;
+					++cnt;
+				}
+				return std::sqrt(var / std::max(1, cnt));
+			};
 
-			if (ps.pitch_hz > 0.0f && prev_pitch > 0.0f)
-				ps.pitch_slope_hz_per_s = (ps.pitch_hz - prev_pitch) / std::max(1e-6f, dt);
+			const float off_grace_s = 0.001f * (float)std::max(0, config.cg_off_grace_ms);
+			bool stable = false;
+			float stable_mean_hz = 0.0f;
+
+			if (locked_s >= min_lock_s && cents_n >= 2)
+			{
+				double sumc = 0.0;
+				for (int i = 0; i < cents_n; ++i)
+					sumc += cents_buf[i];
+				const double mean_c = sumc / (double)cents_n;
+
+				const double std_c_trim = compute_trimmed_std(cents_buf, cents_n, mean_c);
+				const float drift_c = std::fabs(last_cents - first_cents);
+
+				stable = (std_c_trim <= (double)config.cg_max_spread_cents) && (drift_c <= config.cg_max_end_to_end_cents);
+
+				if (stable)
+				{
+					stable_mean_hz = ProsodyAnalyserState::cents_to_hz((float)mean_c);
+					// clamp to plausible bounds
+					if (!(stable_mean_hz > 0.0f) || stable_mean_hz < config.min_f0_hz * 0.5f || stable_mean_hz > config.max_f0_hz * 2.0f)
+					{
+						stable = false;
+					}
+				}
+			}
+
+			// --- Latch state machine (prevents crackly off/on) ---
+			float pitch_out_hz = 0.0f;
+			bool voiced_out = voiced_td;
+
+			if (stable)
+			{
+				state->cg_locked = true;
+				state->cg_unstable_time_s = 0.0f;
+				state->cg_hold_f0_hz = stable_mean_hz;
+				pitch_out_hz = stable_mean_hz;
+			}
 			else
-				ps.pitch_slope_hz_per_s = 0.0f;
+			{
+				if (state->cg_locked)
+				{
+					state->cg_unstable_time_s += dt;
+					if (state->cg_unstable_time_s <= off_grace_s && state->cg_hold_f0_hz > 0.0f)
+					{
+						// Within grace: keep last robust f0 (smooth experience)
+						pitch_out_hz = state->cg_hold_f0_hz;
+					}
+					else
+					{
+						// Exceeded grace: unlock
+						state->cg_locked = false;
+						state->cg_hold_f0_hz = 0.0f;
+						state->cg_unstable_time_s = 0.0f;
+					}
+				}
 
-			// Keep a sense of confidence (reuse voiced_confidence sensibly)
-			ps.voiced_confidence = std::max(ps.voiced_confidence, f0_conf);
+				if (!state->cg_locked && config.cg_gate_voiced_if_unstable)
+					voiced_out = false;
+			}
+
+			// Final voiced/confidence
+			ps.voiced = voiced_out;
+			ps.voiced_confidence = ProsodyAnalyserState::clamp01(std::max(ps.voiced_confidence, f0_conf));
+
+			// Publish pitch (held or 0)
+			const float prev_pitch = ps.pitch_hz;
+			ps.pitch_hz = std::max(0.0f, pitch_out_hz);
+			ps.pitch_slope_hz_per_s = (ps.pitch_hz > 0.0f && prev_pitch > 0.0f) ? (ps.pitch_hz - prev_pitch) / std::max(1e-6f, dt) : 0.0f;
 
 			// --- Window for FFT ---
 			float tmp[ProsodyAnalyserState::MaxN];
@@ -439,16 +538,11 @@ namespace robotick
 			kiss_fftr(state->fft_cfg, tmp, state->freq_out);
 
 			// --- Spectral magnitudes & summary stats ---
-			double sum_mag = 0.0;
-			double sum_f_mag = 0.0;
-			double sum_f2_mag = 0.0;
-			double sum_log = 0.0;
-			double sum_lin = 0.0;
-			double total_e = 0.0;
+			double sum_mag = 0.0, sum_f_mag = 0.0, sum_f2_mag = 0.0;
+			double sum_log = 0.0, sum_lin = 0.0, total_e = 0.0;
 
 			const float bin_hz = (float)fs / (float)N;
 
-			// mag buffer (stack-fixed) for reuse
 			float mag[ProsodyAnalyserState::MaxN / 2 + 1];
 			for (int k = 0; k < K; ++k)
 			{
@@ -468,7 +562,6 @@ namespace robotick
 				total_e += (double)m * (double)m;
 			}
 
-			// Centroid / bandwidth
 			const float centroid = (sum_mag > 0.0) ? (float)(sum_f_mag / sum_mag) : 0.0f;
 			float bandwidth = 0.0f;
 			if (sum_mag > 0.0)
@@ -478,16 +571,13 @@ namespace robotick
 				bandwidth = (float)((var > 0.0) ? std::sqrt(var) : 0.0);
 			}
 
-			// Flatness (geo mean / arith mean)
 			const double arith = sum_lin / (double)K;
 			const double geo = std::exp(sum_log / (double)K);
 			const float flatness = (float)((arith > 1e-30) ? (geo / arith) : 0.0);
 
-			// Energy ratio (spectral rms vs time rms)
 			const float spectral_rms = (float)std::sqrt(total_e / (double)K);
 			const float energy_ratio = safe_div(spectral_rms, rms, 0.0f);
 
-			// 85% rolloff
 			float rolloff_hz = 0.0f;
 			if (total_e > 0.0)
 			{
@@ -504,7 +594,6 @@ namespace robotick
 				}
 			}
 
-			// Coarse spectral slope proxy
 			float spectral_slope = 0.0f;
 			{
 				const float bw = bandwidth;
@@ -515,13 +604,11 @@ namespace robotick
 			}
 
 			// --- Partials & HNR (requires pitch) ---
-			// store partial gains **relative to the fundamental magnitude**
 			int partial_count = 0;
-			float partial_gain_rel[Prosody::MaxPartials] = {0.0f};
-			float partial_freq[Prosody::MaxPartials] = {0.0f};
+			float partial_gain_rel[Prosody::MaxPartials] = {0};
+			float partial_freq[Prosody::MaxPartials] = {0};
 			double harm_e = 0.0;
 
-			// Measure fundamental magnitude near f0 (small ± search)
 			float m_f0 = 0.0f;
 			if (ps.pitch_hz > 0.0f)
 			{
@@ -529,27 +616,21 @@ namespace robotick
 				const int k0 = std::clamp(k0_guess, 1, K - 2);
 
 				float best_v0 = mag[k0];
-				int best_k0 = k0;
 				for (int dk = -1; dk <= 1; ++dk)
 				{
 					const int kk = k0 + dk;
 					if (kk > 0 && kk < K && mag[kk] > best_v0)
-					{
 						best_v0 = mag[kk];
-						best_k0 = kk;
-					}
 				}
-				m_f0 = best_v0; // absolute magnitude of fundamental peak
+				m_f0 = best_v0;
 			}
 
-			// Peak-pick partials and store **relative** gains = m_i / (m_f0 + eps)
 			if (ps.pitch_hz > 0.0f && m_f0 > 0.0f)
 			{
 				const int maxP = std::clamp((int)config.max_num_partials, 0, Prosody::MaxPartials);
 				const int halfW = std::max(0, config.peak_search_half_width_bins);
 				const float eps = 1e-12f;
 
-				// search integer multiples 2*f0 .. (2+maxP-1)*f0
 				for (int h = 2; h < 2 + maxP; ++h)
 				{
 					const float target_hz = ps.pitch_hz * (float)h;
@@ -575,11 +656,10 @@ namespace robotick
 						if (idx >= maxP)
 							break;
 						partial_freq[idx] = (float)best_k * bin_hz;	   // absolute Hz
-						partial_gain_rel[idx] = best_v / (m_f0 + eps); // <<< relative to fundamental
+						partial_gain_rel[idx] = best_v / (m_f0 + eps); // relative to fundamental
 					}
 				}
 
-				// HNR energy can still use absolute magnitudes (mag^2 at chosen bins)
 				for (int i = 0; i < partial_count; ++i)
 				{
 					const int k = (int)std::round(partial_freq[i] / bin_hz);
@@ -591,30 +671,17 @@ namespace robotick
 				}
 			}
 
-			// Compute HNR with absolute energies
 			const double noise_e = std::max(1e-12, total_e - harm_e);
 			float hnr_db = 0.0f;
 			if (harm_e > 0.0)
 				hnr_db = (float)(10.0 * std::log10(harm_e / noise_e));
 			if (hnr_db < config.hnr_floor_db)
 				hnr_db = config.hnr_floor_db;
-			ps.harmonicity_hnr_db = hnr_db;
-
-			// Write back to ProsodyState
-			ps.partial_count = partial_count;
-			ps.partial_freq_valid = true;
-			ps.partial_gain.set_size(Prosody::MaxPartials);
-			ps.partial_freq_hz.set_size(Prosody::MaxPartials);
-			for (int i = 0; i < Prosody::MaxPartials; ++i)
-			{
-				ps.partial_gain[i] = (i < partial_count) ? partial_gain_rel[i] : 0.0f; // relative
-				ps.partial_freq_hz[i] = (i < partial_count) ? partial_freq[i] : 0.0f;  // absolute Hz
-			}
 
 			// --- Speaking rate (very coarse envelope proxy) ---
 			{
-				const float alpha = ProsodyAnalyserState::clamp01(config.speaking_rate_decay);
-				state->speaking_rate_tracker = alpha * state->speaking_rate_tracker + (1.0f - alpha) * spectral_rms;
+				const float a = ProsodyAnalyserState::clamp01(config.speaking_rate_decay);
+				state->speaking_rate_tracker = a * state->speaking_rate_tracker + (1.0f - a) * spectral_rms;
 				ps.speaking_rate_sps = state->speaking_rate_tracker; // placeholder
 			}
 
@@ -628,6 +695,16 @@ namespace robotick
 			ps.spectral_slope = spectral_slope;
 
 			ps.harmonicity_hnr_db = hnr_db;
+
+			ps.partial_count = partial_count;
+			ps.partial_freq_valid = true;
+			ps.partial_gain.set_size(Prosody::MaxPartials);
+			ps.partial_freq_hz.set_size(Prosody::MaxPartials);
+			for (int i = 0; i < Prosody::MaxPartials; ++i)
+			{
+				ps.partial_gain[i] = (i < partial_count) ? partial_gain_rel[i] : 0.0f;
+				ps.partial_freq_hz[i] = (i < partial_count) ? partial_freq[i] : 0.0f;
+			}
 		}
 	};
 
