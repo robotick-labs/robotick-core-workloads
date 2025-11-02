@@ -22,10 +22,9 @@ namespace robotick
 		bool use_rms_for_amplitude = true;
 		bool use_voiced_gate = true;
 
-		// --- Carrier selection ---
+		// --- Pitch selection ---
+		// If true, we generate tone/partials only when a measured p.pitch_hz > 0.
 		bool use_pitch_hz = true;
-		float min_fallback_hz = 80.0f;
-		float centroid_to_fallback_scale = 0.75f;
 
 		// --- Tone (fundamental) ---
 		bool enable_tone = true;
@@ -35,13 +34,9 @@ namespace robotick
 		float tone_energy_ratio_center = 1.0f;
 		float tone_energy_ratio_scale = 1.0f;
 
-		// --- Partials (from analyser) ---
+		// --- Partials (from analyser only; no synthetic fallback) ---
 		bool enable_partials = true;
 		float partials_base = 0.6f;
-		// Fallback only if analyser supplied none:
-		bool fallback_synthetic_partials = true;
-		int fallback_partial_count = 4; // 0..Prosody::MaxPartials
-		float fallback_rolloff = 0.6f;
 
 		// --- Noise ---
 		bool enable_noise = true;
@@ -57,22 +52,19 @@ namespace robotick
 		float noise_cutoff_default_hz = 2000.0f;
 
 		// --- Smoothing ---
-		float pitch_smooth_alpha = 0.20f;
+		float pitch_smooth_alpha = 0.20f; // only applied when p.pitch_hz > 0
 		float mix_smooth_alpha = 0.20f;
 
 		// --- Safety ---
 		float min_component_gain = 0.0f;
 		float max_component_gain = 2.0f;
-
-		// --- Debug ---
-		bool force_440_test = false;
-		float force_test_amp = 0.2f;
 	};
 
 	struct ProsodyWaveGeneratorInputs
 	{
 		ProsodyState prosody_state;
 	};
+
 	struct ProsodyWaveGeneratorOutputs
 	{
 		AudioBuffer512 mono;
@@ -137,42 +129,41 @@ namespace robotick
 			const double guard = 0.98 * nyq;
 			const double two_pi = 6.28318530717958647692;
 
-			// Gate
-			if (config.use_voiced_gate && !config.force_440_test && !p.voiced)
+			// Gate: if requested, output nothing when not voiced
+			if (config.use_voiced_gate && !p.voiced)
 			{
 				outputs.mono.set_size(0);
 				state->prev_amp_linear = 0.0f;
+				// Also reset smoothed pitch to avoid carry-over
+				state->smoothed_pitch_hz = 0.0f;
 				return;
 			}
 
 			// Global amplitude
 			float lin_gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
-			if (config.use_rms_for_amplitude && !config.force_440_test)
+			if (config.use_rms_for_amplitude)
 				lin_gain *= std::max(0.0f, p.rms);
 
-			// Carrier
-			float carrier_hz = config.min_fallback_hz;
-			if (config.force_440_test)
-			{
-				carrier_hz = 440.0f;
-				lin_gain = config.force_test_amp;
-			}
-			else if (config.use_pitch_hz && p.pitch_hz > 0.0f)
-				carrier_hz = p.pitch_hz;
-			else if (p.spectral_centroid_hz > 0.0f)
-				carrier_hz = std::max(config.min_fallback_hz, p.spectral_centroid_hz * config.centroid_to_fallback_scale);
+			// Measured f0 only (no fallbacks)
+			float f0_measured = 0.0f;
+			if (config.use_pitch_hz && p.pitch_hz > 0.0f)
+				f0_measured = p.pitch_hz;
 
-			carrier_hz = std::clamp(carrier_hz, 0.0f, (float)(nyq - 1.0));
-
-			// Smooth pitch
+			// Smooth pitch only when we have a valid measurement; else drop to 0
+			if (f0_measured > 0.0f)
 			{
 				const float a = clamp01(config.pitch_smooth_alpha);
 				if (state->smoothed_pitch_hz <= 0.0f)
-					state->smoothed_pitch_hz = carrier_hz;
-				state->smoothed_pitch_hz = (1.0f - a) * state->smoothed_pitch_hz + a * carrier_hz;
+					state->smoothed_pitch_hz = f0_measured;
+				state->smoothed_pitch_hz = (1.0f - a) * state->smoothed_pitch_hz + a * f0_measured;
 			}
+			else
+			{
+				state->smoothed_pitch_hz = 0.0f;
+			}
+
 			const double f0 = (double)state->smoothed_pitch_hz;
-			const double step_fund = two_pi * std::clamp(f0, 0.0, guard) / (double)fs;
+			const double step_fund = (f0 > 0.0) ? (two_pi * std::min(f0, guard) / (double)fs) : 0.0;
 
 			// Prosody helpers
 			auto sane = [](float v, float def)
@@ -182,26 +173,30 @@ namespace robotick
 			const float flat = clamp01(sane(p.spectral_flatness, 0.0f));
 			const float eratio = sane(p.spectral_energy_ratio, 1.0f);
 
-			// Independent component gains
-			float tone_gain = config.enable_tone ? config.tone_base : 0.0f;
-			if (config.use_flatness_for_tone)
+			// Component gains (independent)
+			float tone_gain = (config.enable_tone && f0 > 0.0) ? config.tone_base : 0.0f;
+			if (config.use_flatness_for_tone && tone_gain > 0.0f)
 				tone_gain *= (1.0f - flat);
-			if (config.use_energy_ratio_for_tone)
+			if (config.use_energy_ratio_for_tone && tone_gain > 0.0f)
 				tone_gain *= (eratio / std::max(1e-6f, config.tone_energy_ratio_center)) * config.tone_energy_ratio_scale;
 
-			float part_gain = config.enable_partials ? config.partials_base : 0.0f; // analyser provides absolute partial gains
+			// Partials: only if analyser provided pitch (f0>0) AND we want partials
+			float part_gain = (config.enable_partials && f0 > 0.0) ? config.partials_base : 0.0f;
 
+			// Noise
 			float noise_gain = config.enable_noise ? config.noise_base : 0.0f;
-			if (config.use_flatness_for_noise)
+			if (config.use_flatness_for_noise && noise_gain > 0.0f)
 				noise_gain *= flat;
-			if (config.use_energy_ratio_for_noise)
+			if (config.use_energy_ratio_for_noise && noise_gain > 0.0f)
 				noise_gain *= (std::max(0.0f, config.noise_energy_ratio_center - eratio) + 1.0f) * config.noise_energy_ratio_scale;
 
+			// Clamp component gains
 			const float gmin = config.min_component_gain, gmax = config.max_component_gain;
 			tone_gain = std::clamp(tone_gain, gmin, gmax);
 			part_gain = std::clamp(part_gain, gmin, gmax);
 			noise_gain = std::clamp(noise_gain, gmin, gmax);
 
+			// Smooth mix gains
 			const float ma = clamp01(config.mix_smooth_alpha);
 			state->tone_gain_z = (1.0f - ma) * state->tone_gain_z + ma * tone_gain;
 			state->part_gain_z = (1.0f - ma) * state->part_gain_z + ma * part_gain;
@@ -220,7 +215,8 @@ namespace robotick
 				cutoff_hz = base + config.bandwidth_scale * bw;
 			}
 			cutoff_hz = std::clamp(cutoff_hz, 80.0f, (float)(nyq - 1.0));
-			float alpha = 1.0f - std::exp(-2.0f * (float)M_PI * (cutoff_hz / (float)fs));
+			// alpha = 1 - exp(-2π * fc / fs)
+			float alpha = 1.0f - std::exp(-2.0f * (float)two_pi * (cutoff_hz / (float)fs));
 			alpha = std::clamp(alpha, 1e-5f, 0.9999f);
 
 			// Sample budget
@@ -246,7 +242,7 @@ namespace robotick
 			const double denom = (count > 1) ? (double)(count - 1) : 1.0;
 
 			// Cached analyser partials
-			const int Np = std::max(0, std::min(Prosody::MaxPartials, p.partial_count));
+			const int Np = (f0 > 0.0 && config.enable_partials) ? std::max(0, std::min(Prosody::MaxPartials, p.partial_count)) : 0;
 			const bool use_abs_freq = p.partial_freq_valid;
 
 			for (int i = 0; i < count; ++i)
@@ -258,55 +254,37 @@ namespace robotick
 				double s_part = 0.0;
 				double s_noise = 0.0;
 
-				// Fundamental
-				if (config.enable_tone && f0 > 0.0)
+				// Fundamental (only if f0>0 and enabled)
+				if (tone_gain > 0.0f && step_fund > 0.0)
 				{
 					s_tone = std::sin(local_phase[0]);
 					local_phase[0] += step_fund;
 				}
 
-				// Partials (from analyser), fallback only if none
-				if (config.enable_partials && f0 > 0.0)
+				// Partials (from analyser only; no synthetic fallback)
+				if (part_gain > 0.0f && Np > 0)
 				{
-					if (Np > 0)
+					for (int h = 0; h < Np; ++h)
 					{
-						for (int h = 0; h < Np; ++h)
-						{
-							const double gain = std::max(0.0f, p.partial_gain[h]);
-							if (gain <= 0.0)
-								continue;
+						const double gain = std::max(0.0f, p.partial_gain[h]);
+						if (gain <= 0.0)
+							continue;
 
-							double hf = use_abs_freq ? (double)p.partial_freq_hz[h] : f0 * (double)(h + 2);
-							if (hf >= guard)
-								continue;
+						// If analyser supplied absolute frequencies, use them;
+						// else, we require f0>0 (already checked) and assume (h+2)*f0
+						const double hf = use_abs_freq ? (double)p.partial_freq_hz[h] : (double)state->smoothed_pitch_hz * (double)(h + 2);
+						if (hf <= 0.0 || hf >= guard)
+							continue;
 
-							const double hstep = two_pi * hf / (double)fs;
-							// phase index 1..Np maps to partials
-							const int ph = 1 + h;
-							s_part += gain * std::sin(local_phase[ph]);
-							local_phase[ph] += hstep;
-						}
-					}
-					else if (config.fallback_synthetic_partials)
-					{
-						const int M = std::max(0, std::min(Prosody::MaxPartials, config.fallback_partial_count));
-						double g = (double)config.fallback_rolloff;
-						for (int h = 0; h < M; ++h)
-						{
-							const double hf = f0 * (double)(h + 2);
-							if (hf >= guard)
-								break;
-							const double hstep = two_pi * hf / (double)fs;
-							const int ph = 1 + h;
-							s_part += g * std::sin(local_phase[ph]);
-							local_phase[ph] += hstep;
-							g *= (double)config.fallback_rolloff;
-						}
+						const double hstep = two_pi * hf / (double)fs;
+						const int ph = 1 + h; // phase index 1..Np maps to partials
+						s_part += gain * std::sin(local_phase[ph]);
+						local_phase[ph] += hstep;
 					}
 				}
 
 				// Noise (1-pole LPF on white)
-				if (config.enable_noise)
+				if (noise_gain > 0.0f)
 				{
 					const float white = state->noise_uniform_pm1();
 					z1 = z1 + alpha * (white - z1);
@@ -316,11 +294,10 @@ namespace robotick
 				}
 
 				const double s = (double)tone_gain * s_tone + (double)part_gain * s_part + (double)noise_gain * s_noise;
-
 				outputs.mono[i] = (float)(amp * s);
 
-				// Wrap phases
-				const int maxPh = 1 + std::max(Np, config.fallback_synthetic_partials ? config.fallback_partial_count : 0);
+				// Wrap phases for fundamental + Np partials only
+				const int maxPh = 1 + Np;
 				for (int ph = 0; ph < std::min(maxPh, ProsodyWaveGeneratorState::MaxOsc); ++ph)
 				{
 					if (local_phase[ph] >= two_pi)

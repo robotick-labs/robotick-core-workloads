@@ -34,7 +34,7 @@ namespace robotick
 
 		// === Pitch search (CMNDf/YIN) ===
 		float min_f0_hz = 60.0f;
-		float max_f0_hz = 800.0f;
+		float max_f0_hz = 2500.0f;
 		float yin_threshold = 0.12f;   // absolute threshold (classic YIN)
 		float pitch_conf_gate = 0.45f; // if confidence < gate → hold last (0..1)
 
@@ -50,6 +50,7 @@ namespace robotick
 		// === Partials ===
 		int peak_search_half_width_bins = 1; // ±bins around integer multiple
 		float partial_min_gain = 0.0f;		 // linear magnitude threshold
+		uint8_t max_num_partials = Prosody::MaxPartials;
 
 		// === HNR ===
 		float hnr_floor_db = -60.0f; // clamp lower bound
@@ -385,7 +386,7 @@ namespace robotick
 			const float dt = (float)std::max(1e-6f, info.delta_time);
 			float f0_s = state->f0_smooth;
 
-			if (!state->pitch_initialized)
+			if (!state->pitch_initialized || true)
 			{
 				state->pitch_initialized = true;
 				state->f0_raw_prev = f0_raw;
@@ -514,30 +515,53 @@ namespace robotick
 			}
 
 			// --- Partials & HNR (requires pitch) ---
+			// store partial gains **relative to the fundamental magnitude**
 			int partial_count = 0;
-			float partial_gain[Prosody::MaxPartials] = {0};
-			float partial_freq[Prosody::MaxPartials] = {0};
+			float partial_gain_rel[Prosody::MaxPartials] = {0.0f};
+			float partial_freq[Prosody::MaxPartials] = {0.0f};
 			double harm_e = 0.0;
 
+			// Measure fundamental magnitude near f0 (small ± search)
+			float m_f0 = 0.0f;
 			if (ps.pitch_hz > 0.0f)
 			{
-				const int maxP = Prosody::MaxPartials;
-				const int halfW = (config.peak_search_half_width_bins < 0) ? 0 : config.peak_search_half_width_bins;
+				const int k0_guess = (int)std::round(ps.pitch_hz / bin_hz);
+				const int k0 = std::clamp(k0_guess, 1, K - 2);
 
-				// Peak-pick near integer multiples 2*f0 .. (N+1)*f0 (partials above fundamental)
+				float best_v0 = mag[k0];
+				int best_k0 = k0;
+				for (int dk = -1; dk <= 1; ++dk)
+				{
+					const int kk = k0 + dk;
+					if (kk > 0 && kk < K && mag[kk] > best_v0)
+					{
+						best_v0 = mag[kk];
+						best_k0 = kk;
+					}
+				}
+				m_f0 = best_v0; // absolute magnitude of fundamental peak
+			}
+
+			// Peak-pick partials and store **relative** gains = m_i / (m_f0 + eps)
+			if (ps.pitch_hz > 0.0f && m_f0 > 0.0f)
+			{
+				const int maxP = std::clamp((int)config.max_num_partials, 0, Prosody::MaxPartials);
+				const int halfW = std::max(0, config.peak_search_half_width_bins);
+				const float eps = 1e-12f;
+
+				// search integer multiples 2*f0 .. (2+maxP-1)*f0
 				for (int h = 2; h < 2 + maxP; ++h)
 				{
-					const float target = ps.pitch_hz * (float)h;
-					const int kc = (int)std::round(target / bin_hz);
-					if (kc <= 1 || kc >= K - 2)
+					const float target_hz = ps.pitch_hz * (float)h;
+					const int kc_guess = (int)std::round(target_hz / bin_hz);
+					if (kc_guess <= 1 || kc_guess >= K - 2)
 						break;
 
-					float best_v = mag[kc];
-					int best_k = kc;
-
+					int best_k = kc_guess;
+					float best_v = mag[kc_guess];
 					for (int dk = -halfW; dk <= halfW; ++dk)
 					{
-						const int kk = kc + dk;
+						const int kk = kc_guess + dk;
 						if (kk > 0 && kk < K && mag[kk] > best_v)
 						{
 							best_v = mag[kk];
@@ -550,12 +574,12 @@ namespace robotick
 						const int idx = partial_count++;
 						if (idx >= maxP)
 							break;
-						partial_gain[idx] = best_v;					// absolute linear magnitude
-						partial_freq[idx] = (float)best_k * bin_hz; // absolute Hz
+						partial_freq[idx] = (float)best_k * bin_hz;	   // absolute Hz
+						partial_gain_rel[idx] = best_v / (m_f0 + eps); // <<< relative to fundamental
 					}
 				}
 
-				// Harmonic energy (sum of peak bins) vs residual for HNR
+				// HNR energy can still use absolute magnitudes (mag^2 at chosen bins)
 				for (int i = 0; i < partial_count; ++i)
 				{
 					const int k = (int)std::round(partial_freq[i] / bin_hz);
@@ -567,12 +591,25 @@ namespace robotick
 				}
 			}
 
+			// Compute HNR with absolute energies
 			const double noise_e = std::max(1e-12, total_e - harm_e);
 			float hnr_db = 0.0f;
 			if (harm_e > 0.0)
 				hnr_db = (float)(10.0 * std::log10(harm_e / noise_e));
 			if (hnr_db < config.hnr_floor_db)
 				hnr_db = config.hnr_floor_db;
+			ps.harmonicity_hnr_db = hnr_db;
+
+			// Write back to ProsodyState
+			ps.partial_count = partial_count;
+			ps.partial_freq_valid = true;
+			ps.partial_gain.set_size(Prosody::MaxPartials);
+			ps.partial_freq_hz.set_size(Prosody::MaxPartials);
+			for (int i = 0; i < Prosody::MaxPartials; ++i)
+			{
+				ps.partial_gain[i] = (i < partial_count) ? partial_gain_rel[i] : 0.0f; // relative
+				ps.partial_freq_hz[i] = (i < partial_count) ? partial_freq[i] : 0.0f;  // absolute Hz
+			}
 
 			// --- Speaking rate (very coarse envelope proxy) ---
 			{
@@ -591,17 +628,6 @@ namespace robotick
 			ps.spectral_slope = spectral_slope;
 
 			ps.harmonicity_hnr_db = hnr_db;
-
-			ps.partial_count = partial_count;
-			ps.partial_freq_valid = true;
-
-			ps.partial_gain.set_size(Prosody::MaxPartials);
-			ps.partial_freq_hz.set_size(Prosody::MaxPartials);
-			for (int i = 0; i < Prosody::MaxPartials; ++i)
-			{
-				ps.partial_gain[i] = (i < partial_count) ? partial_gain[i] : 0.0f;
-				ps.partial_freq_hz[i] = (i < partial_count) ? partial_freq[i] : 0.0f;
-			}
 		}
 	};
 
