@@ -74,7 +74,6 @@ namespace robotick
 	{
 		static constexpr int MaxOsc = 1 + Prosody::MaxPartials; // 1 fund + partials
 
-		int sample_rate = 44100;
 		double sample_accum = 0.0;
 
 		double phase[MaxOsc] = {0.0};
@@ -119,12 +118,15 @@ namespace robotick
 			state->sample_accum = 0.0;
 		}
 
-		void start(float) { state->sample_rate = AudioSystem::get_sample_rate(); }
+		void start(float) { outputs.mono.sample_rate = AudioSystem::get_sample_rate(); }
 
-		void tick(const TickInfo& info)
+		void tick(const TickInfo& tick_info)
 		{
+			static constexpr double ns_to_sec = 1e-9;
+			outputs.mono.timestamp = ns_to_sec * (double)tick_info.time_now_ns;
+
 			const auto& p = inputs.prosody_state;
-			const int fs = state->sample_rate;
+			const int fs = outputs.mono.sample_rate;
 			const double nyq = 0.5 * (double)fs;
 			const double guard = 0.98 * nyq;
 			const double two_pi = 6.28318530717958647692;
@@ -132,7 +134,7 @@ namespace robotick
 			// Gate: if requested, output nothing when not voiced
 			if (config.use_voiced_gate && !p.voiced)
 			{
-				outputs.mono.set_size(0);
+				outputs.mono.samples.clear();
 				state->prev_amp_linear = 0.0f;
 				// Also reset smoothed pitch to avoid carry-over
 				state->smoothed_pitch_hz = 0.0f;
@@ -220,19 +222,19 @@ namespace robotick
 			alpha = std::clamp(alpha, 1e-5f, 0.9999f);
 
 			// Sample budget
-			state->sample_accum += (double)fs * (double)info.delta_time;
+			state->sample_accum += (double)fs * (double)tick_info.delta_time;
 			int count = (int)state->sample_accum;
 			state->sample_accum -= count;
 
 			if (count <= 0)
 			{
-				outputs.mono.set_size(0);
+				outputs.mono.samples.clear();
 				state->prev_amp_linear = lin_gain;
 				return;
 			}
 
-			count = std::min(count, (int)outputs.mono.capacity());
-			outputs.mono.set_size(count);
+			count = std::min(count, (int)outputs.mono.samples.capacity());
+			outputs.mono.samples.set_size(count);
 
 			double local_phase[ProsodyWaveGeneratorState::MaxOsc];
 			std::memcpy(local_phase, state->phase, sizeof(local_phase));
@@ -294,7 +296,7 @@ namespace robotick
 				}
 
 				const double s = (double)tone_gain * s_tone + (double)part_gain * s_part + (double)noise_gain * s_noise;
-				outputs.mono[i] = (float)(amp * s);
+				outputs.mono.samples[i] = (float)(amp * s);
 
 				// Wrap phases for fundamental + Np partials only
 				const int maxPh = 1 + Np;

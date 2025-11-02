@@ -72,6 +72,10 @@ namespace robotick
 
 		void tick(const TickInfo& tick_info)
 		{
+			static constexpr double ns_to_sec = 1e-9;
+			outputs.left.timestamp = ns_to_sec * (double)tick_info.time_now_ns;
+			outputs.right.timestamp = outputs.left.timestamp;
+
 			const WavFile& wav_file = state->wav_file;
 
 			const int frame_count = wav_file.get_frame_count();
