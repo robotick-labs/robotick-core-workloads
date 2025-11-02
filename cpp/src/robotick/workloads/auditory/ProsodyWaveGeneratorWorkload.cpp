@@ -15,49 +15,64 @@
 
 namespace robotick
 {
-	// ======================================================
-	// ProsodyWaveGeneratorWorkload — uses ProsodyState fields
-	// ======================================================
-
 	struct ProsodyWaveGeneratorConfig
 	{
-		// --- Output level ---
-		float amplitude_gain_db = 0.0f; // linear gain = 10^(dB/20)
+		// --- Global output ---
+		float amplitude_gain_db = 0.0f;
+		bool use_rms_for_amplitude = true;
+		bool use_voiced_gate = true;
 
-		// --- Synthesis shape ---
-		int num_harmonics = 4;		   // 0..8
-		float harmonic_rolloff = 0.6f; // geometric per-harmonic gain
+		// --- Carrier selection ---
+		bool use_pitch_hz = true;
 		float min_fallback_hz = 80.0f;
+		float centroid_to_fallback_scale = 0.75f;
 
-		// --- Spectral → noise shaping / mix ---
-		float flatness_gamma = 1.0f;  // curve for tone/noise from flatness
-		float bandwidth_scale = 0.5f; // LPF cutoff from centroid + scale*bandwidth
+		// --- Tone (fundamental) ---
+		bool enable_tone = true;
+		float tone_base = 1.0f;
+		bool use_flatness_for_tone = true;
+		bool use_energy_ratio_for_tone = true;
+		float tone_energy_ratio_center = 1.0f;
+		float tone_energy_ratio_scale = 1.0f;
 
-		// --- Synthesis toggles (sound-building blocks) ---
-		bool enable_tone = true;	  // enable sinusoidal component
-		bool enable_harmonics = true; // add harmonic ladder on top of fundamental
-		bool enable_noise = true;	  // add LPF white noise bed
+		// --- Partials (from analyser) ---
+		bool enable_partials = true;
+		float partials_base = 0.6f;
+		// Fallback only if analyser supplied none:
+		bool fallback_synthetic_partials = true;
+		int fallback_partial_count = 4; // 0..Prosody::MaxPartials
+		float fallback_rolloff = 0.6f;
 
-		// --- ProsodyState usage toggles (what to *use* from inputs) ---
-		bool use_voiced_gate = true;	   // respect prosody.voiced (no output when false)
-		bool use_rms_for_amplitude = true; // scale loudness by prosody.rms (then dB gain)
-		bool use_pitch_hz = true;		   // use prosody.pitch_hz for carrier
+		// --- Noise ---
+		bool enable_noise = true;
+		float noise_base = 0.5f;
+		bool use_flatness_for_noise = true;
+		bool use_energy_ratio_for_noise = true;
+		float noise_energy_ratio_center = 1.0f;
+		float noise_energy_ratio_scale = 1.0f;
 
-		// Bulk spectral switch (gates all spectral fields):
-		bool use_spectral_features = true;
+		// --- Noise coloration ---
+		bool use_spectral_for_noise_lpf = true;
+		float bandwidth_scale = 0.5f;
+		float noise_cutoff_default_hz = 2000.0f;
 
-		// Fine spectral toggles (also require use_spectral_features):
-		bool use_spectral_centroid = true;	// centroid as pitch fallback + noise cutoff base
-		bool use_spectral_bandwidth = true; // bandwidth contribution to noise cutoff
-		bool use_spectral_flatness = true;	// tone/noise mixing from flatness
-		bool use_spectral_energy = true;	// tone/noise bias from spectral_energy_ratio
+		// --- Smoothing ---
+		float pitch_smooth_alpha = 0.20f;
+		float mix_smooth_alpha = 0.20f;
+
+		// --- Safety ---
+		float min_component_gain = 0.0f;
+		float max_component_gain = 2.0f;
+
+		// --- Debug ---
+		bool force_440_test = false;
+		float force_test_amp = 0.2f;
 	};
 
 	struct ProsodyWaveGeneratorInputs
 	{
 		ProsodyState prosody_state;
 	};
-
 	struct ProsodyWaveGeneratorOutputs
 	{
 		AudioBuffer512 mono;
@@ -65,27 +80,21 @@ namespace robotick
 
 	struct ProsodyWaveGeneratorState
 	{
-		static constexpr int MaxOsc = 9;
+		static constexpr int MaxOsc = 1 + Prosody::MaxPartials; // 1 fund + partials
 
-		// system
 		int sample_rate = 44100;
 		double sample_accum = 0.0;
 
-		// oscillator phases
 		double phase[MaxOsc] = {0.0};
-
-		// noise filter
 		float noise_z1 = 0.0f;
 
-		// previous targets
 		float prev_amp_linear = 0.0f;
-
-		// smoothed mappings
 		float smoothed_pitch_hz = 0.0f;
-		float tone_mix_z = 1.0f;
-		float noise_mix_z = 0.0f;
 
-		// PRNG
+		float tone_gain_z = 0.0f;
+		float part_gain_z = 0.0f;
+		float noise_gain_z = 0.0f;
+
 		uint32_t rng = 0x12345678u;
 		inline float noise_uniform_pm1()
 		{
@@ -94,7 +103,7 @@ namespace robotick
 			x ^= x >> 17;
 			x ^= x << 5;
 			rng = x;
-			return (float)((int32_t)(x) / 2147483648.0f); // [-1,1)
+			return (float)((int32_t)x / 2147483648.0f);
 		}
 	};
 
@@ -105,6 +114,8 @@ namespace robotick
 		ProsodyWaveGeneratorOutputs outputs;
 		State<ProsodyWaveGeneratorState> state;
 
+		static inline float clamp01(float v) { return v < 0 ? 0.f : (v > 1 ? 1.f : v); }
+
 		void load()
 		{
 			AudioSystem::init();
@@ -112,128 +123,107 @@ namespace robotick
 			state->noise_z1 = 0.0f;
 			state->prev_amp_linear = 0.0f;
 			state->smoothed_pitch_hz = 0.0f;
-			state->tone_mix_z = 1.0f;
-			state->noise_mix_z = 0.0f;
+			state->tone_gain_z = state->part_gain_z = state->noise_gain_z = 0.0f;
 			state->sample_accum = 0.0;
 		}
 
-		void start(float /*tick_rate_hz*/) { state->sample_rate = AudioSystem::get_sample_rate(); }
+		void start(float) { state->sample_rate = AudioSystem::get_sample_rate(); }
 
 		void tick(const TickInfo& info)
 		{
 			const auto& p = inputs.prosody_state;
 			const int fs = state->sample_rate;
 			const double nyq = 0.5 * (double)fs;
-			const double guard = 0.98 * nyq; // avoid alias at Nyquist
+			const double guard = 0.98 * nyq;
 			const double two_pi = 6.28318530717958647692;
 
-			// === Gate by voiced (if enabled) ===
-			if (config.use_voiced_gate && !p.voiced)
+			// Gate
+			if (config.use_voiced_gate && !config.force_440_test && !p.voiced)
 			{
 				outputs.mono.set_size(0);
-				state->prev_amp_linear = 0.0f; // silence
+				state->prev_amp_linear = 0.0f;
 				return;
 			}
 
-			// === Amplitude ===
-			const float lin_gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
-			float target_amp = lin_gain;
-			if (config.use_rms_for_amplitude)
-				target_amp *= std::max(0.0f, p.rms);
+			// Global amplitude
+			float lin_gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			if (config.use_rms_for_amplitude && !config.force_440_test)
+				lin_gain *= std::max(0.0f, p.rms);
 
-			// === Carrier frequency selection ===
-			float carrier_hz = 0.0f;
-
-			if (config.use_pitch_hz && p.pitch_hz > 0.0f)
+			// Carrier
+			float carrier_hz = config.min_fallback_hz;
+			if (config.force_440_test)
 			{
+				carrier_hz = 440.0f;
+				lin_gain = config.force_test_amp;
+			}
+			else if (config.use_pitch_hz && p.pitch_hz > 0.0f)
 				carrier_hz = p.pitch_hz;
-			}
-			else
-			{
-				float fallback = config.min_fallback_hz;
-
-				// If allowed, nudge fallback from spectral centroid (typically > F0 → damp it)
-				if (config.use_spectral_features && config.use_spectral_centroid && p.spectral_centroid_hz > 0.0f)
-				{
-					fallback = std::max(fallback, p.spectral_centroid_hz * 0.75f);
-				}
-
-				carrier_hz = fallback;
-			}
+			else if (p.spectral_centroid_hz > 0.0f)
+				carrier_hz = std::max(config.min_fallback_hz, p.spectral_centroid_hz * config.centroid_to_fallback_scale);
 
 			carrier_hz = std::clamp(carrier_hz, 0.0f, (float)(nyq - 1.0));
 
-			// Smooth pitch across ticks to avoid squeaks from frame jitter
+			// Smooth pitch
 			{
-				const float alpha = 0.20f;
+				const float a = clamp01(config.pitch_smooth_alpha);
 				if (state->smoothed_pitch_hz <= 0.0f)
 					state->smoothed_pitch_hz = carrier_hz;
-				state->smoothed_pitch_hz = (1.0f - alpha) * state->smoothed_pitch_hz + alpha * carrier_hz;
+				state->smoothed_pitch_hz = (1.0f - a) * state->smoothed_pitch_hz + a * carrier_hz;
 			}
-			const double freq_tick = (double)state->smoothed_pitch_hz;
+			const double f0 = (double)state->smoothed_pitch_hz;
+			const double step_fund = two_pi * std::clamp(f0, 0.0, guard) / (double)fs;
 
-			// === Tone/Noise mix from spectral features ===
-			float tone_mix = 1.0f;
-			float noise_mix = 0.0f;
+			// Prosody helpers
+			auto sane = [](float v, float def)
+			{
+				return std::isfinite(v) ? v : def;
+			};
+			const float flat = clamp01(sane(p.spectral_flatness, 0.0f));
+			const float eratio = sane(p.spectral_energy_ratio, 1.0f);
 
-			if (config.use_spectral_features && config.use_spectral_flatness)
-			{
-				float flat = std::clamp(p.spectral_flatness, 0.0f, 1.0f);
-				if (config.flatness_gamma != 1.0f)
-					flat = std::pow(flat, std::max(0.1f, config.flatness_gamma));
-				tone_mix = 1.0f - flat;
-				noise_mix = flat;
-			}
+			// Independent component gains
+			float tone_gain = config.enable_tone ? config.tone_base : 0.0f;
+			if (config.use_flatness_for_tone)
+				tone_gain *= (1.0f - flat);
+			if (config.use_energy_ratio_for_tone)
+				tone_gain *= (eratio / std::max(1e-6f, config.tone_energy_ratio_center)) * config.tone_energy_ratio_scale;
 
-			if (config.use_spectral_features && config.use_spectral_energy)
-			{
-				float er = std::clamp(p.spectral_energy_ratio, 0.0f, 2.0f); // ~1 neutral
-				tone_mix *= er;
-				noise_mix *= (2.0f - er);
-				const float sum = std::max(1e-6f, tone_mix + noise_mix);
-				tone_mix /= sum;
-				noise_mix /= sum;
-			}
+			float part_gain = config.enable_partials ? config.partials_base : 0.0f; // analyser provides absolute partial gains
 
-			// Honor synthesis block toggles
-			if (!config.enable_tone && config.enable_noise)
-			{
-				tone_mix = 0.0f;
-				noise_mix = 1.0f;
-			}
-			if (!config.enable_noise)
-			{
-				noise_mix = 0.0f;
-			}
-			if (!config.enable_tone && !config.enable_noise)
-			{
-				tone_mix = 1.0f;
-			} // fail-safe to something audible
+			float noise_gain = config.enable_noise ? config.noise_base : 0.0f;
+			if (config.use_flatness_for_noise)
+				noise_gain *= flat;
+			if (config.use_energy_ratio_for_noise)
+				noise_gain *= (std::max(0.0f, config.noise_energy_ratio_center - eratio) + 1.0f) * config.noise_energy_ratio_scale;
 
-			// Slew mix for stability
-			{
-				const float mix_alpha = 0.20f;
-				state->tone_mix_z = (1.0f - mix_alpha) * state->tone_mix_z + mix_alpha * tone_mix;
-				state->noise_mix_z = (1.0f - mix_alpha) * state->noise_mix_z + mix_alpha * noise_mix;
-				tone_mix = state->tone_mix_z;
-				noise_mix = state->noise_mix_z;
-			}
+			const float gmin = config.min_component_gain, gmax = config.max_component_gain;
+			tone_gain = std::clamp(tone_gain, gmin, gmax);
+			part_gain = std::clamp(part_gain, gmin, gmax);
+			noise_gain = std::clamp(noise_gain, gmin, gmax);
 
-			// === Noise filter cutoff from spectral centroid/bandwidth ===
-			float cutoff_hz = 2000.0f; // sensible default
-			if (config.use_spectral_features)
+			const float ma = clamp01(config.mix_smooth_alpha);
+			state->tone_gain_z = (1.0f - ma) * state->tone_gain_z + ma * tone_gain;
+			state->part_gain_z = (1.0f - ma) * state->part_gain_z + ma * part_gain;
+			state->noise_gain_z = (1.0f - ma) * state->noise_gain_z + ma * noise_gain;
+
+			tone_gain = state->tone_gain_z;
+			part_gain = state->part_gain_z;
+			noise_gain = state->noise_gain_z;
+
+			// Noise LPF cutoff
+			float cutoff_hz = config.noise_cutoff_default_hz;
+			if (config.use_spectral_for_noise_lpf)
 			{
-				float base = (config.use_spectral_centroid ? p.spectral_centroid_hz : 0.0f);
-				float bw = (config.use_spectral_bandwidth ? p.spectral_bandwidth_hz : 0.0f);
-				if (base <= 0.0f)
-					base = 1000.0f; // fallback mid-bright
+				float base = (p.spectral_centroid_hz > 0.0f) ? p.spectral_centroid_hz : 1000.0f;
+				float bw = (p.spectral_bandwidth_hz > 0.0f) ? p.spectral_bandwidth_hz : 0.0f;
 				cutoff_hz = base + config.bandwidth_scale * bw;
 			}
 			cutoff_hz = std::clamp(cutoff_hz, 80.0f, (float)(nyq - 1.0));
 			float alpha = 1.0f - std::exp(-2.0f * (float)M_PI * (cutoff_hz / (float)fs));
 			alpha = std::clamp(alpha, 1e-5f, 0.9999f);
 
-			// === Sample budget this tick ===
+			// Sample budget
 			state->sample_accum += (double)fs * (double)info.delta_time;
 			int count = (int)state->sample_accum;
 			state->sample_accum -= count;
@@ -241,86 +231,109 @@ namespace robotick
 			if (count <= 0)
 			{
 				outputs.mono.set_size(0);
-				state->prev_amp_linear = target_amp;
+				state->prev_amp_linear = lin_gain;
 				return;
 			}
 
 			count = std::min(count, (int)outputs.mono.capacity());
 			outputs.mono.set_size(count);
 
-			// === Interpolate amplitude across block (freq constant per tick) ===
-			const float amp0 = state->prev_amp_linear;
-			const float amp1 = target_amp;
-
 			double local_phase[ProsodyWaveGeneratorState::MaxOsc];
 			std::memcpy(local_phase, state->phase, sizeof(local_phase));
 			float z1 = state->noise_z1;
 
-			const int H =
-				(config.enable_tone && config.enable_harmonics) ? std::clamp(config.num_harmonics, 0, ProsodyWaveGeneratorState::MaxOsc - 1) : 0;
-
-			const double step_fund = two_pi * std::clamp(freq_tick, 0.0, guard) / (double)fs;
+			const float amp0 = state->prev_amp_linear, amp1 = lin_gain;
 			const double denom = (count > 1) ? (double)(count - 1) : 1.0;
+
+			// Cached analyser partials
+			const int Np = std::max(0, std::min(Prosody::MaxPartials, p.partial_count));
+			const bool use_abs_freq = p.partial_freq_valid;
 
 			for (int i = 0; i < count; ++i)
 			{
 				const double t = (double)i / denom;
 				const double amp = (double)amp0 + ((double)amp1 - (double)amp0) * t;
 
-				double s = 0.0;
+				double s_tone = 0.0;
+				double s_part = 0.0;
+				double s_noise = 0.0;
 
-				// --- Tone ---
-				if (config.enable_tone && freq_tick > 0.0)
+				// Fundamental
+				if (config.enable_tone && f0 > 0.0)
 				{
-					// fundamental
-					s += std::sin(local_phase[0]);
+					s_tone = std::sin(local_phase[0]);
 					local_phase[0] += step_fund;
+				}
 
-					// harmonics
-					if (H > 0)
+				// Partials (from analyser), fallback only if none
+				if (config.enable_partials && f0 > 0.0)
+				{
+					if (Np > 0)
 					{
-						double h_amp = (double)config.harmonic_rolloff;
-						for (int h = 1; h <= H; ++h)
+						for (int h = 0; h < Np; ++h)
 						{
-							const double hf = freq_tick * (double)(h + 1);
+							const double gain = std::max(0.0f, p.partial_gain[h]);
+							if (gain <= 0.0)
+								continue;
+
+							double hf = use_abs_freq ? (double)p.partial_freq_hz[h] : f0 * (double)(h + 2);
+							if (hf >= guard)
+								continue;
+
+							const double hstep = two_pi * hf / (double)fs;
+							// phase index 1..Np maps to partials
+							const int ph = 1 + h;
+							s_part += gain * std::sin(local_phase[ph]);
+							local_phase[ph] += hstep;
+						}
+					}
+					else if (config.fallback_synthetic_partials)
+					{
+						const int M = std::max(0, std::min(Prosody::MaxPartials, config.fallback_partial_count));
+						double g = (double)config.fallback_rolloff;
+						for (int h = 0; h < M; ++h)
+						{
+							const double hf = f0 * (double)(h + 2);
 							if (hf >= guard)
 								break;
 							const double hstep = two_pi * hf / (double)fs;
-							s += h_amp * std::sin(local_phase[h]);
-							local_phase[h] += hstep;
-							h_amp *= (double)config.harmonic_rolloff;
+							const int ph = 1 + h;
+							s_part += g * std::sin(local_phase[ph]);
+							local_phase[ph] += hstep;
+							g *= (double)config.fallback_rolloff;
 						}
 					}
 				}
 
-				// --- Noise ---
+				// Noise (1-pole LPF on white)
 				if (config.enable_noise)
 				{
 					const float white = state->noise_uniform_pm1();
 					z1 = z1 + alpha * (white - z1);
 					if (std::fabs(z1) < 1e-20f)
-						z1 = 0.0f; // denormal guard
-
-					s = (double)tone_mix * s + (double)noise_mix * (double)z1;
+						z1 = 0.0f;
+					s_noise = (double)z1;
 				}
+
+				const double s = (double)tone_gain * s_tone + (double)part_gain * s_part + (double)noise_gain * s_noise;
 
 				outputs.mono[i] = (float)(amp * s);
 
-				// Phase wrap (light)
-				for (int h = 0; h <= H; ++h)
+				// Wrap phases
+				const int maxPh = 1 + std::max(Np, config.fallback_synthetic_partials ? config.fallback_partial_count : 0);
+				for (int ph = 0; ph < std::min(maxPh, ProsodyWaveGeneratorState::MaxOsc); ++ph)
 				{
-					if (local_phase[h] >= two_pi)
-						local_phase[h] -= two_pi;
-					else if (local_phase[h] < 0.0)
-						local_phase[h] += two_pi;
+					if (local_phase[ph] >= two_pi)
+						local_phase[ph] -= two_pi;
+					else if (local_phase[ph] < 0.0)
+						local_phase[ph] += two_pi;
 				}
 			}
 
 			// persist
-			for (int h = 0; h <= H; ++h)
-				state->phase[h] = local_phase[h];
+			std::memcpy(state->phase, local_phase, sizeof(local_phase));
 			state->noise_z1 = z1;
-			state->prev_amp_linear = target_amp;
+			state->prev_amp_linear = lin_gain;
 		}
 	};
 
