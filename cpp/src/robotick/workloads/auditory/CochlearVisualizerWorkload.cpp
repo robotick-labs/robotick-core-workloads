@@ -152,11 +152,6 @@ namespace robotick
 
 			// === Write new column on far-right edge ===
 
-			ROBOTICK_INFO("0 %.3f mid %.3f hi %.3f",
-				inputs.cochlear_frame.envelope[0],
-				inputs.cochlear_frame.envelope[draw_bands / 2],
-				inputs.cochlear_frame.envelope[draw_bands - 1]);
-
 			for (int y = 0; y < draw_bands; ++y)
 			{
 				float v = inputs.cochlear_frame.envelope[y] * config.visual_gain;
