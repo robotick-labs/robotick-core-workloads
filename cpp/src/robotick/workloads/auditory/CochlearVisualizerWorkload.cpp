@@ -21,7 +21,7 @@ namespace robotick
 		int viewport_width = 800;	 // window width (pixels)
 		int viewport_height = 400;	 // window height (pixels)
 		bool log_scale = true;		 // log compression for visibility
-		float visual_gain = 10.0f;	 // extra gain to brighten low values
+		float visual_gain = 1.0f;	 // extra gain to brighten low values
 		float fade_keep = 0.98f;	 // per-frame decay for older columns
 	};
 
@@ -32,6 +32,8 @@ namespace robotick
 
 	struct CochlearVisualizerState
 	{
+		bool has_initialized = false;
+
 		SDL_Window* window = nullptr;
 		SDL_Renderer* renderer = nullptr;
 		SDL_Texture* texture = nullptr;
@@ -47,9 +49,11 @@ namespace robotick
 
 		void init_window(const CochlearVisualizerConfig& cfg, int num_bands)
 		{
+			has_initialized = true;
+
 			if (SDL_Init(SDL_INIT_VIDEO) < 0)
 			{
-				fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+				ROBOTICK_FATAL_EXIT("SDL_Init failed: %s\n", SDL_GetError());
 				return;
 			}
 
@@ -58,14 +62,14 @@ namespace robotick
 
 			if (!window)
 			{
-				fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+				ROBOTICK_FATAL_EXIT("SDL_CreateWindow failed: %s\n", SDL_GetError());
 				return;
 			}
 
 			renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 			if (!renderer)
 			{
-				fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
+				ROBOTICK_FATAL_EXIT("SDL_CreateRenderer failed: %s\n", SDL_GetError());
 				return;
 			}
 
@@ -78,7 +82,7 @@ namespace robotick
 
 			if (!texture)
 			{
-				fprintf(stderr, "SDL_CreateTexture failed: %s\n", SDL_GetError());
+				ROBOTICK_FATAL_EXIT("SDL_CreateTexture failed: %s\n", SDL_GetError());
 				return;
 			}
 
@@ -131,16 +135,16 @@ namespace robotick
 		CochlearVisualizerInputs inputs;
 		State<CochlearVisualizerState> state;
 
-		void load()
-		{
-			// Use capacity for vertical texture allocation so we never underrun height.
-			const int num_bands = (int)inputs.cochlear_frame.envelope.capacity();
-			state->init_window(config, num_bands);
-		}
-
 		void tick(const TickInfo&)
 		{
 			auto& s = state.get();
+
+			if (!s.has_initialized)
+			{
+				const int num_bands = (int)inputs.cochlear_frame.envelope.capacity();
+				state->init_window(config, num_bands);
+			}
+
 			if (!s.renderer || !s.texture)
 				return;
 
@@ -167,24 +171,6 @@ namespace robotick
 				s.pixels[idx + 1] = c;
 				s.pixels[idx + 2] = c;
 				s.pixels[idx + 3] = c;
-			}
-
-			// Fade other columns slightly to create a trailing effect.
-			const float keep = std::clamp(config.fade_keep, 0.0f, 1.0f);
-			for (int x = 0; x < s.tex_w; ++x)
-			{
-				if (x == s.head_x)
-					continue;
-				for (int y = 0; y < s.tex_h; ++y)
-				{
-					const int idx = (y * s.tex_w + x) * 4;
-					const Uint8 v0 = s.pixels[idx + 0];
-					const Uint8 v1 = (Uint8)std::lround((float)v0 * keep);
-					s.pixels[idx + 0] = 255;
-					s.pixels[idx + 1] = v1;
-					s.pixels[idx + 2] = v1;
-					s.pixels[idx + 3] = v1;
-				}
 			}
 
 			SDL_UpdateTexture(s.texture, nullptr, s.pixels.data(), s.tex_w * 4);
