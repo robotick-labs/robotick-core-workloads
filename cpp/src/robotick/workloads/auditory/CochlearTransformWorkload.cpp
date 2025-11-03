@@ -18,7 +18,7 @@ namespace robotick
 	{
 		uint16_t num_bands = 128;
 		float fmin_hz = 50.0f;
-		float fmax_hz = 8000.0f;
+		float fmax_hz = 3500.0f;
 		float envelope_lp_hz = 30.0f;
 		float compression_gamma = 0.3f;
 		float mod_low_hz = 2.0f;
