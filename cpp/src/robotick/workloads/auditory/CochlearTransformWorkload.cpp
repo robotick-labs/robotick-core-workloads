@@ -1,12 +1,12 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
+#pragma once
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -16,7 +16,7 @@ namespace robotick
 {
 	struct CochlearTransformConfig
 	{
-		uint16_t num_bands = 128; // Max = AudioBuffer128::capacity()
+		uint16_t num_bands = 128;
 		float fmin_hz = 50.0f;
 		float fmax_hz = 8000.0f;
 		float envelope_lp_hz = 30.0f;
@@ -36,9 +36,10 @@ namespace robotick
 		CochlearFrame cochlear_frame;
 	};
 
+	// =====================================================================
 	struct CochlearTransformState
 	{
-		static constexpr size_t FrameSize = AudioBuffer512::capacity();
+		static constexpr size_t FrameSize = 2048;
 		static constexpr size_t FFTSize = FrameSize;
 		static constexpr size_t FFTBins = FFTSize / 2 + 1;
 
@@ -51,29 +52,28 @@ namespace robotick
 		};
 
 		uint32_t sample_rate = 44100;
-		double frame_rate = 86.13;
+		double frame_rate = 0.0;
 
-		AudioBuffer512 window;
-		AudioBuffer512 fft_in;
-		std::array<kiss_fft_cpx, FFTBins> fft_out{};
-		AudioBuffer512 mag;
-		AudioBuffer512 phase; // first 257 bins used
-		std::array<BandInfo, AudioBuffer128::capacity()> bands{};
+		FixedVector<float, FrameSize> window;
+		FixedVector<float, FrameSize> fft_in;
+		FixedVector<float, FFTBins> mag;
+		FixedVector<float, FFTBins> phase;
+		FixedVector<kiss_fft_cpx, FFTBins> fft_out;
+
+		FixedVector<BandInfo, AudioBuffer128::capacity()> bands;
 
 		float env_alpha = 0.0f;
 		AudioBuffer128 env_prev;
-
 		float mod_hp_a0 = 0.0f, mod_hp_b1 = 0.0f, mod_hp_c1 = 0.0f;
 		float mod_lp_a0 = 0.0f, mod_lp_b1 = 0.0f, mod_lp_c1 = 0.0f;
 		AudioBuffer128 mod_hp_z1;
 		AudioBuffer128 mod_lp_z1;
 
 		kiss_fftr_cfg cfg_fftr = nullptr;
-		alignas(16) std::array<unsigned char, 8192> kiss_cfg_mem{};
+		alignas(16) unsigned char kiss_cfg_mem[32768]{};
 
 		void build_window()
 		{
-			window.clear();
 			window.set_size(FrameSize);
 			const float N = float(FrameSize);
 			for (size_t n = 0; n < FrameSize; ++n)
@@ -82,60 +82,58 @@ namespace robotick
 
 		void plan_fft()
 		{
-			size_t len = kiss_cfg_mem.size();
-			cfg_fftr = kiss_fftr_alloc(int(FFTSize), 0, kiss_cfg_mem.data(), &len);
+			fft_in.fill(0.0f);
+
+			size_t len = sizeof(kiss_cfg_mem);
+			cfg_fftr = kiss_fftr_alloc(int(FFTSize), 0, kiss_cfg_mem, &len);
+			mag.set_size(FFTBins);
+			phase.set_size(FFTBins);
+			fft_out.set_size(FFTBins);
 		}
 
 		static inline float erb_rate(float hz) { return 21.4f * std::log10(4.37e-3f * hz + 1.0f); }
 		static inline float inv_erb_rate(float erb) { return (std::pow(10.0f, erb / 21.4f) - 1.0f) / 4.37e-3f; }
 
-		static inline float hz_to_bin(float hz, uint32_t sr)
+		static inline int hz_to_bin(float hz, uint32_t sr)
 		{
 			const float bin_hz = float(sr) / float(FFTSize);
-			float kf = hz / bin_hz;
-			int k = int(std::round(kf));
-			if (k < 0)
-				k = 0;
-			if (k > int(FFTBins - 1))
-				k = int(FFTBins - 1);
-			return float(k);
+			int k = int(std::round(hz / bin_hz));
+			return clamp_bin(k);
 		}
 
 		static inline int clamp_bin(int k)
 		{
 			if (k < 0)
 				return 0;
-			const int maxk = int(FFTBins) - 1;
-			if (k > maxk)
-				return maxk;
+			if (k >= int(FFTBins))
+				return int(FFTBins - 1);
 			return k;
 		}
 
 		void build_erb_bands(const CochlearTransformConfig& cfg)
 		{
-			const float fmin = cfg.fmin_hz;
-			const float fmax = cfg.fmax_hz;
-			const float e0 = erb_rate(fmin);
-			const float e1 = erb_rate(fmax);
+			bands.set_size(cfg.num_bands);
+
+			const float e0 = erb_rate(cfg.fmin_hz);
+			const float e1 = erb_rate(cfg.fmax_hz);
 			const float step = (cfg.num_bands > 1) ? ((e1 - e0) / float(cfg.num_bands - 1)) : 0.0f;
 
 			for (uint16_t b = 0; b < cfg.num_bands; ++b)
 			{
 				const float e = e0 + step * float(b);
 				const float fc = inv_erb_rate(e);
-				bands[b].center_hz = fc;
+				auto& band = bands[b];
+				band.center_hz = fc;
 
 				const float bw = 24.7f * (4.37e-3f * fc + 1.0f);
-				const float left_hz = std::max(fmin, fc - bw);
-				const float right_hz = std::min(fmax, fc + bw);
+				const float left_hz = std::max(cfg.fmin_hz, fc - bw);
+				const float right_hz = std::min(cfg.fmax_hz, fc + bw);
 
-				const int left_k = int(std::floor(hz_to_bin(left_hz, sample_rate) + 0.5f));
-				const int center_k = int(std::floor(hz_to_bin(fc, sample_rate) + 0.5f));
-				const int right_k = int(std::floor(hz_to_bin(right_hz, sample_rate) + 0.5f));
-
-				bands[b].left_bin = clamp_bin(left_k);
-				bands[b].center_bin = clamp_bin(center_k);
-				bands[b].right_bin = clamp_bin(right_k > bands[b].center_bin ? right_k : bands[b].center_bin + 1);
+				band.left_bin = hz_to_bin(left_hz, sample_rate);
+				band.center_bin = hz_to_bin(fc, sample_rate);
+				band.right_bin = hz_to_bin(right_hz, sample_rate);
+				if (band.right_bin <= band.center_bin)
+					band.right_bin = band.center_bin + 1;
 			}
 		}
 
@@ -165,14 +163,12 @@ namespace robotick
 		void reset_state()
 		{
 			env_prev.fill(0.0f);
-			env_prev.fill(0.0f);
 			mod_hp_z1.fill(0.0f);
-			mod_hp_z1.fill(0.0f);
-			mod_lp_z1.fill(0.0f);
 			mod_lp_z1.fill(0.0f);
 		}
 	};
 
+	// =====================================================================
 	struct CochlearTransformWorkload
 	{
 		CochlearTransformConfig config;
@@ -184,18 +180,13 @@ namespace robotick
 		{
 			AudioSystem::init();
 			state->sample_rate = AudioSystem::get_sample_rate();
-			state->frame_rate = double(state->sample_rate) / double(CochlearTransformState::FrameSize);
 
-			const size_t capacity = AudioBuffer128::capacity();
-			config.num_bands = std::min(capacity, (size_t)config.num_bands);
+			// Hop = 1/4 window for 75% overlap
+			const double hop = CochlearTransformState::FrameSize / 4.0;
+			state->frame_rate = double(state->sample_rate) / hop;
 
-			state->window.fill(0.0f);
-			state->fft_in.fill(0.0f);
-			state->mag.fill(0.0f);
-			state->phase.fill(0.0f);
-			state->env_prev.fill(0.0f);
-			state->mod_hp_z1.fill(0.0f);
-			state->mod_lp_z1.fill(0.0f);
+			const size_t cap = AudioBuffer128::capacity();
+			config.num_bands = std::min(cap, (size_t)config.num_bands);
 
 			outputs.cochlear_frame.envelope.set_size(config.num_bands);
 			outputs.cochlear_frame.fine_phase.set_size(config.num_bands);
@@ -234,25 +225,10 @@ namespace robotick
 			{
 				const auto& band = state->bands[bandId];
 				float energy = 0.0f;
-
-				const int k0 = band.left_bin;
-				const int k1 = band.center_bin;
-				const int k2 = band.right_bin;
-
-				const float denomL = float(k1 - k0 > 0 ? (k1 - k0) : 1);
-				for (int k = k0; k < k1; ++k)
+				for (int k = band.left_bin; k < band.right_bin; ++k)
 				{
-					const float w = (float(k) - float(k0)) / denomL;
 					const float m = state->mag[k];
-					energy += (w * m) * (w * m);
-				}
-
-				const float denomR = float(k2 - k1 > 0 ? (k2 - k1) : 1);
-				for (int k = k1; k <= k2; ++k)
-				{
-					const float w = 1.0f - (float(k) - float(k1)) / denomR;
-					const float m = state->mag[k];
-					energy += (w * m) * (w * m);
+					energy += m * m;
 				}
 
 				const float amp = std::sqrt(energy);
@@ -277,5 +253,4 @@ namespace robotick
 
 		void stop() {}
 	};
-
 } // namespace robotick
