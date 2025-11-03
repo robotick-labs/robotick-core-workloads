@@ -19,11 +19,13 @@ namespace robotick
 		uint16_t num_bands = 128;
 		float fmin_hz = 50.0f;
 		float fmax_hz = 3500.0f;
-		float envelope_lp_hz = 30.0f;	  // env smoothing (Hz)
-		float compression_gamma = 1.0f;	  // dynamic compression on envelope
-		float mod_low_hz = 2.0f;		  // modulation HP (on envelope)
-		float mod_high_hz = 20.0f;		  // modulation LP (on envelope)
-		float erb_bandwidth_scale = 0.4f; // scales ERB width (narrower => sharper)
+		float envelope_lp_hz = 30.0f;	  // envelope smoothing (Hz)
+		float compression_gamma = 0.6f;	  // perceptual dynamic compression
+		float mod_low_hz = 1.5f;		  // modulation HP (on envelope)
+		float mod_high_hz = 12.0f;		  // modulation LP (on envelope)
+		float erb_bandwidth_scale = 0.5f; // scales ERB width (narrower => sharper)
+		bool use_preemphasis = true;
+		float preemph = 0.97f; // preemphasis factor
 	};
 
 	struct CochlearTransformInputs
@@ -71,24 +73,36 @@ namespace robotick
 		FixedVector<BandInfo, AudioBuffer128::capacity()> bands;
 
 		// Envelope + modulation filters (per band)
-		float env_alpha = 0.2f;
+		float env_alpha = 0.0f;
 		AudioBuffer128 env_prev;
 		float mod_hp_a0 = 0.0f, mod_hp_b1 = 0.0f, mod_hp_c1 = 0.0f;
 		float mod_lp_a0 = 0.0f, mod_lp_b1 = 0.0f, mod_lp_c1 = 0.0f;
 		AudioBuffer128 mod_hp_z1;
 		AudioBuffer128 mod_lp_z1;
 
+		// Preemphasis + DC removal
+		float x_prev = 0.0f;
+		float dc_state = 0.0f;
+		float dc_alpha = 0.9995f;
+
 		kiss_fftr_cfg cfg_fftr = nullptr;
-		// Enough stack for kiss config at 4096; increase if needed.
 		alignas(16) unsigned char kiss_cfg_mem[131072]{};
+
+		float window_rms = 1.0f;
 
 		// ---------------- Window/FFT planning ----------------
 		void build_window()
 		{
 			window.set_size(FrameSize);
 			const float N = float(FrameSize);
+			double e = 0.0;
 			for (size_t n = 0; n < FrameSize; ++n)
-				window[n] = 0.5f * (1.0f - std::cos(2.0f * float(M_PI) * (float)n / (N - 1.0f))); // Hann
+			{
+				const float w = 0.5f * (1.0f - std::cos(2.0f * float(M_PI) * (float)n / (N - 1.0f))); // Hann
+				window[n] = w;
+				e += double(w) * double(w);
+			}
+			window_rms = (e > 0.0) ? float(std::sqrt(e / double(FrameSize))) : 1.0f;
 		}
 
 		void plan_fft()
@@ -98,6 +112,9 @@ namespace robotick
 
 			size_t len = sizeof(kiss_cfg_mem);
 			cfg_fftr = kiss_fftr_alloc(int(FFTSize), 0, kiss_cfg_mem, &len);
+			if (!cfg_fftr)
+				cfg_fftr = kiss_fftr_alloc(int(FFTSize), 0, nullptr, nullptr);
+			ROBOTICK_ASSERT(cfg_fftr && "kiss_fftr_alloc failed");
 
 			mag.set_size(FFTBins);
 			phase.set_size(FFTBins);
@@ -146,20 +163,23 @@ namespace robotick
 				band.left_bin = hz_to_bin(left_hz, sample_rate);
 				band.center_bin = hz_to_bin(fc, sample_rate);
 				band.right_bin = hz_to_bin(right_hz, sample_rate);
-				if (band.right_bin <= band.center_bin)
-					band.right_bin = band.center_bin + 1;
+
+				if (band.right_bin <= band.left_bin)
+					band.right_bin = std::min(int(FFTBins - 1), band.left_bin + 1);
+				if (band.center_bin <= band.left_bin)
+					band.center_bin = std::min(band.right_bin - 1, band.left_bin + (band.right_bin - band.left_bin) / 2);
 			}
 		}
 
 		// ---------------- Envelope & Modulation filters ----------------
 		void build_env_filters(const CochlearTransformConfig& cfg)
 		{
-			// Single-pole low-pass on amplitude with cutoff envelope_lp_hz
-			const double dt = 1.0 / frame_rate; // frame_rate == sample_rate / Hop
-			const double tau = (cfg.envelope_lp_hz <= 0.0f) ? 0.0 : 1.0 / (2.0 * M_PI * double(cfg.envelope_lp_hz));
-			env_alpha = (tau <= 0.0) ? 1.0f : float(1.0 - std::exp(-dt / tau));
+			const double dt = 1.0 / frame_rate;
+			const double fc_env = std::clamp(double(cfg.envelope_lp_hz), 0.5, 60.0);
+			const double tau = 1.0 / (2.0 * M_PI * fc_env);
+			env_alpha = float(1.0 - std::exp(-dt / tau));
 
-			const double fs = frame_rate; // per-frame update rate for the modulation filters
+			const double fs = frame_rate;
 			// Simple first-order HP on envelope
 			{
 				const double fc = std::max(0.1, double(cfg.mod_low_hz));
@@ -189,16 +209,29 @@ namespace robotick
 			env_prev.fill(0.0f);
 			mod_hp_z1.fill(0.0f);
 			mod_lp_z1.fill(0.0f);
+			x_prev = 0.0f;
+			dc_state = 0.0f;
 		}
 
 		// ---------------- Ring buffer intake ----------------
-		void push_samples(const float* src, size_t n)
+		void push_samples(const float* src, size_t n, const CochlearTransformConfig& cfg)
 		{
 			if (!src || n == 0)
 				return;
 			for (size_t i = 0; i < n; ++i)
 			{
-				ring[write_idx] = src[i];
+				float x = src[i];
+				// DC tracker
+				dc_state = dc_alpha * dc_state + (1.0f - dc_alpha) * x;
+				x -= dc_state;
+				// Preemphasis
+				if (cfg.use_preemphasis)
+				{
+					const float y = x - x_prev * cfg.preemph;
+					x_prev = x;
+					x = y;
+				}
+				ring[write_idx] = x;
 				write_idx = (write_idx + 1) % FrameSize;
 				if (filled < FrameSize)
 					++filled;
@@ -211,12 +244,10 @@ namespace robotick
 			if (filled < FrameSize || samples_since_last_frame < Hop)
 				return false;
 
-			// Oldest sample in the full buffer is at write_idx (next position to write),
-			// assemble fft_in in chronological order, multiply by window.
 			size_t r = write_idx;
 			for (size_t i = 0; i < FrameSize; ++i)
 			{
-				fft_in[i] = ring[r] * window[i];
+				fft_in[i] = (ring[r] * window[i]) / window_rms;
 				r = (r + 1) % FrameSize;
 			}
 			samples_since_last_frame -= Hop;
@@ -232,6 +263,8 @@ namespace robotick
 		CochlearTransformOutputs outputs;
 		State<CochlearTransformState> state;
 
+		static inline float zap_denorm(float v) { return (std::fabs(v) < 1e-30f) ? 0.0f : v; }
+
 		void load()
 		{
 			AudioSystem::init();
@@ -240,7 +273,6 @@ namespace robotick
 			state->build_window();
 			state->plan_fft();
 
-			// Hop-based frame rate for envelope + modulation filters
 			state->frame_rate = double(state->sample_rate) / double(CochlearTransformState::Hop);
 
 			const size_t cap = AudioBuffer128::capacity();
@@ -258,10 +290,8 @@ namespace robotick
 
 		void analyze_one_frame()
 		{
-			// FFT
 			kiss_fftr(state->cfg_fftr, state->fft_in.data(), state->fft_out.data());
 
-			// Mag/phase
 			for (size_t k = 0; k < CochlearTransformState::FFTBins; ++k)
 			{
 				const float re = state->fft_out[k].r;
@@ -271,7 +301,13 @@ namespace robotick
 				state->phase[k] = std::atan2(im, re);
 			}
 
-			// Bands (Gaussian-weighted power over ERB span)
+			// light 3-tap blur to smooth across frequency
+			for (size_t k = 1; k + 1 < CochlearTransformState::FFTBins; ++k)
+			{
+				const float m0 = state->mag[k - 1], m1 = state->mag[k], m2 = state->mag[k + 1];
+				state->mag[k] = (m0 + 2.0f * m1 + m2) * 0.25f;
+			}
+
 			const float bin_hz = float(state->sample_rate) / float(CochlearTransformState::FFTSize);
 
 			for (size_t bandId = 0; bandId < config.num_bands; ++bandId)
@@ -295,22 +331,23 @@ namespace robotick
 				if (wsum > 0.0f)
 					energy /= wsum;
 
-				// Envelope (EMA) + compression
 				const float amp = std::sqrt(energy);
 				const float env = state->env_alpha * amp + (1.0f - state->env_alpha) * state->env_prev[bandId];
 				state->env_prev[bandId] = env;
 
-				const float comp = std::pow(env + 1e-9f, config.compression_gamma);
+				const float comp = std::pow(std::max(env, 0.0f) + 1e-9f, config.compression_gamma);
 
-				// Modulation band (HP then LP over frames)
-				const float hp_y = state->mod_hp_a0 * comp + state->mod_hp_b1 * state->mod_hp_z1[bandId];
+				float hp_y = state->mod_hp_a0 * comp + state->mod_hp_b1 * state->mod_hp_z1[bandId];
+				hp_y = zap_denorm(hp_y);
 				state->mod_hp_z1[bandId] = comp - state->mod_hp_c1 * hp_y;
 
-				const float lp_y = state->mod_lp_a0 * hp_y + state->mod_lp_b1 * state->mod_lp_z1[bandId];
+				float lp_y = state->mod_lp_a0 * hp_y + state->mod_lp_b1 * state->mod_lp_z1[bandId];
+				lp_y = zap_denorm(lp_y);
 				state->mod_lp_z1[bandId] = hp_y - state->mod_lp_c1 * lp_y;
 
-				// Outputs
-				outputs.cochlear_frame.envelope[bandId] = comp;
+				const float env_vis = comp;
+
+				outputs.cochlear_frame.envelope[bandId] = env_vis;
 				outputs.cochlear_frame.modulation_power[bandId] = lp_y * lp_y;
 				outputs.cochlear_frame.fine_phase[bandId] = state->phase[band.center_bin];
 			}
@@ -318,14 +355,11 @@ namespace robotick
 
 		void tick(const TickInfo&)
 		{
-			// Ingest new audio into the ring buffer
 			if (!inputs.mono.samples.empty())
-				state->push_samples(inputs.mono.samples.data(), inputs.mono.samples.size());
+				state->push_samples(inputs.mono.samples.data(), inputs.mono.samples.size(), config);
 
-			// Only analyze when a full hop is available (true STFT)
 			if (!state->make_frame_from_ring())
 			{
-				// No new frame yet; keep timestamp in sync anyway
 				outputs.cochlear_frame.timestamp = inputs.mono.timestamp;
 				return;
 			}
