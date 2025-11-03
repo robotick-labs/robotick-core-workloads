@@ -20,10 +20,10 @@ namespace robotick
 		float fmin_hz = 50.0f;
 		float fmax_hz = 3500.0f;
 		float envelope_lp_hz = 30.0f;
-		float compression_gamma = 0.3f;
+		float compression_gamma = 1.0f;
 		float mod_low_hz = 2.0f;
 		float mod_high_hz = 20.0f;
-		bool output_phase = true;
+		float erb_bandwidth_scale = 0.4f; // <— scales ERB width (0.5 = half normal)
 	};
 
 	struct CochlearTransformInputs
@@ -39,7 +39,7 @@ namespace robotick
 	// =====================================================================
 	struct CochlearTransformState
 	{
-		static constexpr size_t FrameSize = 2048;
+		static constexpr size_t FrameSize = 4096;
 		static constexpr size_t FFTSize = FrameSize;
 		static constexpr size_t FFTBins = FFTSize / 2 + 1;
 
@@ -70,7 +70,7 @@ namespace robotick
 		AudioBuffer128 mod_lp_z1;
 
 		kiss_fftr_cfg cfg_fftr = nullptr;
-		alignas(16) unsigned char kiss_cfg_mem[32768]{};
+		alignas(16) unsigned char kiss_cfg_mem[131072]{};
 
 		void build_window()
 		{
@@ -83,7 +83,6 @@ namespace robotick
 		void plan_fft()
 		{
 			fft_in.fill(0.0f);
-
 			size_t len = sizeof(kiss_cfg_mem);
 			cfg_fftr = kiss_fftr_alloc(int(FFTSize), 0, kiss_cfg_mem, &len);
 			mag.set_size(FFTBins);
@@ -118,14 +117,15 @@ namespace robotick
 			const float e1 = erb_rate(cfg.fmax_hz);
 			const float step = (cfg.num_bands > 1) ? ((e1 - e0) / float(cfg.num_bands - 1)) : 0.0f;
 
-			for (uint16_t b = 0; b < cfg.num_bands; ++b)
+			for (uint16_t bandId = 0; bandId < cfg.num_bands; ++bandId)
 			{
-				const float e = e0 + step * float(b);
+				const float e = e0 + step * float(bandId);
 				const float fc = inv_erb_rate(e);
-				auto& band = bands[b];
+				auto& band = bands[bandId];
 				band.center_hz = fc;
 
-				const float bw = 24.7f * (4.37e-3f * fc + 1.0f);
+				// narrower ERB width for sharper response
+				const float bw = cfg.erb_bandwidth_scale * 24.7f * (4.37e-3f * fc + 1.0f);
 				const float left_hz = std::max(cfg.fmin_hz, fc - bw);
 				const float right_hz = std::min(cfg.fmax_hz, fc + bw);
 
@@ -224,18 +224,27 @@ namespace robotick
 			for (size_t bandId = 0; bandId < config.num_bands; ++bandId)
 			{
 				const auto& band = state->bands[bandId];
+				const float fc = band.center_hz;
+				const float bw = config.erb_bandwidth_scale * 24.7f * (4.37e-3f * fc + 1.0f);
+
 				float energy = 0.0f;
+				float wsum = 0.0f;
+
 				for (int k = band.left_bin; k < band.right_bin; ++k)
 				{
+					const float bin_hz = (float(k) / CochlearTransformState::FFTSize) * state->sample_rate;
+					const float w = std::exp(-0.5f * std::pow((bin_hz - fc) / (0.5f * bw), 2.0f)); // Gaussian weight
 					const float m = state->mag[k];
-					energy += m * m;
+					energy += w * (m * m);
+					wsum += w;
 				}
+
+				if (wsum > 0.0f)
+					energy /= wsum; // normalise by total weight
 
 				const float amp = std::sqrt(energy);
 				const float env = state->env_alpha * amp + (1.0f - state->env_alpha) * state->env_prev[bandId];
 				state->env_prev[bandId] = env;
-
-				const float comp = std::pow(env + 1e-9f, config.compression_gamma);
 
 				const float hp_y = state->mod_hp_a0 * env + state->mod_hp_b1 * state->mod_hp_z1[bandId];
 				state->mod_hp_z1[bandId] = env - state->mod_hp_c1 * hp_y;
@@ -243,9 +252,9 @@ namespace robotick
 				const float lp_y = state->mod_lp_a0 * hp_y + state->mod_lp_b1 * state->mod_lp_z1[bandId];
 				state->mod_lp_z1[bandId] = hp_y - state->mod_lp_c1 * lp_y;
 
-				outputs.cochlear_frame.envelope[bandId] = comp;
+				outputs.cochlear_frame.envelope[bandId] = env;
 				outputs.cochlear_frame.modulation_power[bandId] = lp_y * lp_y;
-				outputs.cochlear_frame.fine_phase[bandId] = config.output_phase ? state->phase[band.center_bin] : 0.0f;
+				outputs.cochlear_frame.fine_phase[bandId] = state->phase[band.center_bin];
 			}
 
 			outputs.cochlear_frame.timestamp = inputs.mono.timestamp;

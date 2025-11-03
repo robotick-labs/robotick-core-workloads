@@ -13,34 +13,15 @@
 #pragma once
 
 #include "robotick/api.h"
-#include "robotick/framework/common/FixedVector.h"
+
+#include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
+#include "robotick/systems/auditory/SourceCandidate.h"
 
 #include <cmath>
-#include <cstdint>
-#include <cstring>
 
 namespace robotick
 {
-	struct SourceCandidate
-	{
-		uint8_t id = 0;
-		float centroid_freq_hz = 0.0f;
-		float harmonicity = 0.0f;		 // 0..1 sieve score (instant + temporal)
-		float amplitude = 0.0f;			 // matched energy proxy
-		float modulation_rate = 0.0f;	 // Hz (2..10)
-		float pitch_hz = 0.0f;			 // f0 estimate
-		float bandwidth_hz = 0.0f;		 // rough spectral spread
-		float temporal_coherence = 0.0f; // 0..1 envelope correlation score
-	};
-
-	// ---- I/O ----
-
-	struct TemporalGroupingInputs
-	{
-		CochlearFrame cochlear_frame;
-	};
-
 	struct TemporalGroupingConfig
 	{
 		// Match CochlearTransform bands:
@@ -76,10 +57,14 @@ namespace robotick
 		uint8_t modulation_bins = 7; // we’ll probe: {2,3,4,5,6,8,10} Hz
 	};
 
+	struct TemporalGroupingInputs
+	{
+		CochlearFrame cochlear_frame;
+	};
+
 	struct TemporalGroupingOutputs
 	{
-		static constexpr size_t MaxSources = 8;
-		FixedVector<SourceCandidate, MaxSources> sources;
+		SourceCandidates8 source_candidates;
 	};
 
 	// ---- Workload ----
@@ -484,7 +469,7 @@ namespace robotick
 		void tick(const TickInfo& tick_info)
 		{
 			const CochlearFrame& cur = inputs.cochlear_frame;
-			outputs.sources.clear();
+			outputs.source_candidates.clear();
 
 			// Lazy init ring
 			if (!state.initialised)
@@ -624,8 +609,8 @@ namespace robotick
 				out.temporal_coherence = clampf(t.temporal_coherence, 0.0f, 1.0f);
 				out.modulation_rate = t.modulation_rate;
 
-				outputs.sources.add(out);
-				if (outputs.sources.size() >= outputs.sources.capacity())
+				outputs.source_candidates.add(out);
+				if (outputs.source_candidates.size() >= outputs.source_candidates.capacity())
 					break;
 			}
 
