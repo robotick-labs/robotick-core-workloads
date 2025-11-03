@@ -8,10 +8,16 @@
 namespace robotick
 {
 	/**
-	 * @brief AudioBuffer512 is a fixed-size audio sample buffer used for audio streaming workloads.
-	 * It holds up to 512 float samples (mono).
+	 * @brief AudioBuffer512 is a fixed-size buffer used for audio streaming workloads.
+	 * It holds up to 512 float entries (mono).
 	 */
 	using AudioBuffer512 = FixedVector<float, 512>;
+
+	/**
+	 * @brief AudioBuffer128 is a fixed-size buffer used for audio streaming workloads.
+	 * It holds up to 128 float entries (mono).
+	 */
+	using AudioBuffer128 = FixedVector<float, 128>;
 
 	struct AudioFrame
 	{

@@ -15,8 +15,8 @@ namespace robotick
 		if (!buf || !out_buffer || buffer_size < 32)
 			return false;
 
-		// Format: <AudioBuffer512(size)>
-		int written = snprintf(out_buffer, buffer_size, "<AudioBuffer512(%zu)>", buf->size());
+		// Format: <AudioBuffer{capacity}(size)>
+		int written = snprintf(out_buffer, buffer_size, "<AudioBuffer%zu(%zu)>", buf->capacity(), buf->size());
 		return written > 0 && static_cast<size_t>(written) < buffer_size;
 	}
 
@@ -26,6 +26,7 @@ namespace robotick
 		return false;
 	}
 
+	ROBOTICK_REGISTER_PRIMITIVE(AudioBuffer128, audio_buffer_to_string<AudioBuffer128>, audio_buffer_from_string);
 	ROBOTICK_REGISTER_PRIMITIVE(AudioBuffer512, audio_buffer_to_string<AudioBuffer512>, audio_buffer_from_string);
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(AudioFrame)
