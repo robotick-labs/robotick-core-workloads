@@ -28,7 +28,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-                "CMAKE_CXX_FLAGS_DEBUG": "-g -O0 -fno-omit-frame-pointer -fdebug-prefix-map=${sourceDir}=/workspace -DROBOTICK_DEBUG -DROBOTICK_ENABLE_MODEL_HEAP -DROBOTICK_PLATFORM_LINUX -DROBOTICK_PLATFORM_DESKTOP -DROBOTICK_BUILD_CORE_WORKLOAD_TESTS",
+                "CMAKE_CXX_FLAGS_DEBUG": "-g -O0 -fno-omit-frame-pointer -DROBOTICK_DEBUG -DROBOTICK_ENABLE_MODEL_HEAP -DROBOTICK_PLATFORM_LINUX -DROBOTICK_PLATFORM_DESKTOP -DROBOTICK_BUILD_CORE_WORKLOAD_TESTS",
                 "ROBOTICK_BUILD_CORE_WORKLOAD_TESTS": "ON"
             }
         },

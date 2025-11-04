@@ -33,7 +33,7 @@ namespace robotick
 		return written > 0 && static_cast<size_t>(written) < buffer_size;
 	}
 
-	static bool candidates_vector_from_string(const char* str, void* data)
+	static bool candidates_vector_from_string(const char*, void*)
 	{
 		// Read-only string representation, parsing not supported
 		return false;

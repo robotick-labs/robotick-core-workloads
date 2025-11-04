@@ -59,8 +59,8 @@ namespace robotick
 			return true;
 		}
 
-		int sample_rate() const { return obtained_output_spec.freq; }
-		int output_channels() const { return obtained_output_spec.channels; }
+		uint32_t sample_rate() const { return obtained_output_spec.freq; }
+		uint8_t output_channels() const { return obtained_output_spec.channels; }
 
 		// Queue already-interleaved stereo frames (frames == number of LR pairs)
 		void write_interleaved_stereo(const float* interleaved_lr, size_t frames)
@@ -173,12 +173,12 @@ namespace robotick
 		return g_audio_impl.initialized;
 	}
 
-	int AudioSystem::get_sample_rate()
+	uint32_t AudioSystem::get_sample_rate()
 	{
 		return g_audio_impl.sample_rate();
 	}
 
-	int AudioSystem::get_output_channels()
+	uint8_t AudioSystem::get_output_channels()
 	{
 		return g_audio_impl.output_channels();
 	}

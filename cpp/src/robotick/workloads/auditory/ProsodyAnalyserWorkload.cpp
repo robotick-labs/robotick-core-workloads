@@ -1,8 +1,6 @@
 // Copyright Robotick
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
-
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
@@ -170,9 +168,6 @@ namespace robotick
 			state->f0_raw_prev = 0.0f;
 			state->f0_smooth = 0.0f;
 			state->dx_smooth = 0.0f;
-
-			// Clear outputs
-			std::memset(&outputs.prosody_state, 0, sizeof(outputs.prosody_state));
 		}
 
 		void start(float /*tick_rate_hz*/) { state->sample_rate = AudioSystem::get_sample_rate(); }
@@ -529,14 +524,12 @@ namespace robotick
 				const int k0 = std::clamp(k0_guess, 1, K - 2);
 
 				float best_v0 = mag[k0];
-				int best_k0 = k0;
 				for (int dk = -1; dk <= 1; ++dk)
 				{
 					const int kk = k0 + dk;
 					if (kk > 0 && kk < K && mag[kk] > best_v0)
 					{
 						best_v0 = mag[kk];
-						best_k0 = kk;
 					}
 				}
 				m_f0 = best_v0; // absolute magnitude of fundamental peak

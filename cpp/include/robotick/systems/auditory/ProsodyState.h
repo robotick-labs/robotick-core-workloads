@@ -1,5 +1,7 @@
 #pragma once
 
+#include "robotick/framework/common/FixedVector.h"
+
 namespace robotick
 {
 	namespace Prosody

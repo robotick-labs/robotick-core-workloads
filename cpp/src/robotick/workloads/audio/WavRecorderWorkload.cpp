@@ -61,7 +61,7 @@ namespace robotick
 			outputs.total_written = 0;
 		}
 
-		void tick(const TickInfo& tick_info)
+		void tick(const TickInfo&)
 		{
 			if (!outputs.file_open)
 				return;

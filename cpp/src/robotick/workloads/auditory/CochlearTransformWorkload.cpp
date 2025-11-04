@@ -1,7 +1,6 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#pragma once
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"

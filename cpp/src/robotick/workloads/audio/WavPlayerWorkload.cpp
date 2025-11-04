@@ -65,10 +65,10 @@ namespace robotick
 				"Audio System sample-rate (%i) and that of wav-file '%s' (%i) differ",
 				AudioSystem::get_sample_rate(),
 				config.file_path.c_str(),
-				wav_file.get_sample_rate());
+				(int)wav_file.get_sample_rate());
 		}
 
-		void start(float tick_rate_hz) { state->time_to_loop_sec = config.loop_delay_sec; }
+		void start(float /*tick_rate_hz*/) { state->time_to_loop_sec = config.loop_delay_sec; }
 
 		void tick(const TickInfo& tick_info)
 		{
@@ -78,7 +78,7 @@ namespace robotick
 
 			const WavFile& wav_file = state->wav_file;
 
-			const int frame_count = wav_file.get_frame_count();
+			const size_t frame_count = wav_file.get_frame_count();
 			const int target_rate = wav_file.get_sample_rate();
 			const int samples_per_tick = target_rate / static_cast<int>(tick_info.tick_rate_hz);
 

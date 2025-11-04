@@ -21,8 +21,8 @@ namespace robotick
 		static bool init();
 
 		// Output device info
-		static int get_sample_rate();
-		static int get_output_channels(); // e.g. 2 for stereo
+		static uint32_t get_sample_rate();
+		static uint8_t get_output_channels(); // e.g. 2 for stereo
 
 		// --- Output: convenience APIs ---
 		// Back-compat: queue a mono buffer. If output is stereo, duplicates to L+R.
