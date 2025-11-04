@@ -288,8 +288,32 @@ namespace robotick
 					state.claimed_energy[j] = robotick::TemporalGrouping::clampf(state.claimed_energy[j] + 0.6f * e, 0.0f, 1.0f);
 				}
 
-				if (pool.size() < pool.capacity())
-					pool.add(best);
+				auto is_duplicate_pitch = [&](float hz)
+				{
+					for (size_t i = 0; i < pool.size(); ++i)
+					{
+						const float a = pool[i].res.f0_hz;
+						// Use cents or Hz; cents is more scale-robust:
+						const float cents = 1200.0f * std::log2(std::max(hz, 1e-6f) / std::max(a, 1e-6f));
+						if (std::fabs(cents) < 10.0f) // ~ <= 0.6% difference
+							return true;
+					}
+					return false;
+				};
+
+				if (!is_duplicate_pitch(best.res.f0_hz))
+				{
+					// Soft-claim ALL bins that came back in res.bands (now the entire peak span)
+					for (uint8_t b = 0; b < best.res.band_count; ++b)
+					{
+						const uint16_t j = best.res.bands[b];
+						const float e = clampf(current_frame.envelope[j], 0.0f, 1.0f);
+						// stronger claim inside same tick so it actually blocks re-picks:
+						state.claimed_energy[j] = clampf(state.claimed_energy[j] + 1.0f * e, 0.0f, 1.0f);
+					}
+					if (pool.size() < pool.capacity())
+						pool.add(best);
+				}
 			}
 
 			// Emit via simple EMA

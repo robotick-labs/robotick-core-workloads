@@ -100,7 +100,7 @@ namespace robotick
 		static inline SDL_Color palette(uint8_t idx)
 		{
 			static const SDL_Color colors[] = {
-				{64, 255, 64, 255},	 // green
+				{0, 200, 0, 255},	 // green
 				{255, 255, 96, 255}, // magenta
 				{64, 160, 255, 255}, // orange
 				{255, 64, 64, 255},	 // blue
