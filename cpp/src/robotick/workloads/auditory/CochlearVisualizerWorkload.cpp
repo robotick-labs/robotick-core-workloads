@@ -104,8 +104,8 @@ namespace robotick
 			static const SDL_Color colors[] = {
 				{64, 255, 64, 255},	 // green
 				{255, 255, 96, 255}, // magenta
-				{255, 128, 64, 255}, // blue
 				{64, 160, 255, 255}, // orange
+				{255, 64, 64, 255},	 // blue
 				{255, 255, 64, 255}, // cyan
 				{64, 255, 200, 255}, // yellow
 				{64, 64, 255, 255},	 // red
@@ -197,9 +197,7 @@ namespace robotick
 					if (sc.pitch_hz <= 0.0f)
 						continue;
 
-					ROBOTICK_INFO("%i %.3f, %.3f", (int)i, sc.pitch_hz, sc.amplitude);
-
-					const SDL_Color col = palette(sc.id);
+					const SDL_Color col = palette(i);
 					const float half_bw = 0.5f * sc.bandwidth_hz;
 
 					const float f_lo = sc.pitch_hz - half_bw;

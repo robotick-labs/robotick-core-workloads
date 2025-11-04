@@ -9,7 +9,6 @@ namespace robotick
 {
 	struct SourceCandidate
 	{
-		uint8_t id = 0;
 		float centroid_freq_hz = 0.0f;
 		float harmonicity = 0.0f;		 // 0..1 sieve score (instant + temporal)
 		float amplitude = 0.0f;			 // matched energy proxy

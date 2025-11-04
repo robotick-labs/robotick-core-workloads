@@ -11,7 +11,6 @@ namespace robotick
 	// ProsodyState Registration: ===========================
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(SourceCandidate)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, uint8_t, id)
 	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, centroid_freq_hz)
 	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, harmonicity)
 	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, amplitude)

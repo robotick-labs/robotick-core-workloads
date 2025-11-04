@@ -36,7 +36,7 @@ namespace robotick
 		// Selection / gating
 		uint8_t max_sources = 3;
 		float min_harmonicity = 0.15f;
-		float min_amplitude = 1e-4f;
+		float min_amplitude = 0.05f;
 
 		// Temporal smoothing
 		float smooth_alpha = 0.5f;
@@ -306,29 +306,54 @@ namespace robotick
 			return best_f;
 		}
 
+		// --- Helper: local band "width" in Hz using frame's band centers (no ERB) ---
+		// Approximates the effective width around band j as half the distance to its neighbours.
+		// Edge bands fall back to a one-sided half-gap.
+		static inline float band_local_width_hz(const CochlearFrame& cf, int j)
+		{
+			const int n = (int)cf.band_center_hz.size();
+			if (n <= 1)
+				return 1.0f;
+
+			if (j <= 0)
+				return 0.5f * (cf.band_center_hz[1] - cf.band_center_hz[0]);
+
+			if (j >= n - 1)
+				return 0.5f * (cf.band_center_hz[n - 1] - cf.band_center_hz[n - 2]);
+
+			const float left = cf.band_center_hz[j] - cf.band_center_hz[j - 1];
+			const float right = cf.band_center_hz[j + 1] - cf.band_center_hz[j];
+			return 0.5f * (left + right);
+		}
+
 		// ---- Evaluate f0 against current frame (with soft reuse penalty) ----
-		// Returns (score, centroid_hz, bandwidth_hz, amplitude) and the band list used.
-		void eval_f0_with_mask(const CochlearFrame& cur,
+		// Uses only band_center_hz[] from the *current* frame, cents-based tolerance from config,
+		// requires early-harmonic evidence, and applies a light span penalty based on local band spacing.
+		inline void eval_f0_with_mask(const CochlearFrame& cur,
 			float f0,
-			const float* claimed, // per-band [0..1] soft penalty
-			float reuse_penalty,
-			float& out_score,
-			float& out_centroid_hz,
-			float& out_bandwidth_hz,
-			float& out_amplitude,
-			uint16_t* out_bands, // filled with used band indices
+			const float* claimed,	 // per-band [0..1] soft penalty
+			float reuse_penalty,	 // penalty strength for already-claimed bins
+			float& out_score,		 // 0..1 “harmonicity”
+			float& out_centroid_hz,	 // energy-weighted centroid (Hz)
+			float& out_bandwidth_hz, // energy-weighted stdev (Hz)
+			float& out_amplitude,	 // weighted sum of contributing energy
+			uint16_t* out_bands,	 // filled with band indices used
 			uint8_t& out_band_count) const
 		{
 			const uint16_t nb = (uint16_t)config.num_bands;
 			const uint8_t H = config.max_harmonics;
 			const float tol_cents = config.harmonic_tolerance_cents;
 
-			float num = 0.0f;
-			float den = 0.0f;
-			float wsum_f = 0.0f;
-			float wsum = 0.0f;
+			float num = 0.0f;	 // accepted (penalised) energy
+			float den = 0.0f;	 // considered energy
+			float wsum_f = 0.0f; // centroid accumulator (Hz)
+			float wsum = 0.0f;	 // weight accumulator
 
 			out_band_count = 0;
+
+			// Evidence counters
+			int hits_total = 0;
+			int hits_early = 0; // among h = 1..3
 
 			for (uint8_t h = 1; h <= H; ++h)
 			{
@@ -338,7 +363,7 @@ namespace robotick
 
 				const uint16_t idx = band_index_for_hz_from_frame(cur, target);
 
-				// Search ±1 band around nearest centre
+				// Tiny neighbourhood to allow mild snapping
 				for (int di = -1; di <= 1; ++di)
 				{
 					const int j = (int)idx + di;
@@ -346,15 +371,17 @@ namespace robotick
 						continue;
 
 					const float bin_hz = cur.band_center_hz[j];
-					const float cents_off = std::fabs(cents_between(target, bin_hz));
 					const float env = cur.envelope[j];
 					if (env <= 0.0f)
 						continue;
 
-					float within = (cents_off <= tol_cents) ? (1.0f - (cents_off / tol_cents)) : 0.0f;
+					// Cents-based gate (config-driven) using current frame's band centers
+					const float cents_off = std::fabs(cents_between(target, bin_hz));
+					float within = (cents_off <= tol_cents) ? (1.0f - (cents_off / (tol_cents + 1e-12f))) : 0.0f;
 					if (within <= 0.0f)
 						continue;
 
+					// Soft reuse penalty for deconfliction
 					const float penalty = 1.0f - reuse_penalty * clampf(claimed[j], 0.0f, 1.0f);
 					const float contrib = env * within * penalty;
 
@@ -366,22 +393,41 @@ namespace robotick
 
 					if (out_band_count < (uint8_t)(3 * H))
 						out_bands[out_band_count++] = (uint16_t)j;
+
+					++hits_total;
+					if (h <= 3)
+						++hits_early;
 				}
 			}
 
+			// Amplitude is accepted energy
 			out_amplitude = num;
+
+			// Early-harmonic sanity: reject f0 that relies only on high-order hits.
+			if (hits_total < 3 || hits_early < 2)
+			{
+				out_score = 0.0f;
+				out_centroid_hz = 0.0f;
+				out_bandwidth_hz = 0.0f;
+				out_band_count = 0;
+				return;
+			}
+
+			// Base harmonicity
 			out_score = (den > 1e-9f) ? (num / den) : 0.0f;
 
+			// Centroid / bandwidth using frame's band centers
 			if (wsum > 1e-9f)
 			{
 				out_centroid_hz = wsum_f / wsum;
+
 				float var = 0.0f;
 				for (uint8_t k = 0; k < out_band_count; ++k)
 				{
 					const uint16_t j = out_bands[k];
 					const float bin_hz = cur.band_center_hz[j];
 					const float d = bin_hz - out_centroid_hz;
-					const float w = cur.envelope[j];
+					const float w = cur.envelope[j]; // cheap weight proxy
 					var += w * d * d;
 				}
 				out_bandwidth_hz = std::sqrt(var / (wsum + 1e-9f));
@@ -390,6 +436,35 @@ namespace robotick
 			{
 				out_centroid_hz = 0.0f;
 				out_bandwidth_hz = 0.0f;
+			}
+
+			// Light span penalty based on the *frame-local* band spacing (no ERB).
+			// If all contributing bands cluster within ~a couple of local band widths,
+			// we downweight the score slightly to prevent single-ridge “explanations”.
+			if (out_band_count >= 2)
+			{
+				float f_lo = cur.band_center_hz[out_bands[0]];
+				float f_hi = f_lo;
+				float width_sum = 0.0f;
+				for (uint8_t k = 0; k < out_band_count; ++k)
+				{
+					const int j = (int)out_bands[k];
+					const float f = cur.band_center_hz[j];
+					if (f < f_lo)
+						f_lo = f;
+					if (f > f_hi)
+						f_hi = f;
+					width_sum += band_local_width_hz(cur, j);
+				}
+				const float span = f_hi - f_lo;
+				const float mean_width = width_sum / (float)out_band_count;
+
+				// Target span ~ 2.5× mean local band width (tunable 2.0..3.5)
+				const float span_target = 2.5f * mean_width;
+				const float span_norm = clampf(span / (span_target + 1e-9f), 0.0f, 1.0f);
+
+				// Gentle attenuation (bias to 1.0 when span is healthy)
+				out_score *= (0.5f + 0.5f * span_norm);
 			}
 		}
 
@@ -578,7 +653,6 @@ namespace robotick
 				t.last_timestamp = cur.timestamp;
 
 				SourceCandidate out{};
-				out.id = t.id;
 				out.pitch_hz = t.pitch_hz;
 				out.harmonicity = clampf(t.harmonicity * (0.5f + 0.5f * t.temporal_coherence), 0.0f, 1.0f);
 				out.amplitude = t.amplitude;
