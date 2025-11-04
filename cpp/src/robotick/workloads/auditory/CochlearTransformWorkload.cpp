@@ -282,7 +282,7 @@ namespace robotick
 			outputs.cochlear_frame.envelope.set_size(config.num_bands);
 			outputs.cochlear_frame.fine_phase.set_size(config.num_bands);
 			outputs.cochlear_frame.modulation_power.set_size(config.num_bands);
-			outputs.cochlear_frame.band_centroid_hz.set_size(config.num_bands);
+			outputs.cochlear_frame.band_center_hz.set_size(config.num_bands);
 
 			state->build_erb_bands(config);
 			state->build_env_filters(config);
@@ -372,8 +372,6 @@ namespace robotick
 
 			analyze_one_frame();
 			outputs.cochlear_frame.timestamp = inputs.mono.timestamp;
-			outputs.cochlear_frame.freq_range_min_hz = config.fmin_hz;
-			outputs.cochlear_frame.freq_range_max_hz = config.fmax_hz;
 		}
 
 		void stop() {}

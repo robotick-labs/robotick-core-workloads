@@ -1,24 +1,20 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 //
-// TemporalGroupingWorkload v0.2
-//  - Adds temporal coherence, modulation-rate (2–10 Hz) via Goertzel,
-//    and multi-source deconfliction (soft harmonic masking)
-//  - MCU-friendly: fixed arrays, no exceptions, no STL in hot path
-//
-// Inputs:   TemporalGroupingInputs { CochlearFrame cochlear_frame; }
-// Outputs:  TemporalGroupingOutputs { FixedVector<SourceCandidate, MaxSources> sources; }
-// Tick:     tick(const TickInfo&)
+// TemporalGroupingWorkload v0.3
+//  - Surgical patch: uses CochlearFrame.band_center_hz[] for frequency mapping
+//  - Keeps all coherence, modulation, and tracking logic from v0.2 intact
+//  - MCU-friendly: deterministic, no exceptions, no STL in hot path
 
 #pragma once
 
 #include "robotick/api.h"
-
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/SourceCandidate.h"
 
 #include <cmath>
+#include <cstring>
 
 namespace robotick
 {
@@ -67,8 +63,6 @@ namespace robotick
 		SourceCandidates8 source_candidates;
 	};
 
-	// ---- Workload ----
-
 	struct TemporalGroupingWorkload
 	{
 		TemporalGroupingConfig config;
@@ -76,7 +70,6 @@ namespace robotick
 		TemporalGroupingOutputs outputs;
 
 		// --- Internal state ---
-
 		struct HistEntry
 		{
 			float envelope[256]; // up to MaxBands
@@ -93,9 +86,8 @@ namespace robotick
 			uint8_t history_head = 0;
 			bool initialised = false;
 
-			// Soft “used energy” mask for deconfliction (per band)
 			float claimed_energy[MaxBands];
-			// Tracks for EMA stabilisation
+
 			struct Track
 			{
 				bool active = false;
@@ -123,7 +115,6 @@ namespace robotick
 		State state;
 
 		// ===== Utility =====
-
 		static inline float clampf(float v, float lo, float hi)
 		{
 			if (v < lo)
@@ -131,32 +122,6 @@ namespace robotick
 			if (v > hi)
 				return hi;
 			return v;
-		}
-
-		inline float band_hz(uint16_t i) const
-		{
-			const float n = (float)(config.num_bands - 1);
-			if (n <= 0.0f)
-				return config.fmin_hz;
-			const float r = std::pow(config.fmax_hz / config.fmin_hz, 1.0f / n);
-			return config.fmin_hz * std::pow(r, (float)i);
-		}
-
-		inline uint16_t band_index_for_hz(float hz) const
-		{
-			if (hz <= config.fmin_hz)
-				return 0;
-			if (hz >= config.fmax_hz)
-				return (uint16_t)(config.num_bands - 1);
-			const float n = (float)(config.num_bands - 1);
-			const float r = std::pow(config.fmax_hz / config.fmin_hz, 1.0f / n);
-			const float i = std::log(hz / config.fmin_hz) / std::log(r);
-			int idx = (int)(i + 0.5f);
-			if (idx < 0)
-				idx = 0;
-			if (idx >= (int)config.num_bands)
-				idx = (int)config.num_bands - 1;
-			return (uint16_t)idx;
 		}
 
 		inline float cents_between(float f1, float f2) const
@@ -176,8 +141,30 @@ namespace robotick
 			return s;
 		}
 
-		// ---- History ring ----
+		// ---- New: use cochlear_frame.band_center_hz[] instead of derived mapping ----
+		inline uint16_t band_index_for_hz_from_frame(const CochlearFrame& cf, float hz) const
+		{
+			const int n = (int)cf.band_center_hz.size();
+			if (n <= 1)
+				return 0;
+			if (hz <= cf.band_center_hz[0])
+				return 0;
+			if (hz >= cf.band_center_hz[n - 1])
+				return (uint16_t)(n - 1);
 
+			for (int i = 0; i < n - 1; ++i)
+			{
+				const float f0 = cf.band_center_hz[i];
+				const float f1 = cf.band_center_hz[i + 1];
+				if (hz >= f0 && hz < f1)
+				{
+					return (hz - f0 < f1 - hz) ? (uint16_t)i : (uint16_t)(i + 1);
+				}
+			}
+			return (uint16_t)(n - 1);
+		}
+
+		// ---- History ring ----
 		void push_history(const CochlearFrame& f)
 		{
 			const uint8_t cap = (config.history_frames > MaxHistory) ? MaxHistory : config.history_frames;
@@ -349,23 +336,21 @@ namespace robotick
 				if (target >= config.fmax_hz)
 					break;
 
-				const uint16_t idx = band_index_for_hz(target);
+				const uint16_t idx = band_index_for_hz_from_frame(cur, target);
 
-				// Search a tiny neighbourhood
+				// Search ±1 band around nearest centre
 				for (int di = -1; di <= 1; ++di)
 				{
 					const int j = (int)idx + di;
 					if (j < 0 || j >= (int)nb)
 						continue;
 
-					const float bin_hz = band_hz((uint16_t)j);
+					const float bin_hz = cur.band_center_hz[j];
 					const float cents_off = std::fabs(cents_between(target, bin_hz));
 					const float env = cur.envelope[j];
-
 					if (env <= 0.0f)
 						continue;
 
-					// Soft harmonic gate and soft reuse penalty
 					float within = (cents_off <= tol_cents) ? (1.0f - (cents_off / tol_cents)) : 0.0f;
 					if (within <= 0.0f)
 						continue;
@@ -379,11 +364,8 @@ namespace robotick
 					wsum_f += contrib * bin_hz;
 					wsum += contrib;
 
-					// record band index (unique-ish; we only have up to 3*H entries)
 					if (out_band_count < (uint8_t)(3 * H))
-					{
 						out_bands[out_band_count++] = (uint16_t)j;
-					}
 				}
 			}
 
@@ -393,20 +375,16 @@ namespace robotick
 			if (wsum > 1e-9f)
 			{
 				out_centroid_hz = wsum_f / wsum;
-
 				float var = 0.0f;
 				for (uint8_t k = 0; k < out_band_count; ++k)
 				{
 					const uint16_t j = out_bands[k];
-					const float bin_hz = band_hz(j);
-					// Use current frame’s effective contribution as weight proxy
+					const float bin_hz = cur.band_center_hz[j];
 					const float d = bin_hz - out_centroid_hz;
-					// approximate with current envelope weight
 					const float w = cur.envelope[j];
 					var += w * d * d;
 				}
-				const float wsum2 = wsum + 1e-9f;
-				out_bandwidth_hz = std::sqrt(var / wsum2);
+				out_bandwidth_hz = std::sqrt(var / (wsum + 1e-9f));
 			}
 			else
 			{

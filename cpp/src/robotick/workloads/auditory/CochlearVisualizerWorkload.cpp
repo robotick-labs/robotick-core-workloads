@@ -25,7 +25,7 @@ namespace robotick
 		bool log_scale = true;
 		float visual_gain = 1.0f;
 		bool draw_source_candidates = true;
-		float max_source_amplitude = 1.0f;
+		float min_source_amplitude = 0.5f;
 	};
 
 	struct CochlearVisualizerInputs
@@ -66,10 +66,6 @@ namespace robotick
 				ROBOTICK_FATAL_EXIT("SDL_CreateRenderer failed: %s\n", SDL_GetError());
 				return;
 			}
-
-			SDL_RendererInfo info;
-			SDL_GetRendererInfo(renderer, &info);
-			ROBOTICK_INFO("Renderer pixel format: %s\n", SDL_GetPixelFormatName(info.texture_formats[0]));
 
 			const int cols_needed = std::max(1, (int)std::lround(tick_rate_hz * cfg.window_seconds));
 			tex_w = cols_needed;
@@ -118,20 +114,32 @@ namespace robotick
 			return colors[idx % 8];
 		}
 
-		static inline float erb_rate(float hz) { return 21.4f * std::log10(4.37e-3f * hz + 1.0f); }
-
-		inline float freq_to_y(float hz, float fmin, float fmax, int num_bands)
+		inline float hz_to_band_y(const AudioBuffer128& band_center_hz, float hz)
 		{
-			if (hz <= 0.0f)
-				hz = fmin;
-			hz = std::clamp(hz, fmin, fmax);
+			const int n = (int)band_center_hz.size();
+			if (n <= 1)
+				return -1.0f;
 
-			const float erb_min = 21.4f * std::log10(4.37e-3f * fmin + 1.0f);
-			const float erb_max = 21.4f * std::log10(4.37e-3f * fmax + 1.0f);
-			const float erb_hz = 21.4f * std::log10(4.37e-3f * hz + 1.0f);
+			// Clamp frequency to band range
+			if (hz <= band_center_hz[0])
+				return -1.0f;
+			if (hz >= band_center_hz[n - 1])
+				return -1.0f;
 
-			const float norm = (erb_hz - erb_min) / (erb_max - erb_min);
-			return (1.0f - norm) * (num_bands - 1); // y = band index (bottom to top)
+			// Find the nearest two bands
+			for (int i = 0; i < n - 1; ++i)
+			{
+				const float f0 = band_center_hz[i];
+				const float f1 = band_center_hz[i + 1];
+				if (hz >= f0 && hz <= f1)
+				{
+					const float t = (hz - f0) / (f1 - f0);
+					// Y = band index (bottom to top)
+					return (i + t);
+				}
+			}
+
+			return -1.0f;
 		}
 
 		void tick(const TickInfo& tick_info)
@@ -183,47 +191,53 @@ namespace robotick
 			// === Overlay source candidates directly into pixel column ===
 			if (config.draw_source_candidates)
 			{
-				const float fmin = inputs.cochlear_frame.freq_range_min_hz;
-				const float fmax = inputs.cochlear_frame.freq_range_max_hz;
-
 				for (size_t i = 0; i < inputs.source_candidates.size(); ++i)
 				{
 					const auto& sc = inputs.source_candidates[i];
 					if (sc.pitch_hz <= 0.0f)
 						continue;
 
+					ROBOTICK_INFO("%i %.3f, %.3f", (int)i, sc.pitch_hz, sc.amplitude);
+
 					const SDL_Color col = palette(sc.id);
 					const float half_bw = 0.5f * sc.bandwidth_hz;
 
-					const float f_lo = std::max(fmin, sc.pitch_hz - half_bw);
-					const float f_hi = std::min(fmax, sc.pitch_hz + half_bw);
+					const float f_lo = sc.pitch_hz - half_bw;
+					const float f_hi = sc.pitch_hz + half_bw;
 
-					const int y0 = 2 * (int)std::round(freq_to_y(sc.pitch_hz, fmin, fmax, h));
-					const int ylo = 2 * (int)std::round(freq_to_y(f_lo, fmin, fmax, h));
-					const int yhi = 2 * (int)std::round(freq_to_y(f_hi, fmin, fmax, h));
+					const float y0f = hz_to_band_y(inputs.cochlear_frame.band_center_hz, sc.pitch_hz);
+					if (y0f < 0.0f)
+					{
+						continue;
+					}
 
-					// Alpha based on amplitude (0..1)
-					const float alpha01 = std::clamp(sc.amplitude / config.max_source_amplitude, 0.0f, 1.0f);
+					const float ylof = hz_to_band_y(inputs.cochlear_frame.band_center_hz, f_lo);
+					const float yhif = hz_to_band_y(inputs.cochlear_frame.band_center_hz, f_hi);
+
+					const int y0 = (int)std::round(y0f);
+					const int ylo = (int)std::round(ylof);
+					const int yhi = (int)std::round(yhif);
 
 					// Write into pixel buffer (far-right column)
-					auto paint_pixel = [&](int yy, int thickness)
+					auto paint_pixel = [&](int yy, const bool bold = false)
 					{
-						for (int t = -thickness; t <= thickness; ++t)
+						const int thickness = bold ? 2 : 1;
+
+						for (int t = 0; t < thickness; ++t)
 						{
 							const int tex_y = std::clamp(h - 1 - (yy + t), 0, h - 1);
 							const int idx = (tex_y * w + (w - 1)) * 4;
 
-							// Simple "over" alpha blend with existing pixels
-							s.pixels[idx + 0] = static_cast<uint8_t>((float)col.r * alpha01 + (float)s.pixels[idx + 0] * (1.0f - alpha01));
-							s.pixels[idx + 1] = static_cast<uint8_t>((float)col.g * alpha01 + (float)s.pixels[idx + 1] * (1.0f - alpha01));
-							s.pixels[idx + 2] = static_cast<uint8_t>((float)col.b * alpha01 + (float)s.pixels[idx + 2] * (1.0f - alpha01));
+							s.pixels[idx + 0] = col.r;
+							s.pixels[idx + 1] = col.g;
+							s.pixels[idx + 2] = col.b;
 							s.pixels[idx + 3] = 255; // keep opaque overall
 						}
 					};
 
-					paint_pixel(y0, 1);	 // bold F0
-					paint_pixel(ylo, 0); // lower bound
-					paint_pixel(yhi, 0); // upper bound
+					paint_pixel(y0, true); // bold F0
+					paint_pixel(ylo);	   // lower bound
+					paint_pixel(yhi);	   // upper bound
 				}
 			}
 
