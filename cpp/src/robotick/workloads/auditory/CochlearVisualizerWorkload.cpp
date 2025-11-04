@@ -194,20 +194,20 @@ namespace robotick
 				for (size_t i = 0; i < inputs.source_candidates.size(); ++i)
 				{
 					const auto& sc = inputs.source_candidates[i];
-					if (sc.pitch_hz <= 0.0f)
+					if (sc.pitch_hz <= 0.0f || sc.centroid_freq_hz <= 0.0f)
 						continue;
 
 					const SDL_Color col = palette(i);
 					const float half_bw = 0.5f * sc.bandwidth_hz;
-
-					const float f_lo = sc.pitch_hz - half_bw;
-					const float f_hi = sc.pitch_hz + half_bw;
 
 					const float y0f = hz_to_band_y(inputs.cochlear_frame.band_center_hz, sc.pitch_hz);
 					if (y0f < 0.0f)
 					{
 						continue;
 					}
+
+					const float f_lo = sc.centroid_freq_hz - half_bw;
+					const float f_hi = sc.centroid_freq_hz + half_bw;
 
 					const float ylof = hz_to_band_y(inputs.cochlear_frame.band_center_hz, f_lo);
 					const float yhif = hz_to_band_y(inputs.cochlear_frame.band_center_hz, f_hi);

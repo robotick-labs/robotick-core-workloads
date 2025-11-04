@@ -61,6 +61,8 @@ namespace robotick
 	struct TemporalGroupingOutputs
 	{
 		SourceCandidates8 source_candidates;
+
+		SourceCandidate first_source;
 	};
 
 	struct TemporalGroupingWorkload
@@ -142,15 +144,15 @@ namespace robotick
 		}
 
 		// ---- New: use cochlear_frame.band_center_hz[] instead of derived mapping ----
-		inline uint16_t band_index_for_hz_from_frame(const CochlearFrame& cf, float hz) const
+		inline int band_index_for_hz_from_frame(const CochlearFrame& cf, float hz) const
 		{
 			const int n = (int)cf.band_center_hz.size();
 			if (n <= 1)
-				return 0;
+				return -1;
 			if (hz <= cf.band_center_hz[0])
 				return 0;
 			if (hz >= cf.band_center_hz[n - 1])
-				return (uint16_t)(n - 1);
+				return (n - 1);
 
 			for (int i = 0; i < n - 1; ++i)
 			{
@@ -158,10 +160,10 @@ namespace robotick
 				const float f1 = cf.band_center_hz[i + 1];
 				if (hz >= f0 && hz < f1)
 				{
-					return (hz - f0 < f1 - hz) ? (uint16_t)i : (uint16_t)(i + 1);
+					return (hz - f0 < f1 - hz) ? i : (i + 1);
 				}
 			}
-			return (uint16_t)(n - 1);
+			return -1;
 		}
 
 		// ---- History ring ----
@@ -191,44 +193,66 @@ namespace robotick
 		// ---- Temporal coherence over grouped bands ----
 		// Returns 0..1. We correlate each band’s recent envelope with the
 		// band-mean envelope across the same set, then average the correlations.
-		float temporal_coherence_score(const uint16_t* band_indices, uint8_t band_count, float tick_rate_hz, float& out_group_envelope) const
+		float temporal_coherence_score(const uint16_t* band_indices, uint8_t band_count, float /*tick_rate_hz*/, float& out_group_envelope) const
 		{
 			out_group_envelope = 0.0f;
+
+			const uint8_t cap = (config.history_frames > MaxHistory) ? MaxHistory : config.history_frames;
 			const uint8_t N = state.history_count;
-			if (N < 3 || band_count == 0)
+			if (cap == 0 || N < 3 || band_count == 0)
 				return 0.0f;
 
-			// Ensure we have enough time covered
 			const double t0 = state.history[state.history_head].timestamp;
-			const double tN = state.history[(state.history_head + 256 - (N - 1)) % 256].timestamp;
+			const double tN = state.history[(state.history_head + cap - (N - 1)) % cap].timestamp;
 			if ((t0 - tN) < (double)config.coherence_min_window_s)
 				return 0.0f;
 
-			// Build per-frame group mean envelope
+			// Build group mean envelope over history
 			float mean_env[MaxHistory];
 			for (uint8_t k = 0; k < N; ++k)
 			{
-				const uint8_t idx = (uint8_t)((state.history_head + 256 - k) % 256);
+				const uint8_t idx = (uint8_t)((state.history_head + cap - k) % cap);
 				const HistEntry& he = state.history[idx];
+
 				float s = 0.0f;
 				for (uint8_t b = 0; b < band_count; ++b)
 					s += he.envelope[band_indices[b]];
+
 				mean_env[N - 1 - k] = s / (float)band_count;
 				out_group_envelope += mean_env[N - 1 - k];
 			}
 			out_group_envelope /= (float)N;
 
-			// Corr(each band, mean) averaged
+			// Quick reject if group mean is essentially flat (no meaningful coherence)
+			{
+				float mm = 0.0f;
+				for (uint8_t k = 0; k < N; ++k)
+					mm += mean_env[k];
+				mm /= (float)N;
+
+				float var_m = 0.0f;
+				for (uint8_t k = 0; k < N; ++k)
+				{
+					const float dm = mean_env[k] - mm;
+					var_m += dm * dm;
+				}
+				if (var_m < 1e-10f)
+					return 0.0f;
+			}
+
+			// Average Pearson r(each band, mean_env), but only for bands with non-trivial variance
 			float corr_sum = 0.0f;
+			uint8_t corr_count = 0;
+
 			for (uint8_t b = 0; b < band_count; ++b)
 			{
 				float x[MaxHistory];
 				for (uint8_t k = 0; k < N; ++k)
 				{
-					const uint8_t idx = (uint8_t)((state.history_head + 256 - k) % 256);
+					const uint8_t idx = (uint8_t)((state.history_head + cap - k) % cap);
 					x[N - 1 - k] = state.history[idx].envelope[band_indices[b]];
 				}
-				// Pearson r between x and mean_env
+
 				float mx = 0.0f, mm = 0.0f;
 				for (uint8_t k = 0; k < N; ++k)
 				{
@@ -237,6 +261,7 @@ namespace robotick
 				}
 				mx /= (float)N;
 				mm /= (float)N;
+
 				float num = 0.0f, denx = 0.0f, denm = 0.0f;
 				for (uint8_t k = 0; k < N; ++k)
 				{
@@ -246,35 +271,46 @@ namespace robotick
 					denx += dx * dx;
 					denm += dm * dm;
 				}
+
+				// Skip bands that are effectively flat (no variance)
+				if (denx < 1e-10f || denm < 1e-10f)
+					continue;
+
 				const float den = std::sqrt(denx * denm) + 1e-9f;
 				const float r = (den > 0.0f) ? (num / den) : 0.0f;
-				corr_sum += r * 0.5f + 0.5f; // map -1..1 → 0..1
+
+				corr_sum += (r * 0.5f + 0.5f); // map -1..1 → 0..1
+				++corr_count;
 			}
 
-			return corr_sum / (float)band_count;
+			if (corr_count == 0)
+				return 0.0f;
+
+			return corr_sum / (float)corr_count;
 		}
 
 		// ---- Modulation-rate via Goertzel over group envelope (2..10 Hz) ----
 		float estimate_modulation_rate_hz(float tick_rate_hz, const uint16_t* band_indices, uint8_t band_count) const
 		{
+			const uint8_t cap = (config.history_frames > MaxHistory) ? MaxHistory : config.history_frames;
 			const uint8_t N = state.history_count;
-			if (N < 6 || band_count == 0)
+			if (cap == 0 || N < 6 || band_count == 0)
 				return 0.0f;
 
-			// Build group envelope (mean across bands) as y[k]
 			float y[MaxHistory];
 			for (uint8_t k = 0; k < N; ++k)
 			{
-				const uint8_t idx = (uint8_t)((state.history_head + 256 - k) % 256);
+				const uint8_t idx = (uint8_t)((state.history_head + cap - k) % cap);
 				const HistEntry& he = state.history[idx];
+
 				float s = 0.0f;
 				for (uint8_t b = 0; b < band_count; ++b)
 					s += he.envelope[band_indices[b]];
+
 				y[N - 1 - k] = s / (float)band_count;
 			}
 
-			// Targets (Hz): fixed small set
-			const float targets[7] = {2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 8.0f, 10.0f};
+			const float targets_all[7] = {2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 8.0f, 10.0f};
 			const uint8_t T = (config.modulation_bins <= 7) ? config.modulation_bins : (uint8_t)7;
 
 			float best_pow = 0.0f;
@@ -282,20 +318,23 @@ namespace robotick
 
 			for (uint8_t t = 0; t < T; ++t)
 			{
-				const float f = targets[t];
+				const float f = targets_all[t];
 				const float kf = (2.0f * 3.14159265358979323846f * f) / tick_rate_hz;
-				float s_prev = 0.0f, s_prev2 = 0.0f;
 
+				float s_prev = 0.0f, s_prev2 = 0.0f;
 				const float coeff = 2.0f * std::cos(kf);
+
 				for (uint8_t n = 0; n < N; ++n)
 				{
 					const float s = y[n] + coeff * s_prev - s_prev2;
 					s_prev2 = s_prev;
 					s_prev = s;
 				}
+
 				const float re = s_prev - s_prev2 * std::cos(kf);
 				const float im = s_prev2 * std::sin(kf);
 				const float p = re * re + im * im;
+
 				if (p > best_pow)
 				{
 					best_pow = p;
@@ -326,34 +365,60 @@ namespace robotick
 			return 0.5f * (left + right);
 		}
 
-		// ---- Evaluate f0 against current frame (with soft reuse penalty) ----
-		// Uses only band_center_hz[] from the *current* frame, cents-based tolerance from config,
-		// requires early-harmonic evidence, and applies a light span penalty based on local band spacing.
+		inline void zero_candidate_outputs(
+			float& out_score, float& out_centroid_hz, float& out_bandwidth_hz, float& out_amplitude, uint8_t& out_band_count) const
+		{
+			out_score = 0.0f;
+			out_centroid_hz = 0.0f;
+			out_bandwidth_hz = 0.0f;
+			out_amplitude = 0.0f;
+			out_band_count = 0;
+		}
+
 		inline void eval_f0_with_mask(const CochlearFrame& cur,
 			float f0,
-			const float* claimed,	 // per-band [0..1] soft penalty
-			float reuse_penalty,	 // penalty strength for already-claimed bins
-			float& out_score,		 // 0..1 “harmonicity”
-			float& out_centroid_hz,	 // energy-weighted centroid (Hz)
-			float& out_bandwidth_hz, // energy-weighted stdev (Hz)
-			float& out_amplitude,	 // weighted sum of contributing energy
-			uint16_t* out_bands,	 // filled with band indices used
+			const float* claimed,
+			float reuse_penalty,
+			float& out_score,
+			float& out_centroid_hz,
+			float& out_bandwidth_hz,
+			float& out_amplitude,
+			uint16_t* out_bands,
 			uint8_t& out_band_count) const
 		{
 			const uint16_t nb = (uint16_t)config.num_bands;
-			const uint8_t H = config.max_harmonics;
+			uint8_t H = config.max_harmonics;
+			if (H > 31)
+				H = 31;
+
 			const float tol_cents = config.harmonic_tolerance_cents;
 
-			float num = 0.0f;	 // accepted (penalised) energy
-			float den = 0.0f;	 // considered energy
-			float wsum_f = 0.0f; // centroid accumulator (Hz)
-			float wsum = 0.0f;	 // weight accumulator
+			float num = 0.0f;	 // accepted (penalised) energy (unique bands only)
+			float wsum_f = 0.0f; // centroid accum (Hz)
+			float wsum = 0.0f;	 // weight accum
 
 			out_band_count = 0;
 
-			// Evidence counters
-			int hits_total = 0;
-			int hits_early = 0; // among h = 1..3
+			// --- NEW: per-candidate de-dup mask so a band is counted at most once
+			bool used_band[MaxBands];
+			for (uint16_t i = 0; i < nb && i < MaxBands; ++i)
+				used_band[i] = false;
+
+			// Energy per harmonic (for early-harmonic checks) — still tracked,
+			// but only increased when a *new* band contributes for that harmonic.
+			float E_h[32];
+			for (uint8_t i = 0; i < 32; ++i)
+				E_h[i] = 0.0f;
+			bool hit_h1 = false;
+			uint8_t distinct_early_hits = 0; // count of distinct bands for h<=2
+
+			// --- NEW: track which band each harmonic ended up using (or 0xFFFF if none)
+			uint16_t harmonic_band[32];
+			for (uint8_t i = 0; i < 32; ++i)
+				harmonic_band[i] = 0xFFFF;
+
+			// We also need a true 'den' based on unique bands, not per-harmonic re-use:
+			float den_unique = 0.0f;
 
 			for (uint8_t h = 1; h <= H; ++h)
 			{
@@ -361,12 +426,18 @@ namespace robotick
 				if (target >= config.fmax_hz)
 					break;
 
-				const uint16_t idx = band_index_for_hz_from_frame(cur, target);
+				const int idx = band_index_for_hz_from_frame(cur, target);
+				if (idx < 0)
+					continue;
 
-				// Tiny neighbourhood to allow mild snapping
+				// Find the *best* local neighbour for this harmonic (single winner)
+				int best_j = -1;
+				float best_within = 0.0f;
+				float best_env = 0.0f;
+
 				for (int di = -1; di <= 1; ++di)
 				{
-					const int j = (int)idx + di;
+					const int j = idx + di;
 					if (j < 0 || j >= (int)nb)
 						continue;
 
@@ -375,48 +446,106 @@ namespace robotick
 					if (env <= 0.0f)
 						continue;
 
-					// Cents-based gate (config-driven) using current frame's band centers
-					const float cents_off = std::fabs(cents_between(target, bin_hz));
+					const float cents_off = (float)std::fabs(cents_between(target, bin_hz));
 					float within = (cents_off <= tol_cents) ? (1.0f - (cents_off / (tol_cents + 1e-12f))) : 0.0f;
 					if (within <= 0.0f)
 						continue;
 
-					// Soft reuse penalty for deconfliction
-					const float penalty = 1.0f - reuse_penalty * clampf(claimed[j], 0.0f, 1.0f);
-					const float contrib = env * within * penalty;
-
-					den += env;
-					num += contrib;
-
-					wsum_f += contrib * bin_hz;
-					wsum += contrib;
-
-					if (out_band_count < (uint8_t)(3 * H))
-						out_bands[out_band_count++] = (uint16_t)j;
-
-					++hits_total;
-					if (h <= 3)
-						++hits_early;
+					// Prefer closer (higher within). If tie, prefer higher env.
+					if (within > best_within || (within == best_within && env > best_env))
+					{
+						best_within = within;
+						best_env = env;
+						best_j = j;
+					}
 				}
+
+				if (best_j < 0)
+					continue;
+
+				// --- NEW: if this band was already used by another harmonic, do NOT add it again
+				if (used_band[best_j])
+					continue;
+
+				// Soft reuse penalty
+				const float penalty = 1.0f - reuse_penalty * clampf(claimed[best_j], 0.0f, 1.0f);
+				const float contrib = best_env * best_within * penalty;
+
+				// Accept this band exactly once
+				used_band[best_j] = true;
+				if (out_band_count < (uint8_t)(3 * 32))
+					out_bands[out_band_count++] = (uint16_t)best_j;
+
+				// Accumulate accepted energy & centroid weights
+				num += contrib;
+				wsum_f += contrib * cur.band_center_hz[best_j];
+				wsum += contrib;
+
+				// Build 'den' from unique bands actually considered/accepted
+				den_unique += best_env;
+
+				// Early-harmonic evidence (distinct bands only)
+				E_h[h] += contrib;
+				if (h == 1 && contrib > 0.0f)
+					hit_h1 = true;
+				if (h <= 2 && contrib > 0.0f)
+					++distinct_early_hits;
+
+				harmonic_band[h] = (uint16_t)best_j;
 			}
 
-			// Amplitude is accepted energy
 			out_amplitude = num;
 
-			// Early-harmonic sanity: reject f0 that relies only on high-order hits.
-			if (hits_total < 3 || hits_early < 2)
+			// Reject if nothing unique contributed
+			if (num <= 0.0f)
 			{
-				out_score = 0.0f;
-				out_centroid_hz = 0.0f;
-				out_bandwidth_hz = 0.0f;
-				out_band_count = 0;
+				zero_candidate_outputs(out_score, out_centroid_hz, out_bandwidth_hz, out_amplitude, out_band_count);
 				return;
 			}
 
-			// Base harmonicity
-			out_score = (den > 1e-9f) ? (num / den) : 0.0f;
+			// Guard against low-F0 faking via higher-order reuse:
+			if (f0 < 200.0f && !hit_h1)
+			{
+				zero_candidate_outputs(out_score, out_centroid_hz, out_bandwidth_hz, out_amplitude, out_band_count);
+				return;
+			}
 
-			// Centroid / bandwidth using frame's band centers
+			// Require at least one distinct early hit and a decent early fraction
+			const float E_early = E_h[1] + E_h[2];
+			const float frac_early = E_early / (num + 1e-12f);
+			if (frac_early < 0.20f || distinct_early_hits < 1)
+			{
+				zero_candidate_outputs(out_score, out_centroid_hz, out_bandwidth_hz, out_amplitude, out_band_count);
+				return;
+			}
+
+			// --- Subharmonic lock veto ---------------------------------------
+			// If there's no h=1 evidence, reject candidates that are effectively
+			// single-ridge (or very sparse). This avoids f0 = ~f_peak/2 locks
+			// on pure tones, but still allows true missing-fundamental cases
+			// when multiple early harmonics are present.
+			const float min_amplitude = 0.0f;
+			const bool has_h0 = (E_h[0] > min_amplitude);
+			const bool has_h1 = (E_h[1] > min_amplitude);
+			const bool has_h2 = (E_h[2] > min_amplitude);
+			const bool has_h3 = (H >= 3 && E_h[3] > min_amplitude);
+
+			if (!has_h0)
+			{
+				// Pure/sparse ridge? require multiple early harmonics to allow MF
+				const bool sparse = (out_band_count <= 2);				 // single or very few contributing bands
+				const bool early_pair_ok = (has_h1 && has_h2 && has_h3); // classic 2:3 evidence
+				if (sparse || !early_pair_ok)
+				{
+					zero_candidate_outputs(out_score, out_centroid_hz, out_bandwidth_hz, out_amplitude, out_band_count);
+					return;
+				}
+			}
+
+			// Harmonicity from *unique-band* denominator
+			out_score = (den_unique > 1e-9f) ? (num / den_unique) : 0.0f;
+
+			// Centroid / bandwidth
 			if (wsum > 1e-9f)
 			{
 				out_centroid_hz = wsum_f / wsum;
@@ -427,7 +556,7 @@ namespace robotick
 					const uint16_t j = out_bands[k];
 					const float bin_hz = cur.band_center_hz[j];
 					const float d = bin_hz - out_centroid_hz;
-					const float w = cur.envelope[j]; // cheap weight proxy
+					const float w = cur.envelope[j];
 					var += w * d * d;
 				}
 				out_bandwidth_hz = std::sqrt(var / (wsum + 1e-9f));
@@ -438,14 +567,13 @@ namespace robotick
 				out_bandwidth_hz = 0.0f;
 			}
 
-			// Light span penalty based on the *frame-local* band spacing (no ERB).
-			// If all contributing bands cluster within ~a couple of local band widths,
-			// we downweight the score slightly to prevent single-ridge “explanations”.
+			// Span penalty (unchanged)
 			if (out_band_count >= 2)
 			{
 				float f_lo = cur.band_center_hz[out_bands[0]];
 				float f_hi = f_lo;
 				float width_sum = 0.0f;
+
 				for (uint8_t k = 0; k < out_band_count; ++k)
 				{
 					const int j = (int)out_bands[k];
@@ -456,14 +584,12 @@ namespace robotick
 						f_hi = f;
 					width_sum += band_local_width_hz(cur, j);
 				}
+
 				const float span = f_hi - f_lo;
 				const float mean_width = width_sum / (float)out_band_count;
-
-				// Target span ~ 2.5× mean local band width (tunable 2.0..3.5)
 				const float span_target = 2.5f * mean_width;
 				const float span_norm = clampf(span / (span_target + 1e-9f), 0.0f, 1.0f);
 
-				// Gentle attenuation (bias to 1.0 when span is healthy)
 				out_score *= (0.5f + 0.5f * span_norm);
 			}
 		}
@@ -523,6 +649,7 @@ namespace robotick
 		{
 			const CochlearFrame& cur = inputs.cochlear_frame;
 			outputs.source_candidates.clear();
+			outputs.first_source = SourceCandidate{};
 
 			// Lazy init ring
 			if (!state.initialised)
@@ -554,9 +681,9 @@ namespace robotick
 			// Scan f0 candidates on a geometric grid
 			struct Cand
 			{
-				float f0, score, centroid, bw, amp, coh;
-				float mod;
-				uint8_t band_count;
+				float f0 = 0.0f, score = 0.0f, centroid = 0.0f, bw = 0.0f, amp = 0.0f, coh = 0.0f;
+				float mod = 0.0f;
+				uint8_t band_count = 0;
 				uint16_t bands[3 * 32];
 			};
 			FixedVector<Cand, 16> pool;
@@ -582,6 +709,16 @@ namespace robotick
 					c.band_count = 0;
 					eval_f0_with_mask(cur, f0, state.claimed_energy, config.reuse_penalty, c.score, c.centroid, c.bw, c.amp, c.bands, c.band_count);
 					if (c.score < config.min_harmonicity || c.amp < config.min_amplitude)
+						continue;
+
+					const float frameE = frame_energy(cur);
+
+					// new:
+					const float min_cand_rel = 0.12f; // start conservative; try 0.08–0.15
+					const bool single_ridge_ok = (c.band_count == 1 && c.score >= 0.50f);
+
+					// Only enforce the relative-energy gate if it's not a tight single-ridge hit
+					if (!single_ridge_ok && c.amp < min_cand_rel * frameE)
 						continue;
 
 					// Temporal coherence over involved bands
@@ -660,6 +797,11 @@ namespace robotick
 				out.bandwidth_hz = t.bandwidth_hz;
 				out.temporal_coherence = clampf(t.temporal_coherence, 0.0f, 1.0f);
 				out.modulation_rate = t.modulation_rate;
+
+				if (i == 0)
+				{
+					outputs.first_source = out;
+				}
 
 				outputs.source_candidates.add(out);
 				if (outputs.source_candidates.size() >= outputs.source_candidates.capacity())

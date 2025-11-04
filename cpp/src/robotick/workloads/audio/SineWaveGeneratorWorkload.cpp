@@ -23,8 +23,8 @@ namespace robotick
 
 	struct SineWaveGeneratorInputs
 	{
-		float frequency_hz = 440.0f; // can change every tick
-		float amplitude = 0.1f;		 // can change every tick
+		float frequency_hz = 440.0f;
+		float amplitude = 0.1f;
 	};
 
 	struct SineWaveGeneratorOutputs
