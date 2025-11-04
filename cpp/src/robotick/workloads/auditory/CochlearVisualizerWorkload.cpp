@@ -25,6 +25,7 @@ namespace robotick
 		bool log_scale = true;
 		float visual_gain = 1.0f;
 		bool draw_source_candidates = true;
+		float max_source_amplitude = 1.0f;
 	};
 
 	struct CochlearVisualizerInputs
@@ -66,11 +67,15 @@ namespace robotick
 				return;
 			}
 
+			SDL_RendererInfo info;
+			SDL_GetRendererInfo(renderer, &info);
+			ROBOTICK_INFO("Renderer pixel format: %s\n", SDL_GetPixelFormatName(info.texture_formats[0]));
+
 			const int cols_needed = std::max(1, (int)std::lround(tick_rate_hz * cfg.window_seconds));
 			tex_w = cols_needed;
 			tex_h = num_bands;
 
-			texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, tex_w, tex_h);
+			texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, tex_w, tex_h);
 			SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_NONE);
 
 			pixels.assign((size_t)tex_w * (size_t)tex_h * 4, 0);
@@ -101,29 +106,32 @@ namespace robotick
 		static inline SDL_Color palette(uint8_t idx)
 		{
 			static const SDL_Color colors[] = {
-				{255, 64, 64, 255},	 // red
 				{64, 255, 64, 255},	 // green
-				{64, 128, 255, 255}, // blue
-				{255, 200, 64, 255}, // yellow
-				{255, 96, 255, 255}, // magenta
-				{64, 255, 255, 255}, // cyan
-				{255, 160, 64, 255}, // orange
-				{255, 255, 255, 255} // white
+				{255, 255, 96, 255}, // magenta
+				{255, 128, 64, 255}, // blue
+				{64, 160, 255, 255}, // orange
+				{255, 255, 64, 255}, // cyan
+				{64, 255, 200, 255}, // yellow
+				{64, 64, 255, 255},	 // red
+				{255, 64, 192, 255}	 // violet
 			};
 			return colors[idx % 8];
 		}
 
-		inline float freq_to_y(float hz, float fmin, float fmax, int height) const
+		static inline float erb_rate(float hz) { return 21.4f * std::log10(4.37e-3f * hz + 1.0f); }
+
+		inline float freq_to_y(float hz, float fmin, float fmax, int num_bands)
 		{
 			if (hz <= 0.0f)
 				hz = fmin;
 			hz = std::clamp(hz, fmin, fmax);
-			float norm;
-			if (config.log_scale)
-				norm = (std::log(hz) - std::log(fmin)) / (std::log(fmax) - std::log(fmin));
-			else
-				norm = (hz - fmin) / (fmax - fmin);
-			return (1.0f - norm) * (float)(height - 1);
+
+			const float erb_min = 21.4f * std::log10(4.37e-3f * fmin + 1.0f);
+			const float erb_max = 21.4f * std::log10(4.37e-3f * fmax + 1.0f);
+			const float erb_hz = 21.4f * std::log10(4.37e-3f * hz + 1.0f);
+
+			const float norm = (erb_hz - erb_min) / (erb_max - erb_min);
+			return (1.0f - norm) * (num_bands - 1); // y = band index (bottom to top)
 		}
 
 		void tick(const TickInfo& tick_info)
@@ -166,17 +174,17 @@ namespace robotick
 
 				const int tex_y = (h - 1 - y);
 				const int idx = (tex_y * w + (w - 1)) * 4;
-				s.pixels[idx + 0] = 255;
+				s.pixels[idx + 0] = c;
 				s.pixels[idx + 1] = c;
 				s.pixels[idx + 2] = c;
-				s.pixels[idx + 3] = c;
+				s.pixels[idx + 3] = 255;
 			}
 
 			// === Overlay source candidates directly into pixel column ===
 			if (config.draw_source_candidates)
 			{
-				const float fmin = 50.0f;
-				const float fmax = 3500.0f;
+				const float fmin = inputs.cochlear_frame.freq_range_min_hz;
+				const float fmax = inputs.cochlear_frame.freq_range_max_hz;
 
 				for (size_t i = 0; i < inputs.source_candidates.size(); ++i)
 				{
@@ -190,9 +198,12 @@ namespace robotick
 					const float f_lo = std::max(fmin, sc.pitch_hz - half_bw);
 					const float f_hi = std::min(fmax, sc.pitch_hz + half_bw);
 
-					const int y0 = (int)std::round(freq_to_y(sc.pitch_hz, fmin, fmax, h));
-					const int ylo = (int)std::round(freq_to_y(f_lo, fmin, fmax, h));
-					const int yhi = (int)std::round(freq_to_y(f_hi, fmin, fmax, h));
+					const int y0 = 2 * (int)std::round(freq_to_y(sc.pitch_hz, fmin, fmax, h));
+					const int ylo = 2 * (int)std::round(freq_to_y(f_lo, fmin, fmax, h));
+					const int yhi = 2 * (int)std::round(freq_to_y(f_hi, fmin, fmax, h));
+
+					// Alpha based on amplitude (0..1)
+					const float alpha01 = std::clamp(sc.amplitude / config.max_source_amplitude, 0.0f, 1.0f);
 
 					// Write into pixel buffer (far-right column)
 					auto paint_pixel = [&](int yy, int thickness)
@@ -201,10 +212,12 @@ namespace robotick
 						{
 							const int tex_y = std::clamp(h - 1 - (yy + t), 0, h - 1);
 							const int idx = (tex_y * w + (w - 1)) * 4;
-							s.pixels[idx + 0] = col.r;
-							s.pixels[idx + 1] = col.g;
-							s.pixels[idx + 2] = col.b;
-							s.pixels[idx + 3] = 255;
+
+							// Simple "over" alpha blend with existing pixels
+							s.pixels[idx + 0] = static_cast<uint8_t>((float)col.r * alpha01 + (float)s.pixels[idx + 0] * (1.0f - alpha01));
+							s.pixels[idx + 1] = static_cast<uint8_t>((float)col.g * alpha01 + (float)s.pixels[idx + 1] * (1.0f - alpha01));
+							s.pixels[idx + 2] = static_cast<uint8_t>((float)col.b * alpha01 + (float)s.pixels[idx + 2] * (1.0f - alpha01));
+							s.pixels[idx + 3] = 255; // keep opaque overall
 						}
 					};
 

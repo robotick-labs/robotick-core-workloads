@@ -1,5 +1,6 @@
 #pragma once
 
+#include "robotick/api.h"
 #include "robotick/systems/audio/AudioFrame.h"
 
 namespace robotick
@@ -33,6 +34,9 @@ namespace robotick
 		// Used to align auditory frames with other sensory modalities and for
 		// temporal correlation across workloads.
 		double timestamp = 0.0;
+
+		// === Centre-frequency of each band ===
+		AudioBuffer128 band_center_hz;
 	};
 
 } // namespace robotick
