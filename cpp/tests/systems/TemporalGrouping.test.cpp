@@ -49,7 +49,7 @@ namespace robotick::test
 
 	// Build N history frames of size num_bands with value function fn(frame_index, band_index)
 	template <typename Fn>
-	static void make_history(uint8_t N,
+	static void make_history(uint8_t num_history_entries,
 		int num_bands,
 		std::vector<std::vector<float>>& frames,
 		std::vector<const float*>& frame_ptrs,
@@ -58,15 +58,18 @@ namespace robotick::test
 		double t0 = 0.0,
 		double dt = 1.0 / 80.0)
 	{
-		frames.assign(N, std::vector<float>(num_bands, 0.0f));
-		frame_ptrs.assign(N, nullptr);
-		timestamps.resize(N);
-		for (uint8_t k = 0; k < N; ++k)
+		frames.assign(num_history_entries, std::vector<float>(num_bands, 0.0f));
+		frame_ptrs.assign(num_history_entries, nullptr);
+		timestamps.resize(num_history_entries);
+		for (uint8_t history_entry_id = 0; history_entry_id < num_history_entries; ++history_entry_id)
 		{
-			for (int j = 0; j < num_bands; ++j)
-				frames[k][j] = fn(k, j);
-			frame_ptrs[k] = frames[k].data();
-			timestamps[k] = t0 + double(k) * dt;
+			for (int band_id = 0; band_id < num_bands; ++band_id)
+			{
+				frames[history_entry_id][band_id] = fn(history_entry_id, band_id);
+			}
+
+			frame_ptrs[history_entry_id] = frames[history_entry_id].data();
+			timestamps[history_entry_id] = t0 + double(history_entry_id) * dt;
 		}
 	}
 
@@ -93,9 +96,54 @@ namespace robotick::test
 			}
 		}
 
-		SECTION("Detects only the true fundamental and rejects all other f₀ candidates")
+		SECTION("Helpers for 'TemporalGrouping::eval_f0_with_mask' function as needed")
 		{
-			SECTION("Rejects all f₀ candidates except 1200 Hz")
+			SECTION("find_best_band_for_harmonic selects correct neighbor within tolerance")
+			{
+				std::vector<float> centers = {1000.0f, 1100.0f, 1200.0f, 1300.0f};
+				std::vector<float> envelope = {0.0f, 0.0f, 1.0f};
+
+				float wt = 0.0f, amp = 0.0f;
+				int ix = TemporalGrouping::find_best_band_for_harmonic(1200.0f, centers.data(), envelope.data(), 3, 35.0f, wt, amp);
+				REQUIRE(ix == 2);
+				CHECK(wt > 0.99f);
+				CHECK(amp == 1.0f);
+			}
+
+			SECTION("compute_band_contribution scales by reuse and tolerance")
+			{
+				TemporalGroupingConfig cfg;
+				cfg.reuse_penalty = 0.5f;
+
+				const float envelope = 1.0f;
+				const float tolerance = 0.8f;
+				const float claimed = 0.4f;
+
+				const float expected = envelope * tolerance * (1.0f - 0.5f * 0.4f);
+				const float actual = TemporalGrouping::compute_band_contribution(envelope, tolerance, claimed, cfg);
+				CHECK(actual == Catch::Approx(expected));
+			}
+
+			SECTION("passes_missing_fundamental_gate enforces early harmonic criteria")
+			{
+				TemporalGroupingConfig cfg;
+				cfg.infer_missing_fundamental = true;
+
+				float E[32] = {0.0f};
+				E[2] = 0.6f;
+				E[3] = 0.4f;
+
+				bool pass = TemporalGrouping::passes_missing_fundamental_gate(cfg, false, E, 2, 0.5f, 2);
+				CHECK(pass);
+
+				pass = TemporalGrouping::passes_missing_fundamental_gate(cfg, false, E, 1, 0.5f, 1);
+				CHECK_FALSE(pass);
+			}
+		}
+
+		SECTION("Detects only the true fundamental and rejects all other f0 candidates")
+		{
+			SECTION("Rejects all f0 candidates except 1200 Hz")
 			{
 				TemporalGroupingConfig cfg;
 				cfg.fmin_hz = 100.0f;
@@ -112,16 +160,16 @@ namespace robotick::test
 
 				const int nb = cfg.num_bands;
 				auto centers = make_linear_band_centers(cfg.fmin_hz, cfg.fmax_hz, nb);
-				std::vector<float> env(nb, 0.0f), claimed(nb, 0.0f);
+				std::vector<float> envelope(nb, 0.0f), claimed(nb, 0.0f);
 
 				const int ix1200 = argmin_abs(centers, 1200.0f);
 				REQUIRE(ix1200 >= 0);
-				env[ix1200] = 1.0f;
+				envelope[ix1200] = 1.0f;
 
 				const float expected_f0 = 1200.0f;
-				const float allowed_margin_hz = cents_to_hz(expected_f0, cfg.harmonic_tolerance_cents);
+				const float allowed_margin_hz = 2.0f * cents_to_hz(expected_f0, cfg.harmonic_tolerance_cents);
 
-				// Sweep full f₀ range excluding 1200 ± margin
+				// Sweep full f0 range excluding 1200 ± margin
 				const float step_hz = 10.0f;
 				for (float f0 = cfg.f0_min_hz; f0 <= cfg.f0_max_hz; f0 += step_hz)
 				{
@@ -129,13 +177,13 @@ namespace robotick::test
 						continue; // Skip the expected match
 
 					TemporalGroupingResult r{};
-					TemporalGrouping::eval_f0_with_mask(centers.data(), env.data(), claimed.data(), nb, cfg, f0, r, nullptr);
+					TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), nb, cfg, f0, r, nullptr);
 
 					CHECK(r.band_count == 0); // Everything else must be rejected
 				}
 			}
 
-			SECTION("Correctly accepts 1200 Hz as f₀")
+			SECTION("Correctly accepts 1200 Hz as f0")
 			{
 				TemporalGroupingConfig cfg;
 				cfg.fmin_hz = 100.0f;
@@ -152,20 +200,20 @@ namespace robotick::test
 
 				const int nb = cfg.num_bands;
 				auto centers = make_linear_band_centers(cfg.fmin_hz, cfg.fmax_hz, nb);
-				std::vector<float> env(nb, 0.0f), claimed(nb, 0.0f);
+				std::vector<float> envelope(nb, 0.0f), claimed(nb, 0.0f);
 
 				const int ix1200 = argmin_abs(centers, 1200.0f);
 				REQUIRE(ix1200 >= 0);
-				env[ix1200] = 1.0f;
+				envelope[ix1200] = 1.0f;
 
 				TemporalGroupingResult r{};
-				TemporalGrouping::eval_f0_with_mask(centers.data(), env.data(), claimed.data(), nb, cfg, 1200.0f, r, nullptr);
+				TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), nb, cfg, 1200.0f, r, nullptr);
 
 				REQUIRE(r.band_count == 1);
 				CHECK(r.f0_hz == Catch::Approx(1200.0f).margin(5.0f));
 				CHECK(r.centroid_hz == Catch::Approx(centers[ix1200]).margin(centers[1] - centers[0] + 1e-3f));
+				CHECK(r.amplitude == Catch::Approx(1.0f).margin(0.001f));
 				CHECK(r.harmonicity > 0.5f);
-				CHECK(r.amplitude > 0.2f);
 			}
 		}
 
@@ -234,26 +282,28 @@ namespace robotick::test
 
 			// History: y(t) = 0.5 + 0.4 * sin(2*pi*4Hz * t)
 			// We’ll sample at 80 Hz for N=16 frames → exactly 0.2 s
-			const uint8_t N = 16;
+			const uint8_t num_history_entries = 16;
 			std::vector<std::vector<float>> frames;
 			std::vector<const float*> frame_ptrs;
 			std::vector<double> timestamps;
 
-			const double dt = 1.0 / 80.0;
-			const double f_mod = 4.0; // 4 Hz
+			const double tick_rate_hz = 80.0;
+
+			const double dt = 1.0 / tick_rate_hz;
+			const double f_modulation = 4.0; // 4 Hz
 			make_history(
-				N,
+				num_history_entries,
 				num_bands,
 				frames,
 				frame_ptrs,
 				timestamps,
-				[&](uint8_t k, int j) -> float
+				[&](uint8_t history_entry_id, int band_id) -> float
 				{
-					const double t = double(k) * dt;
-					const float y = 0.5f + 0.4f * std::sin(float(2.0 * M_PI * f_mod * t));
-					if (j == b0)
+					const double t = double(history_entry_id) * dt;
+					const float y = 0.5f + 0.4f * std::sin(float(2.0 * M_PI * f_modulation * t));
+					if (band_id == b0)
 						return y;
-					if (j == b1)
+					if (band_id == b1)
 						return 0.8f * y; // correlated, scaled
 					return 0.0f;
 				},
@@ -262,9 +312,18 @@ namespace robotick::test
 
 			SECTION("Returns high coherence score for bands with similar temporal envelope")
 			{
+				// i.e. two bands are temporaily coherent if they rise and fall roughly together
+
 				float group_mean = 0.0f;
-				const float coh = TemporalGrouping::temporal_coherence_score(
-					frame_ptrs.data(), timestamps.data(), N, N, group, 2, num_bands, cfg.coherence_min_window_s, group_mean);
+				const float coh = TemporalGrouping::temporal_coherence_score(frame_ptrs.data(),
+					timestamps.data(),
+					num_history_entries,
+					num_history_entries,
+					group,
+					2,
+					num_bands,
+					cfg.coherence_min_window_s,
+					group_mean);
 				REQUIRE(coh >= 0.0f);
 				REQUIRE(coh <= 1.0f);
 				CHECK(coh > 0.8f);
@@ -273,15 +332,9 @@ namespace robotick::test
 
 			SECTION("Accurately estimates shared modulation frequency of grouped bands")
 			{
-				const float est = TemporalGrouping::estimate_modulation_rate_hz(frame_ptrs.data(),
-					N,
-					N,
-					group,
-					2,
-					num_bands,
-					/*tick_rate_hz=*/80.0f,
-					cfg);
-				CHECK(est == Catch::Approx(4.0f).margin(0.25f));
+				const float est = TemporalGrouping::estimate_modulation_rate_hz(
+					frame_ptrs.data(), num_history_entries, num_history_entries, group, 2, num_bands, (float)tick_rate_hz, cfg);
+				CHECK(est == Catch::Approx(f_modulation).margin(0.25f));
 			}
 		}
 

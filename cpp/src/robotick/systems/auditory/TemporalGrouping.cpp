@@ -4,8 +4,10 @@
 // TemporalGrouping.cpp
 
 #include "robotick/systems/auditory/TemporalGrouping.h"
+
 #include <cmath>
 #include <cstring>
+#include <iterator> // for std::size
 
 namespace robotick
 {
@@ -65,12 +67,179 @@ namespace robotick
 		return 0.5f * (left_gap + right_gap);
 	}
 
+	// Local effective width (cents) for a band, taken as the average gap to its neighbors.
+	float TemporalGrouping::band_width_cents(float* band_center_hz, int num_bands, int band_index)
+	{
+		const float width_hz = band_local_width_hz(band_center_hz, num_bands, band_index);
+		const float center_hz = band_center_hz[band_index];
+		return std::fabs(cents_between(center_hz, center_hz + 0.5f * width_hz)) * 2.0f;
+	}
+
+	/**
+	 * @brief Finds the best matching band index for a harmonic frequency, considering ±1 neighbors.
+	 *
+	 * @param target_hz           The target harmonic frequency (Hz).
+	 * @param band_center_hz      Array of band center frequencies [num_bands].
+	 * @param envelope            Per-band envelope/energy values [num_bands].
+	 * @param num_bands           Number of valid bands in the arrays.
+	 * @param tolerance_cents     Max deviation in cents allowed for a band to match the target.
+	 * @param out_within_tolerance Output: tolerance weight (0.0–1.0) for selected band.
+	 * @param out_envelope        Output: raw envelope value of selected band.
+	 * @return int                Index of the best matching band, or -1 if none found within tolerance.
+	 */
+
+	int TemporalGrouping::find_best_band_for_harmonic(float target_hz,
+		const float* band_center_hz,
+		const float* envelope,
+		int num_bands,
+		float tolerance_cents,
+		float& out_within_tolerance,
+		float& out_envelope)
+	{
+		int best_band = -1;
+		out_within_tolerance = 0.0f;
+		out_envelope = 0.0f;
+
+		const int nearest = band_index_for_hz(band_center_hz, num_bands, target_hz);
+		if (nearest < 0)
+			return -1;
+
+		for (int offset = -1; offset <= 1; ++offset)
+		{
+			const int i = nearest + offset;
+			if (i < 0 || i >= num_bands)
+				continue;
+
+			const float f_bin = band_center_hz[i];
+			const float env = envelope[i];
+			if (env <= 0.0f)
+				continue;
+
+			const float cents = std::fabs(cents_between(target_hz, f_bin));
+			const float band_width = band_width_cents(const_cast<float*>(band_center_hz), num_bands, i);
+			const float hard_cutoff = 0.5f * band_width; // Give full value inside band width
+
+			float within = 0.0f;
+			if (cents <= hard_cutoff)
+			{
+				within = 1.0f;
+			}
+			else if (cents <= tolerance_cents)
+			{
+				// Linearly decay from 1.0 → 0.0 starting after hard cutoff
+				const float fade_range = tolerance_cents - hard_cutoff + 1e-6f;
+				within = 1.0f - (cents - hard_cutoff) / fade_range;
+			}
+
+			if (within > out_within_tolerance || (within == out_within_tolerance && env > out_envelope))
+			{
+				best_band = i;
+				out_within_tolerance = within;
+				out_envelope = env;
+			}
+		}
+
+		return best_band;
+	}
+
+	/**
+	 * @brief Computes the contribution score of a band given tolerance, reuse penalty, and envelope.
+	 *
+	 * @param envelope        The raw envelope (energy) at this band.
+	 * @param within_tolerance Tolerance weight from 0.0 (rejected) to 1.0 (exact match).
+	 * @param claimed_fraction Value from 0.0 (unused) to 1.0 (fully claimed by another source).
+	 * @param config          TemporalGrouping config containing reuse penalty.
+	 * @return float          Final contribution score (can be 0 if fully rejected).
+	 */
+	float TemporalGrouping::compute_band_contribution(
+		float envelope, float within_tolerance, float claimed_fraction, const TemporalGroupingConfig& config)
+	{
+		const float clamped = clampf(claimed_fraction, 0.0f, 1.0f);
+		const float reuse_penalty = 1.0f - config.reuse_penalty * clamped;
+		return envelope * within_tolerance * reuse_penalty;
+	}
+
+	/**
+	 * @brief Determines whether a detected group passes the missing-fundamental test.
+	 *
+	 * @param config                Configuration settings (including inference toggle).
+	 * @param fundamental_hit       True if h=1 was directly detected.
+	 * @param harmonic_energy       Array of per-harmonic contributions [32].
+	 * @param band_count            Number of accepted bands in the result.
+	 * @param early_energy_fraction Fraction of energy from h1 and h2 (vs total).
+	 * @param early_hits            Number of harmonics accepted in h=1..2 range.
+	 * @return bool                 True if the candidate should be accepted; false otherwise.
+	 */
+	bool TemporalGrouping::passes_missing_fundamental_gate(const TemporalGroupingConfig& config,
+		bool fundamental_hit,
+		const float* harmonic_energy,
+		uint8_t band_count,
+		float early_energy_fraction,
+		uint8_t early_hits)
+	{
+		(void)early_hits;
+
+		if (!config.infer_missing_fundamental)
+			return fundamental_hit;
+
+		const bool has_h2 = (harmonic_energy[2] > 0.0f);
+		const bool has_h3 = (harmonic_energy[3] > 0.0f);
+		const bool multiple = (band_count >= 2);
+		const bool strong = (early_energy_fraction >= 0.45f);
+
+		return (has_h2 && has_h3 && multiple && strong);
+	}
+
+	/**
+	 * @brief Modulates harmonicity based on the frequency span of accepted bands.
+	 *
+	 * Widely spaced harmonics across the spectrum are stronger evidence of a valid f₀
+	 * than tightly clustered peaks. This function increases the harmonicity score
+	 * based on how much the accepted band frequencies span out, relative to average bin width.
+	 *
+	 * @param band_center_hz Array of band center frequencies [num_bands].
+	 * @param num_bands      Number of valid entries in band_center_hz.
+	 * @param envelope       Per-band envelope values [num_bands].
+	 * @param out            Result struct with accepted band indices and current harmonicity.
+	 */
+	void TemporalGrouping::apply_span_based_harmonicity_adjustment(const float* band_center_hz, int num_bands, TemporalGroupingResult& out)
+	{
+		if (out.band_count < 2)
+			return;
+
+		float min_freq = band_center_hz[out.bands[0]];
+		float max_freq = min_freq;
+		float sum_widths = 0.0f;
+
+		for (uint8_t i = 0; i < out.band_count; ++i)
+		{
+			const int idx = (int)out.bands[i];
+			const float f = band_center_hz[idx];
+			if (f < min_freq)
+				min_freq = f;
+			if (f > max_freq)
+				max_freq = f;
+
+			sum_widths += band_local_width_hz(band_center_hz, num_bands, idx);
+		}
+
+		const float span_hz = max_freq - min_freq;
+		const float avg_width = sum_widths / (float)out.band_count;
+		const float span_target = 2.5f * avg_width;
+
+		// Compute factor from 0.0 to 1.0 based on how much the span exceeds typical bin widths
+		const float span_factor = clampf(span_hz / (span_target + 1e-9f), 0.0f, 1.0f);
+
+		// Boost harmonicity using this span factor
+		out.harmonicity *= (0.5f + 0.5f * span_factor);
+	}
+
 	// Evaluate the match of a candidate f0 (fundamental) against the envelope spectrum, with a "claimed" mask to penalize reuse.
 	// - band_center_hz: center frequency of each analysis band
 	// - envelope:       per-band energy/envelope (non-negative)
 	// - claimed:        per-band 0..1 mask indicating how much energy has already been used by another source (optional)
 	// - num_bands:      number of valid bands
-	// - cfg:            temporal grouping configuration
+	// - config:            temporal grouping configuration
 	// - f0:             candidate fundamental to evaluate (Hz)
 	// - out:            result structure (filled on success)
 	// - E_h_out:        optional per-harmonic contribution array [0..31]
@@ -78,7 +247,7 @@ namespace robotick
 		const float* envelope,
 		const float* claimed,
 		int num_bands,
-		const TemporalGroupingConfig& cfg,
+		const TemporalGroupingConfig& config,
 		float f0,
 		TemporalGroupingResult& out,
 		float* harmonic_energy_out)
@@ -87,209 +256,112 @@ namespace robotick
 		if (num_bands <= 0 || f0 <= 0.0f)
 			return;
 
-		// Guard sizes for small automatic arrays
-		const int kMaxBandsLocal = 256;
-		const int local_band_capacity = (num_bands < kMaxBandsLocal) ? num_bands : kMaxBandsLocal;
+		constexpr int kMaxBandsLocal = 256;
+		const int local_capacity = std::min(num_bands, kMaxBandsLocal);
+		bool band_used[kMaxBandsLocal] = {};
+		float harmonic_energy[32] = {};
 
-		// Limit harmonics we will consider (array below supports up to 31 harmonics explicitly)
-		uint8_t max_harmonics = cfg.max_harmonics;
-		if (max_harmonics > 31)
-			max_harmonics = 31;
+		const uint8_t max_harmonics = std::min<uint8_t>(config.max_harmonics, 31);
+		const float tolerance_cents = config.harmonic_tolerance_cents;
 
-		const float harmonic_tol_cents = cfg.harmonic_tolerance_cents;
+		float energy_sum = 0.0f;
+		float unique_energy = 0.0f;
+		float centroid_sum = 0.0f;
+		float weight_sum = 0.0f;
 
-		// Accumulators for amplitude and centroid
-		float accepted_energy_weighted = 0.0f;	 // sum of (band_energy * within_tolerance * reuse_penalty)
-		float unique_energy_denominator = 0.0f;	 // sum of raw band energies for accepted bins (for harmonicity)
-		float centroid_weighted_freq_sum = 0.0f; // sum of (contrib * band_center_hz)
-		float total_weight = 0.0f;				 // sum of contrib
+		bool fundamental_hit = false;
+		uint8_t early_hits = 0;
+		uint8_t band_count = 0;
 
-		// Track if we reused a band (to avoid double-counting); only for locally addressable bands
-		bool band_used_locally[kMaxBandsLocal];
-		for (int i = 0; i < local_band_capacity; ++i)
-			band_used_locally[i] = false;
-
-		// Per-harmonic accepted energy contributions (E_h[h])
-		float harmonic_energy[32];
-		for (int i = 0; i < 32; ++i)
-			harmonic_energy[i] = 0.0f;
-
-		uint8_t out_band_count = 0;
-		bool fundamental_hit = false;		   // whether we accepted h=1
-		uint8_t early_harmonic_hits_count = 0; // among h=1..2 (first two harmonics)
-
-		// Scan harmonics at integer multiples of f0
+		// --- Scan harmonics and collect contributing bands ---
 		for (uint8_t h = 1; h <= max_harmonics; ++h)
 		{
-			const float harmonic_target_hz = f0 * (float)h;
-			if (harmonic_target_hz >= cfg.fmax_hz)
+			const float target_hz = f0 * h;
+			if (target_hz >= config.fmax_hz)
 				break;
 
-			const int nearest_band_index = band_index_for_hz(band_center_hz, num_bands, harmonic_target_hz);
-			if (nearest_band_index < 0)
+			float found_within_tolerance = 0.0f;
+			float found_amplitude = 0.0f;
+			int best =
+				find_best_band_for_harmonic(target_hz, band_center_hz, envelope, num_bands, tolerance_cents, found_within_tolerance, found_amplitude);
+			if (best < 0)
+				continue;
+			if (best < local_capacity && band_used[best])
 				continue;
 
-			// Search the nearest band and its immediate neighbors for the best in-tolerance hit
-			int best_band_index = -1;
-			float best_within_tolerance = 0.0f;
-			float best_band_envelope = 0.0f;
+			const float claim = claimed ? claimed[best] : 0.0f;
+			const float contrib = compute_band_contribution(found_amplitude, found_within_tolerance, claim, config);
 
-			for (int neighbor_offset = -1; neighbor_offset <= 1; ++neighbor_offset)
-			{
-				const int band_index = nearest_band_index + neighbor_offset;
-				if (band_index < 0 || band_index >= num_bands)
-					continue;
-
-				const float bin_hz = band_center_hz[band_index];
-				const float band_envelope = envelope[band_index];
-				if (band_envelope <= 0.0f)
-					continue;
-
-				const float cents_off = std::fabs(cents_between(harmonic_target_hz, bin_hz));
-				const float within_tolerance = (cents_off <= harmonic_tol_cents) ? (1.0f - (cents_off / (harmonic_tol_cents + 1e-12f))) : 0.0f;
-
-				if (within_tolerance <= 0.0f)
-					continue;
-
-				// Prefer higher within_tolerance; tiebreak by larger band_envelope
-				if (within_tolerance > best_within_tolerance || (within_tolerance == best_within_tolerance && band_envelope > best_band_envelope))
-				{
-					best_within_tolerance = within_tolerance;
-					best_band_envelope = band_envelope;
-					best_band_index = band_index;
-				}
-			}
-
-			if (best_band_index < 0)
+			if (contrib <= 0.0f)
 				continue;
 
-			// Avoid picking the same band twice within this evaluation (local guard)
-			if (best_band_index < local_band_capacity && band_used_locally[best_band_index])
-				continue;
+			if (best < local_capacity)
+				band_used[best] = true;
 
-			// Penalize bands that are already "claimed" by other sources
-			const float claimed_fraction = claimed ? claimed[best_band_index] : 0.0f; // 0..1
-			const float reuse_penalty = 1.0f - cfg.reuse_penalty * clampf(claimed_fraction, 0.0f, 1.0f);
+			if (band_count < (uint8_t)std::size(out.bands))
+				out.bands[band_count++] = (uint16_t)best;
 
-			const float contribution = best_band_envelope * best_within_tolerance * reuse_penalty;
+			energy_sum += contrib;
+			centroid_sum += contrib * band_center_hz[best];
+			weight_sum += contrib;
+			unique_energy += found_amplitude;
 
-			if (best_band_index < local_band_capacity)
-				band_used_locally[best_band_index] = true;
+			harmonic_energy[h] += contrib;
 
-			// Record which bands were accepted (for downstream consumers / debugging)
-			if (out_band_count < (uint8_t)(sizeof(out.bands) / sizeof(out.bands[0])))
-				out.bands[out_band_count++] = (uint16_t)best_band_index;
-
-			accepted_energy_weighted += contribution;
-			centroid_weighted_freq_sum += contribution * band_center_hz[best_band_index];
-			total_weight += contribution;
-
-			unique_energy_denominator += best_band_envelope;
-
-			// Track per-harmonic contribution and early-harmonic evidence
-			harmonic_energy[h] += contribution;
-			if (h == 1 && contribution > 0.0f)
+			if (h == 1 && contrib > 0.0f)
 				fundamental_hit = true;
-			if (h <= 2 && contribution > 0.0f)
-				++early_harmonic_hits_count;
+			if (h <= 2 && contrib > 0.0f)
+				++early_hits;
 		}
 
-		out.band_count = out_band_count;
-		out.amplitude = accepted_energy_weighted;
+		out.band_count = band_count;
+		out.amplitude = energy_sum;
 
-		// Reject if we had no valid contributions
-		if (accepted_energy_weighted <= 0.0f || out_band_count == 0)
+		// --- Reject if no contribution ---
+		if (band_count == 0 || energy_sum <= 0.0f)
+			return;
+
+		// --- Evaluate missing fundamental / early harmonic gate ---
+		const float early_energy = harmonic_energy[1] + harmonic_energy[2];
+		const float early_frac = early_energy / (energy_sum + 1e-12f);
+		if (!passes_missing_fundamental_gate(config, fundamental_hit, harmonic_energy, band_count, early_frac, early_hits))
 		{
 			out.band_count = 0;
 			return;
 		}
 
-		// Early-harmonic evidence (helps reject octave/half-octave mistakes)
-		const float early_energy_sum = harmonic_energy[1] + harmonic_energy[2];
-		const float early_energy_fraction = early_energy_sum / (accepted_energy_weighted + 1e-12f);
-
-		// If we *don't* infer missing fundamentals, insist we actually saw h=1
-		if (!cfg.infer_missing_fundamental && !fundamental_hit)
+		if (early_frac < 0.20f || early_hits < 1)
 		{
 			out.band_count = 0;
 			return;
 		}
 
-		// If we *do* infer missing fundamentals, require strong early-harmonic structure
-		if (cfg.infer_missing_fundamental && !fundamental_hit)
+		// --- Harmonicity and centroid ---
+		out.harmonicity = (unique_energy > 1e-9f) ? (energy_sum / unique_energy) : 0.0f;
+		if (weight_sum > 1e-9f)
 		{
-			const bool has_h2 = (harmonic_energy[2] > 0.0f);
-			const bool has_h3 = (harmonic_energy[3] > 0.0f);
-			const bool multiple_bands = (out_band_count >= 2);
-			const bool strong_early = (early_energy_fraction >= 0.45f);
+			out.centroid_hz = centroid_sum / weight_sum;
 
-			if (!(has_h2 && has_h3 && multiple_bands && strong_early))
+			// --- Compute spectral bandwidth ---
+			float var_sum = 0.0f;
+			for (uint8_t i = 0; i < band_count; ++i)
 			{
-				out.band_count = 0;
-				return;
-			}
-		}
-
-		// Minimal early evidence gate
-		if (early_energy_fraction < 0.20f || early_harmonic_hits_count < 1)
-		{
-			out.band_count = 0;
-			return;
-		}
-
-		// Harmonicity = (accepted weighted energy) / (sum of raw unique energies)
-		out.harmonicity = (unique_energy_denominator > 1e-9f) ? (accepted_energy_weighted / unique_energy_denominator) : 0.0f;
-
-		// Spectral centroid and bandwidth over the accepted bands
-		if (total_weight > 1e-9f)
-		{
-			out.centroid_hz = centroid_weighted_freq_sum / total_weight;
-
-			float weighted_variance = 0.0f;
-			for (uint8_t k = 0; k < out_band_count; ++k)
-			{
-				const int band_index = (int)out.bands[k];
-				const float f = band_center_hz[band_index];
+				const int idx = out.bands[i];
+				const float f = band_center_hz[idx];
 				const float df = f - out.centroid_hz;
-				const float w = envelope[band_index];
-				weighted_variance += w * df * df;
+				const float w = envelope[idx];
+				var_sum += w * df * df;
 			}
-			out.bandwidth_hz = std::sqrt(weighted_variance / (total_weight + 1e-9f));
+			out.bandwidth_hz = std::sqrt(var_sum / (weight_sum + 1e-9f));
 		}
 
-		// Span-based adjustment: wideness of accepted bands vs their typical widths
-		if (out_band_count >= 2)
-		{
-			float min_freq = band_center_hz[out.bands[0]];
-			float max_freq = min_freq;
-			float sum_local_widths = 0.0f;
+		// --- Optional span-based harmonicity boost ---
+		if (band_count >= 2)
+			apply_span_based_harmonicity_adjustment(band_center_hz, num_bands, out);
 
-			for (uint8_t k = 0; k < out_band_count; ++k)
-			{
-				const int band_index = (int)out.bands[k];
-				const float f = band_center_hz[band_index];
-				if (f < min_freq)
-					min_freq = f;
-				if (f > max_freq)
-					max_freq = f;
-				sum_local_widths += band_local_width_hz(band_center_hz, num_bands, band_index);
-			}
-
-			const float span_hz = max_freq - min_freq;
-			const float mean_local_width = sum_local_widths / (float)out_band_count;
-
-			// Heuristic: compare span to a scaled average width to modulate harmonicity
-			const float span_target = 2.5f * mean_local_width;
-			const float span_factor_0_1 = clampf(span_hz / (span_target + 1e-9f), 0.0f, 1.0f);
-
-			// Note: this *increases* harmonicity with span_factor; keep logic as-is.
-			out.harmonicity *= (0.5f + 0.5f * span_factor_0_1);
-		}
-
-		// Optional per-harmonic output
+		// --- Optional per-harmonic output ---
 		if (harmonic_energy_out)
-			for (int i = 0; i < 32; ++i)
-				harmonic_energy_out[i] = harmonic_energy[i];
+			std::memcpy(harmonic_energy_out, harmonic_energy, sizeof(float) * 32);
 
 		out.f0_hz = f0;
 	}
@@ -405,7 +477,7 @@ namespace robotick
 		uint8_t selected_band_count,
 		int num_bands,
 		float tick_rate_hz,
-		const TemporalGroupingConfig& cfg)
+		const TemporalGroupingConfig& config)
 	{
 		if (!history_envelopes || history_count < 6 || selected_band_count == 0 || num_bands <= 0 || tick_rate_hz <= 0.0f)
 			return 0.0f;
@@ -426,9 +498,17 @@ namespace robotick
 			group_envelope_series[k] = sum_band_env / (float)selected_band_count;
 		}
 
+		// Detrend: remove DC offset (mean) from the group envelope
+		float sum = 0.0f;
+		for (uint8_t i = 0; i < frame_count; ++i)
+			sum += group_envelope_series[i];
+		const float mean = sum / (float)frame_count;
+		for (uint8_t i = 0; i < frame_count; ++i)
+			group_envelope_series[i] -= mean;
+
 		// Candidate AM rates (Hz) common in speech rhythm
 		static const float kTargetRatesHz[7] = {2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 8.0f, 10.0f};
-		const uint8_t num_target_bins = (cfg.modulation_bins <= 7) ? cfg.modulation_bins : (uint8_t)7;
+		const uint8_t num_target_bins = (config.modulation_bins <= 7) ? config.modulation_bins : (uint8_t)7;
 
 		float best_power = 0.0f;
 		float best_rate_hz = 0.0f;

@@ -78,6 +78,25 @@ namespace robotick
 			float* E_h_out = nullptr // optional: energy per harmonic [32]
 		);
 
+		static int find_best_band_for_harmonic(float target_hz,
+			const float* band_center_hz,
+			const float* envelope,
+			int num_bands,
+			float tolerance_cents,
+			float& out_within_tolerance,
+			float& out_envelope);
+
+		static float compute_band_contribution(float envelope, float within_tolerance, float claimed_fraction, const TemporalGroupingConfig& config);
+
+		static bool passes_missing_fundamental_gate(const TemporalGroupingConfig& config,
+			bool fundamental_hit,
+			const float* harmonic_energy,
+			uint8_t band_count,
+			float early_energy_fraction,
+			uint8_t early_hits);
+
+		static void apply_span_based_harmonicity_adjustment(const float* band_center_hz, int num_bands, TemporalGroupingResult& out);
+
 		// Temporal coherence over a band group using caller-provided history.
 		// history_env: array of N pointers, each to an env frame of length nb.
 		// timestamps: length N, ascending in time.
@@ -94,18 +113,19 @@ namespace robotick
 
 		// Modulation-rate estimate (Goertzel over group envelope).
 		// Probes {2,3,4,5,6,8,10} Hz (limited by cfg.modulation_bins).
-		static float estimate_modulation_rate_hz(const float* const* history_env,
+		static float estimate_modulation_rate_hz(const float* const* history_envelopes,
 			uint8_t history_count,
-			uint8_t history_cap,
-			const uint16_t* band_indices,
-			uint8_t band_count,
-			int nb,
+			uint8_t /*history_cap*/,
+			const uint16_t* selected_band_indices,
+			uint8_t selected_band_count,
+			int num_bands,
 			float tick_rate_hz,
-			const TemporalGroupingConfig& cfg);
+			const TemporalGroupingConfig& config);
 
 		// Utility (kept public for tests)
 		static int band_index_for_hz(const float* band_center_hz, int nb, float hz);
 		static float band_local_width_hz(const float* band_center_hz, int nb, int j);
+		static float band_width_cents(float* band_center_hz, int num_bands, int band_index);
 		static float cents_between(float f1, float f2);
 		static float clampf(float v, float lo, float hi);
 	};
