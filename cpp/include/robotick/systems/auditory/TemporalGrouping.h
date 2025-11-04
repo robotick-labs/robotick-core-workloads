@@ -18,7 +18,7 @@ namespace robotick
 
 		// f0 sweep
 		float f0_min_hz = 60.0f;
-		float f0_max_hz = 1200.0f;
+		float f0_max_hz = 2000.0f;
 
 		// Harmonic sieve
 		uint8_t max_harmonics = 10;
@@ -26,7 +26,7 @@ namespace robotick
 
 		// Selection / gating
 		float min_harmonicity = 0.15f;
-		float min_amplitude = 0.05f;
+		float min_amplitude = 0.3f;
 		float reuse_penalty = 0.45f;
 
 		// History usage

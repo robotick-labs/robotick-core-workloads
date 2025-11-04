@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <fstream>
 
 namespace robotick
 {
@@ -62,9 +63,9 @@ namespace robotick
 			Track tracks[MaxTracks];
 			uint8_t next_track_id = 1;
 
-			void reset_claims(uint16_t nb)
+			void reset_claims(uint16_t num_bands)
 			{
-				const uint16_t n = (nb < MaxBands) ? nb : MaxBands;
+				const uint16_t n = (num_bands < MaxBands) ? num_bands : MaxBands;
 				for (uint16_t i = 0; i < n; ++i)
 					claimed_energy[i] = 0.0f;
 			}
@@ -81,9 +82,9 @@ namespace robotick
 
 		inline float frame_energy(const CochlearFrame& f) const
 		{
-			const uint16_t nb = (config.num_bands <= MaxBands) ? config.num_bands : MaxBands;
+			const uint16_t num_bands = (config.num_bands <= MaxBands) ? config.num_bands : MaxBands;
 			float s = 0.0f;
-			for (uint16_t i = 0; i < nb; ++i)
+			for (uint16_t i = 0; i < num_bands; ++i)
 				s += f.envelope[i];
 			return s;
 		}
@@ -97,13 +98,34 @@ namespace robotick
 			state.history_head = (uint8_t)((state.history_head + 1) % cap);
 			HistEntry& e = state.history[state.history_head];
 
-			const uint16_t nb = (config.num_bands <= MaxBands) ? config.num_bands : MaxBands;
-			for (uint16_t i = 0; i < nb; ++i)
+			const uint16_t num_bands = (config.num_bands <= MaxBands) ? config.num_bands : MaxBands;
+			for (uint16_t i = 0; i < num_bands; ++i)
 				e.envelope[i] = f.envelope[i];
 			e.timestamp = f.timestamp;
 
 			if (state.history_count < cap)
 				++state.history_count;
+
+#if ENABLE_TG_ENVELOPE_LOG
+			static std::ofstream log_file("envelope_history.log", std::ios::app);
+			if (log_file.is_open())
+			{
+				// Optional: log timestamp too
+				log_file << f.timestamp;
+				for (uint16_t i = 0; i < num_bands; ++i)
+					log_file << "," << f.envelope[i];
+				log_file << "\n";
+			}
+			static std::ofstream log_file_2("centers_history.log", std::ios::app);
+			if (log_file_2.is_open())
+			{
+				// Optional: log timestamp too
+				log_file_2 << f.timestamp;
+				for (uint16_t i = 0; i < num_bands; ++i)
+					log_file_2 << "," << f.band_center_hz[i];
+				log_file_2 << "\n";
+			}
+#endif // #if ENABLE_TG_ENVELOPE_LOG
 		}
 
 		uint8_t acquire_track(float pitch_hz, double ts)
@@ -151,24 +173,26 @@ namespace robotick
 
 		void tick(const TickInfo& tick_info)
 		{
-			const CochlearFrame& cur = inputs.cochlear_frame;
+			const CochlearFrame& current_frame = inputs.cochlear_frame;
 			outputs.source_candidates.clear();
 			outputs.first_source = SourceCandidate{};
 
 			if (config.num_bands == 0 || config.num_bands > MaxBands)
 				config.num_bands = (config.num_bands == 0) ? 1 : MaxBands;
 
-			push_history(cur);
+			push_history(current_frame);
 
-			const uint16_t nb = config.num_bands;
-			state.reset_claims(nb);
+			const uint16_t num_bands = config.num_bands;
+			state.reset_claims(num_bands);
 
 			// Energy gate
-			if (frame_energy(cur) < config.min_amplitude)
+			if (frame_energy(current_frame) < config.min_amplitude)
 			{
 				for (uint8_t i = 0; i < State::MaxTracks; ++i)
-					if (state.tracks[i].active && (cur.timestamp - state.tracks[i].last_timestamp > 0.3))
+					if (state.tracks[i].active && (current_frame.timestamp - state.tracks[i].last_timestamp > 0.3))
+					{
 						state.tracks[i].active = false;
+					}
 				return;
 			}
 
@@ -193,12 +217,18 @@ namespace robotick
 				for (float f0 = min_f; f0 <= max_f; f0 *= step)
 				{
 					Cand c{};
-					robotick::TemporalGrouping::eval_f0_with_mask(
-						cur.band_center_hz.data(), cur.envelope.data(), state.claimed_energy, (int)nb, config, f0, c.res, nullptr);
+					robotick::TemporalGrouping::eval_f0_with_mask(current_frame.band_center_hz.data(),
+						current_frame.envelope.data(),
+						state.claimed_energy,
+						(int)num_bands,
+						config,
+						f0,
+						c.res,
+						nullptr);
 					if (c.res.band_count == 0)
 						continue;
 
-					const float frameE = frame_energy(cur);
+					const float frameE = frame_energy(current_frame);
 					const float min_rel = 0.12f;
 					const bool single_ridge_ok = (c.res.band_count == 1 && c.res.harmonicity >= 0.50f);
 
@@ -223,7 +253,7 @@ namespace robotick
 
 					float group_mean = 0.0f;
 					const float coh = robotick::TemporalGrouping::temporal_coherence_score(
-						hist_ptrs, ts_arr, N, cap, c.res.bands, c.res.band_count, (int)nb, config.coherence_min_window_s, group_mean);
+						hist_ptrs, ts_arr, N, cap, c.res.bands, c.res.band_count, (int)num_bands, config.coherence_min_window_s, group_mean);
 					c.res.temporal_coherence = robotick::TemporalGrouping::clampf(coh, 0.0f, 1.0f);
 
 					const float combined = c.res.harmonicity * (0.5f + 0.5f * c.res.temporal_coherence);
@@ -248,13 +278,13 @@ namespace robotick
 					hist_ptrs2[k] = state.history[idx].envelope;
 				}
 				best.res.modulation_rate_hz = robotick::TemporalGrouping::estimate_modulation_rate_hz(
-					hist_ptrs2, N2, cap2, best.res.bands, best.res.band_count, (int)nb, tick_info.tick_rate_hz, config);
+					hist_ptrs2, N2, cap2, best.res.bands, best.res.band_count, (int)num_bands, tick_info.tick_rate_hz, config);
 
 				// Soft-claim
 				for (uint8_t b = 0; b < best.res.band_count; ++b)
 				{
 					const uint16_t j = best.res.bands[b];
-					const float e = robotick::TemporalGrouping::clampf(cur.envelope[j], 0.0f, 1.0f);
+					const float e = robotick::TemporalGrouping::clampf(current_frame.envelope[j], 0.0f, 1.0f);
 					state.claimed_energy[j] = robotick::TemporalGrouping::clampf(state.claimed_energy[j] + 0.6f * e, 0.0f, 1.0f);
 				}
 
@@ -266,7 +296,7 @@ namespace robotick
 			for (size_t i = 0; i < pool.size(); ++i)
 			{
 				const auto& r = pool[i].res;
-				const uint8_t tix = acquire_track(r.f0_hz, cur.timestamp);
+				const uint8_t tix = acquire_track(r.f0_hz, current_frame.timestamp);
 				auto& t = state.tracks[tix];
 
 				const float a = clampf(config.smooth_alpha, 0.0f, 1.0f);
@@ -293,7 +323,7 @@ namespace robotick
 					else
 						t.modulation_rate = a * r.modulation_rate_hz + (1.0f - a) * t.modulation_rate;
 				}
-				t.last_timestamp = cur.timestamp;
+				t.last_timestamp = current_frame.timestamp;
 
 				SourceCandidate out{};
 				out.pitch_hz = t.pitch_hz;
@@ -313,7 +343,7 @@ namespace robotick
 
 			// Retire stale tracks
 			for (uint8_t i = 0; i < State::MaxTracks; ++i)
-				if (state.tracks[i].active && (cur.timestamp - state.tracks[i].last_timestamp > 0.3))
+				if (state.tracks[i].active && (current_frame.timestamp - state.tracks[i].last_timestamp > 0.3))
 					state.tracks[i].active = false;
 		}
 	};

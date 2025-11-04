@@ -292,7 +292,7 @@ namespace robotick
 			const float claim = claimed ? claimed[best] : 0.0f;
 			const float contrib = compute_band_contribution(found_amplitude, found_within_tolerance, claim, config);
 
-			if (contrib <= 0.0f)
+			if (contrib <= config.min_amplitude)
 				continue;
 
 			if (best < local_capacity)
@@ -308,9 +308,9 @@ namespace robotick
 
 			harmonic_energy[h] += contrib;
 
-			if (h == 1 && contrib > 0.0f)
+			if (h == 1 && contrib > config.min_amplitude)
 				fundamental_hit = true;
-			if (h <= 2 && contrib > 0.0f)
+			if (h <= 2 && contrib > config.min_amplitude)
 				++early_hits;
 		}
 
