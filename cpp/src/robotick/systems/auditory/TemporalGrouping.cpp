@@ -5,9 +5,11 @@
 
 #include "robotick/systems/auditory/TemporalGrouping.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iterator> // for std::size
+#include <vector>
 
 namespace robotick
 {
@@ -234,15 +236,144 @@ namespace robotick
 		out.harmonicity *= (0.5f + 0.5f * span_factor);
 	}
 
-	// Evaluate the match of a candidate f0 (fundamental) against the envelope spectrum, with a "claimed" mask to penalize reuse.
-	// - band_center_hz: center frequency of each analysis band
-	// - envelope:       per-band energy/envelope (non-negative)
-	// - claimed:        per-band 0..1 mask indicating how much energy has already been used by another source (optional)
-	// - num_bands:      number of valid bands
-	// - config:            temporal grouping configuration
-	// - f0:             candidate fundamental to evaluate (Hz)
-	// - out:            result structure (filled on success)
-	// - E_h_out:        optional per-harmonic contribution array [0..31]
+	// --- Peak clustering + peak-based f0 evaluation ------------------------------
+	// Minimal, generic, and fast. No new public API needed.
+
+	struct Peak
+	{
+		int l = 0, r = 0;
+		int i_max = 0;
+		float amp_sum = 0.0f;
+		float amp_max = 0.0f;
+		float centroid_hz = 0.0f;
+		float claimed_avg = 0.0f;
+		float edge_left_hz = 0.0f;	// NEW: inclusive left edge in Hz
+		float edge_right_hz = 0.0f; // NEW: inclusive right edge in Hz
+	};
+
+	inline bool is_local_peak_bin(const float* env, int n, int i)
+	{
+		const float c = env[i];
+		const float left = (i > 0) ? env[i - 1] : -INFINITY;
+		const float right = (i + 1 < n) ? env[i + 1] : -INFINITY;
+		return c >= left && c >= right && (c > left || c > right);
+	}
+
+	static void extract_peaks(const float* band_center_hz,
+		const float* envelope,
+		const float* claimed, // optional
+		int num_bands,
+		float min_abs_amp,
+		float rel_min_frac, // relative to global peak
+		int grow_left = 1,
+		int grow_right = 1,
+		std::vector<Peak>* out_peaks = nullptr)
+	{
+		out_peaks->clear();
+		if (num_bands <= 0)
+			return;
+
+		// Global peak for relative threshold
+		float global_peak = 0.0f;
+		for (int i = 0; i < num_bands; ++i)
+			global_peak = std::max(global_peak, envelope[i]);
+
+		const float amp_thresh = std::max(min_abs_amp, rel_min_frac * global_peak);
+		if (amp_thresh <= 0.0f)
+			return;
+
+		for (int i = 0; i < num_bands; ++i)
+		{
+			if (envelope[i] < amp_thresh)
+				continue;
+			if (!is_local_peak_bin(envelope, num_bands, i))
+				continue;
+
+			// Grow a compact cluster around the local max while values decrease
+			int l = i, r = i;
+			// expand left
+			for (int step = 0; step < grow_left; ++step)
+			{
+				if (l <= 0)
+					break;
+				if (envelope[l - 1] <= envelope[l])
+					--l;
+				else
+					break;
+			}
+			// expand right
+			for (int step = 0; step < grow_right; ++step)
+			{
+				if (r >= num_bands - 1)
+					break;
+				if (envelope[r + 1] <= envelope[r])
+					++r;
+				else
+					break;
+			}
+
+			// Integrate the cluster
+			float wsum = 0.0f, fwsum = 0.0f, csum = 0.0f;
+			for (int j = l; j <= r; ++j)
+			{
+				const float w = envelope[j];
+				wsum += w;
+				fwsum += w * band_center_hz[j];
+				if (claimed)
+					csum += claimed[j];
+			}
+			if (wsum < amp_thresh)
+				continue; // filter tiny clusters
+
+			Peak p;
+			p.l = l;
+			p.r = r;
+			p.i_max = i;
+			p.amp_sum = wsum;
+			p.amp_max = envelope[i];
+			p.centroid_hz = (wsum > 0.0f) ? (fwsum / wsum) : band_center_hz[i];
+			p.claimed_avg = (claimed && (r >= l)) ? (csum / float(r - l + 1)) : 0.0f;
+
+			out_peaks->push_back(p);
+
+			// Optional: skip ahead to avoid overlapping peaks (simple NMS)
+			i = r;
+		}
+	}
+
+	// cents_between(f1,f2) already exists in your code; re-use it.
+
+	static int find_best_peak_for_harmonic(
+		float target_hz, const std::vector<Peak>& peaks, float tolerance_cents, float& out_within_tol, float& out_amp_sum)
+	{
+		int best = -1;
+		float best_score = -1.0f;
+
+		for (int k = 0; k < (int)peaks.size(); ++k)
+		{
+			const float cents = std::fabs(TemporalGrouping::cents_between(target_hz, peaks[k].centroid_hz));
+			if (cents > tolerance_cents)
+				continue;
+
+			// Heuristic: prefer closer in cents, then larger amp_sum
+			const float closeness = 1.0f - (cents / (tolerance_cents + 1e-9f));
+			const float score = closeness * peaks[k].amp_sum;
+
+			if (score > best_score)
+			{
+				best_score = score;
+				best = k;
+				out_within_tol = closeness; // 0..1
+				out_amp_sum = peaks[k].amp_sum;
+			}
+		}
+		return best;
+	}
+
+	// -----------------------------------------------------------------------------
+	// Peak-based eval_f0_with_mask
+	// -----------------------------------------------------------------------------
+
 	void TemporalGrouping::eval_f0_with_mask(const float* band_center_hz,
 		const float* envelope,
 		const float* claimed,
@@ -256,13 +387,34 @@ namespace robotick
 		if (num_bands <= 0 || f0 <= 0.0f)
 			return;
 
-		constexpr int kMaxBandsLocal = 256;
-		const int local_capacity = std::min(num_bands, kMaxBandsLocal);
-		bool band_used[kMaxBandsLocal] = {};
 		float harmonic_energy[32] = {};
-
 		const uint8_t max_harmonics = std::min<uint8_t>(config.max_harmonics, 31);
 		const float tolerance_cents = config.harmonic_tolerance_cents;
+
+		// 1) Build peak list once for this frame (generic; no overfit)
+		std::vector<Peak> peaks;
+		peaks.reserve(64);
+
+		// Tunables (could be lifted to config later)
+		const float rel_min = 0.02f; // 2% of global peak
+		const int grow_left = 2;	 // allow a slightly wider cluster
+		const int grow_right = 2;
+
+		extract_peaks(band_center_hz,
+			envelope,
+			claimed,
+			num_bands,
+			/*min_abs_amp=*/config.min_amplitude,
+			/*rel_min_frac=*/rel_min,
+			grow_left,
+			grow_right,
+			&peaks);
+
+		if (peaks.empty())
+			return;
+
+		// Keep track of which peaks were consumed (so a harmonic can't reuse a nearby peak)
+		std::vector<uint8_t> peak_used(peaks.size(), 0);
 
 		float energy_sum = 0.0f;
 		float unique_energy = 0.0f;
@@ -273,76 +425,75 @@ namespace robotick
 		uint8_t early_hits = 0;
 		uint8_t band_count = 0;
 
-		// --- Scan harmonics and collect contributing bands ---
+		// 2) Harmonic scan (match to peaks, not bins)
 		for (uint8_t h = 1; h <= max_harmonics; ++h)
 		{
 			const float target_hz = f0 * h;
 			if (target_hz >= config.fmax_hz)
 				break;
 
-			float found_within_tolerance = 0.0f;
-			float found_amplitude = 0.0f;
-			int best =
-				find_best_band_for_harmonic(target_hz, band_center_hz, envelope, num_bands, tolerance_cents, found_within_tolerance, found_amplitude);
-			if (best < 0)
+			float within = 0.0f, amp_sum = 0.0f;
+			int pk = find_best_peak_for_harmonic(target_hz, peaks, tolerance_cents, within, amp_sum);
+			if (pk < 0)
 				continue;
-			if (best < local_capacity && band_used[best])
+			if (peak_used[pk])
 				continue;
 
-			const float claim = claimed ? claimed[best] : 0.0f;
-			const float contrib = compute_band_contribution(found_amplitude, found_within_tolerance, claim, config);
-
+			// Score contribution using your existing function:
+			const float claim = peaks[pk].claimed_avg;
+			const float contrib = compute_band_contribution(amp_sum, within, claim, config);
 			if (contrib <= config.min_amplitude)
 				continue;
 
-			if (best < local_capacity)
-				band_used[best] = true;
+			peak_used[pk] = 1;
 
+			// Choose a representative band index for outputs (use peak max)
+			int repr_idx = peaks[pk].i_max;
 			if (band_count < (uint8_t)std::size(out.bands))
-				out.bands[band_count++] = (uint16_t)best;
+				out.bands[band_count++] = (uint16_t)repr_idx;
 
 			energy_sum += contrib;
-			centroid_sum += contrib * band_center_hz[best];
+			centroid_sum += contrib * peaks[pk].centroid_hz;
 			weight_sum += contrib;
-			unique_energy += found_amplitude;
+			unique_energy += amp_sum;
 
-			harmonic_energy[h] += contrib;
+			if (h < 32)
+				harmonic_energy[h] += contrib;
 
 			if (h == 1 && contrib > config.min_amplitude)
-				fundamental_hit = true;
-			if (h <= 2 && contrib > config.min_amplitude)
+				++early_hits, fundamental_hit = true;
+			if (h == 2 && contrib > config.min_amplitude)
 				++early_hits;
 		}
 
 		out.band_count = band_count;
 		out.amplitude = energy_sum;
 
-		// --- Reject if no contribution ---
+		// 3) Early-gate and quality metrics
 		if (band_count == 0 || energy_sum <= 0.0f)
 			return;
 
-		// --- Evaluate missing fundamental / early harmonic gate ---
 		const float early_energy = harmonic_energy[1] + harmonic_energy[2];
 		const float early_frac = early_energy / (energy_sum + 1e-12f);
+
 		if (!passes_missing_fundamental_gate(config, fundamental_hit, harmonic_energy, band_count, early_frac, early_hits))
 		{
 			out.band_count = 0;
 			return;
 		}
-
 		if (early_frac < 0.20f || early_hits < 1)
 		{
 			out.band_count = 0;
 			return;
 		}
 
-		// --- Harmonicity and centroid ---
 		out.harmonicity = (unique_energy > 1e-9f) ? (energy_sum / unique_energy) : 0.0f;
+
 		if (weight_sum > 1e-9f)
 		{
 			out.centroid_hz = centroid_sum / weight_sum;
 
-			// --- Compute spectral bandwidth ---
+			// Bandwidth using original envelope weights around centroid (optional)
 			float var_sum = 0.0f;
 			for (uint8_t i = 0; i < band_count; ++i)
 			{
@@ -355,11 +506,9 @@ namespace robotick
 			out.bandwidth_hz = std::sqrt(var_sum / (weight_sum + 1e-9f));
 		}
 
-		// --- Optional span-based harmonicity boost ---
 		if (band_count >= 2)
 			apply_span_based_harmonicity_adjustment(band_center_hz, num_bands, out);
 
-		// --- Optional per-harmonic output ---
 		if (harmonic_energy_out)
 			std::memcpy(harmonic_energy_out, harmonic_energy, sizeof(float) * 32);
 
