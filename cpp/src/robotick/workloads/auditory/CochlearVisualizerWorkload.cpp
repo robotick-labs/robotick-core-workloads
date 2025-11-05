@@ -198,27 +198,10 @@ namespace robotick
 				for (size_t i = 0; i < inputs.source_candidates.size(); ++i)
 				{
 					const auto& sc = inputs.source_candidates[i];
-					if (sc.pitch_hz <= 0.0f || sc.centroid_freq_hz <= 0.0f)
+					if (sc.h1_f0_hz <= 0.0f)
 						continue;
 
-					const SDL_Color col = palette(i);
-					const float half_bw = 0.5f * sc.bandwidth_hz;
-
-					const float y0f = hz_to_band_y(inputs.cochlear_frame.band_center_hz, sc.pitch_hz);
-					if (y0f < 0.0f)
-					{
-						continue;
-					}
-
-					const float f_lo = sc.centroid_freq_hz - half_bw;
-					const float f_hi = sc.centroid_freq_hz + half_bw;
-
-					const float ylof = hz_to_band_y(inputs.cochlear_frame.band_center_hz, f_lo);
-					const float yhif = hz_to_band_y(inputs.cochlear_frame.band_center_hz, f_hi);
-
-					const int y0 = (int)std::round(y0f);
-					const int ylo = (int)std::round(ylof);
-					const int yhi = (int)std::round(yhif);
+					const SDL_Color colour_for_source = palette(i);
 
 					// Write into pixel buffer (far-right column)
 					auto paint_pixel = [&](int yy, const bool bold = false)
@@ -230,19 +213,31 @@ namespace robotick
 							const int tex_y = std::clamp(h - 1 - (yy + t), 0, h - 1);
 							const int idx = (tex_y * w + (w - 1)) * 4;
 
-							s.pixels[idx + 0] = col.r;
-							s.pixels[idx + 1] = col.g;
-							s.pixels[idx + 2] = col.b;
+							s.pixels[idx + 0] = colour_for_source.r;
+							s.pixels[idx + 1] = colour_for_source.g;
+							s.pixels[idx + 2] = colour_for_source.b;
 							s.pixels[idx + 3] = 255; // keep opaque overall
 						}
 					};
 
-					paint_pixel(y0, true); // bold F0
-
-					if (config.draw_source_candidate_bounds)
+					for (size_t harmonic_id = 1; harmonic_id <= sc.harmonic_amplitudes.size(); harmonic_id++)
 					{
-						paint_pixel(ylo); // lower bound
-						paint_pixel(yhi); // upper bound
+						if (sc.harmonic_amplitudes[harmonic_id - 1] == 0.0f)
+						{
+							continue;
+						}
+
+						const float harmonic_frequency = sc.h1_f0_hz * (float)harmonic_id;
+						const float y_float = hz_to_band_y(inputs.cochlear_frame.band_center_hz, harmonic_frequency);
+						if (y_float < 0.0f)
+						{
+							continue;
+						}
+
+						const int y = (int)std::round(y_float);
+
+						const bool draw_bold = (h == 1);
+						paint_pixel(y, draw_bold);
 					}
 				}
 			}

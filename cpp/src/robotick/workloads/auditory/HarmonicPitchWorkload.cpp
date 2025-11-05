@@ -50,15 +50,14 @@ namespace robotick
 
 			HarmonicPitchResult result{};
 			const int found_band_id =
-				HarmonicPitch::find_strongest_f0_band_id(config.settings, cochlear_frame.band_center_hz, cochlear_frame.envelope, result);
+				HarmonicPitch::find_harmonic_features(config.settings, cochlear_frame.band_center_hz, cochlear_frame.envelope, result);
 
 			// process & store our results to outputs
 			if (found_band_id >= 0)
 			{
 				SourceCandidate out{};
-				out.pitch_hz = result.h1_f0_hz;
-				out.amplitude = result.h1_amplitude;
-				out.centroid_freq_hz = result.h1_f0_hz;
+				out.h1_f0_hz = result.h1_f0_hz;
+				out.harmonic_amplitudes = result.harmonic_amplitudes;
 
 				outputs.first_source = out;
 				outputs.source_candidates.add(out);

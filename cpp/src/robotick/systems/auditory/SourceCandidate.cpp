@@ -11,13 +11,8 @@ namespace robotick
 	// ProsodyState Registration: ===========================
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(SourceCandidate)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, centroid_freq_hz)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, harmonicity)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, amplitude)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, modulation_rate)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, pitch_hz)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, bandwidth_hz)
-	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, temporal_coherence)
+	ROBOTICK_STRUCT_FIELD(SourceCandidate, float, h1_f0_hz)
+	ROBOTICK_STRUCT_FIELD(SourceCandidate, HarmonicAmplitudes, harmonic_amplitudes)
 	ROBOTICK_REGISTER_STRUCT_END(SourceCandidate)
 
 	// Partials Vector Registration: ===========================
