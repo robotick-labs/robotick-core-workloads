@@ -1,7 +1,7 @@
 // Copyright Robotick
 // SPDX-License-Identifier: Apache-2.0
 
-#include "robotick/systems/auditory/TemporalGrouping.h"
+#include "robotick/systems/auditory/TemporalGroupingV0.h"
 
 #include <catch2/catch_all.hpp>
 
@@ -78,7 +78,7 @@ namespace robotick::test
 
 	// ---------- Tests ----------
 
-	TEST_CASE("Unit/Audio/TemporalGrouping")
+	TEST_CASE("Unit/Audio/TemporalGroupingV0")
 	{
 		SECTION("Maps a given frequency to the closest ERB band index")
 		{
@@ -90,16 +90,16 @@ namespace robotick::test
 				// pick a center and check it maps to itself
 				const int ix = 7;
 				const float f = centers[ix];
-				REQUIRE(TemporalGrouping::band_index_for_hz(centers.data(), num_bands, f) == ix);
+				REQUIRE(TemporalGroupingV0::band_index_for_hz(centers.data(), num_bands, f) == ix);
 
 				// halfway between ix and ix+1 should map to nearest (tie → higher index by our impl)
 				const float mid = 0.5f * (centers[ix] + centers[ix + 1]);
-				const int got = TemporalGrouping::band_index_for_hz(centers.data(), num_bands, mid + 1e-3f);
+				const int got = TemporalGroupingV0::band_index_for_hz(centers.data(), num_bands, mid + 1e-3f);
 				REQUIRE(got == ix + 1);
 			}
 		}
 
-		SECTION("Helpers for 'TemporalGrouping::eval_f0_with_mask' function as needed")
+		SECTION("Helpers for 'TemporalGroupingV0::eval_f0_with_mask' function as needed")
 		{
 			SECTION("find_best_band_for_harmonic selects correct neighbor within tolerance")
 			{
@@ -107,7 +107,7 @@ namespace robotick::test
 				std::vector<float> envelope = {0.0f, 0.0f, 1.0f};
 
 				float wt = 0.0f, amp = 0.0f;
-				int ix = TemporalGrouping::find_best_band_for_harmonic(1200.0f, centers.data(), envelope.data(), 3, 35.0f, wt, amp);
+				int ix = TemporalGroupingV0::find_best_band_for_harmonic(1200.0f, centers.data(), envelope.data(), 3, 35.0f, wt, amp);
 				REQUIRE(ix == 2);
 				CHECK(wt > 0.99f);
 				CHECK(amp == 1.0f);
@@ -115,7 +115,7 @@ namespace robotick::test
 
 			SECTION("compute_band_contribution scales by reuse and tolerance")
 			{
-				TemporalGroupingConfig config;
+				TemporalGroupingV0Settings config;
 				config.reuse_penalty = 0.5f;
 
 				const float envelope = 1.0f;
@@ -123,23 +123,23 @@ namespace robotick::test
 				const float claimed = 0.4f;
 
 				const float expected = envelope * tolerance * (1.0f - 0.5f * 0.4f);
-				const float actual = TemporalGrouping::compute_band_contribution(envelope, tolerance, claimed, config);
+				const float actual = TemporalGroupingV0::compute_band_contribution(envelope, tolerance, claimed, config);
 				CHECK(actual == Catch::Approx(expected));
 			}
 
 			SECTION("passes_missing_fundamental_gate enforces early harmonic criteria")
 			{
-				TemporalGroupingConfig config;
+				TemporalGroupingV0Settings config;
 				config.infer_missing_fundamental = true;
 
 				float E[32] = {0.0f};
 				E[2] = 0.6f;
 				E[3] = 0.4f;
 
-				bool pass = TemporalGrouping::passes_missing_fundamental_gate(config, false, E, 2, 0.5f, 2);
+				bool pass = TemporalGroupingV0::passes_missing_fundamental_gate(config, false, E, 2, 0.5f, 2);
 				CHECK(pass);
 
-				pass = TemporalGrouping::passes_missing_fundamental_gate(config, false, E, 1, 0.5f, 1);
+				pass = TemporalGroupingV0::passes_missing_fundamental_gate(config, false, E, 1, 0.5f, 1);
 				CHECK_FALSE(pass);
 			}
 		}
@@ -148,7 +148,7 @@ namespace robotick::test
 		{
 			SECTION("Rejects all f0 candidates except 1200 Hz")
 			{
-				TemporalGroupingConfig config;
+				TemporalGroupingV0Settings config;
 				config.fmin_hz = 100.0f;
 				config.fmax_hz = 3500.0f;
 				config.num_bands = 64;
@@ -179,8 +179,8 @@ namespace robotick::test
 					if (std::fabs(f0 - 1200.0f) <= allowed_margin_hz)
 						continue; // Skip the expected match
 
-					TemporalGroupingResult r{};
-					TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), nb, config, f0, r, nullptr);
+					TemporalGroupingV0Result r{};
+					TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), nb, config, f0, r, nullptr);
 
 					CHECK(r.band_count == 0); // Everything else must be rejected
 				}
@@ -188,7 +188,7 @@ namespace robotick::test
 
 			SECTION("Correctly accepts 1200 Hz as f0")
 			{
-				TemporalGroupingConfig config;
+				TemporalGroupingV0Settings config;
 				config.fmin_hz = 50.0f;
 				config.fmax_hz = 3500.0f;
 				config.num_bands = 64;
@@ -211,8 +211,8 @@ namespace robotick::test
 				REQUIRE(ix1200 >= 0);
 				envelope[ix1200] = 1.0f;
 
-				TemporalGroupingResult r{};
-				TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), nb, config, expected_freq_hz, r, nullptr);
+				TemporalGroupingV0Result r{};
+				TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), nb, config, expected_freq_hz, r, nullptr);
 
 				REQUIRE(r.band_count == 1);
 				CHECK(r.f0_hz == Catch::Approx(expected_freq_hz).margin(5.0f));
@@ -224,7 +224,7 @@ namespace robotick::test
 
 		SECTION("Detects only the true fundamental in real-world envelope profile")
 		{
-			TemporalGroupingConfig config;
+			TemporalGroupingV0Settings config;
 			config.fmin_hz = 50.0f;
 			config.fmax_hz = 3500.0f;
 			config.num_bands = 128;
@@ -266,8 +266,8 @@ namespace robotick::test
 					if (std::fabs(f0 - expected_f0) <= allowed_margin_hz)
 						continue; // Skip expected match
 
-					TemporalGroupingResult result{};
-					TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, f0, result, nullptr);
+					TemporalGroupingV0Result result{};
+					TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, f0, result, nullptr);
 
 					CHECK(result.band_count == 0); // All non-targets must be rejected
 				}
@@ -275,8 +275,8 @@ namespace robotick::test
 
 			SECTION("Correctly accepts 1200 Hz as f0")
 			{
-				TemporalGroupingResult r{};
-				TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.f, r, nullptr);
+				TemporalGroupingV0Result r{};
+				TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.f, r, nullptr);
 
 				REQUIRE(r.band_count >= 1);
 				CHECK(r.f0_hz == Catch::Approx(expected_f0).margin(5.0f));
@@ -288,7 +288,7 @@ namespace robotick::test
 
 		SECTION("Infers missing fundamentals from strong harmonic pattern when enabled")
 		{
-			TemporalGroupingConfig config;
+			TemporalGroupingV0Settings config;
 			config.fmin_hz = 100.0f;
 			config.fmax_hz = 6000.0f;
 			config.num_bands = 96;
@@ -315,16 +315,16 @@ namespace robotick::test
 			SECTION("Skips candidate if fundamental is missing and inference is disabled")
 			{
 				config.infer_missing_fundamental = false;
-				TemporalGroupingResult r{};
-				TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.0f, r, nullptr);
+				TemporalGroupingV0Result r{};
+				TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.0f, r, nullptr);
 				CHECK(r.band_count == 0);
 			}
 
 			SECTION("Infers and accepts f0 if strong h2 and h3 are detected with inference enabled")
 			{
 				config.infer_missing_fundamental = true;
-				TemporalGroupingResult r{};
-				TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.0f, r, nullptr);
+				TemporalGroupingV0Result r{};
+				TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.0f, r, nullptr);
 
 				REQUIRE(r.band_count >= 2);
 				CHECK(r.f0_hz == Catch::Approx(1200.0f).margin(5.0f));
@@ -335,7 +335,7 @@ namespace robotick::test
 
 		SECTION("Detects temporal coherence and estimates modulation rate across bands")
 		{
-			TemporalGroupingConfig config;
+			TemporalGroupingV0Settings config;
 			config.history_frames = 16;
 			config.coherence_min_window_s = 0.08f; // ensure enough time span for N=16 @ 80 Hz
 			config.modulation_bins = 7;
@@ -384,7 +384,7 @@ namespace robotick::test
 				// i.e. two bands are temporaily coherent if they rise and fall roughly together
 
 				float group_mean = 0.0f;
-				const float coh = TemporalGrouping::temporal_coherence_score(frame_ptrs.data(),
+				const float coh = TemporalGroupingV0::temporal_coherence_score(frame_ptrs.data(),
 					timestamps.data(),
 					num_history_entries,
 					num_history_entries,
@@ -401,7 +401,7 @@ namespace robotick::test
 
 			SECTION("Accurately estimates shared modulation frequency of grouped bands")
 			{
-				const float est = TemporalGrouping::estimate_modulation_rate_hz(
+				const float est = TemporalGroupingV0::estimate_modulation_rate_hz(
 					frame_ptrs.data(), num_history_entries, num_history_entries, group, 2, num_bands, (float)tick_rate_hz, config);
 				CHECK(est == Catch::Approx(f_modulation).margin(0.25f));
 			}
@@ -409,7 +409,7 @@ namespace robotick::test
 
 		SECTION("Reduces confidence when spectral energy is already claimed by another source")
 		{
-			TemporalGroupingConfig config;
+			TemporalGroupingV0Settings config;
 			config.fmin_hz = 50.0f;
 			config.fmax_hz = 3500.0f;
 			config.num_bands = 64;
@@ -428,8 +428,8 @@ namespace robotick::test
 			envelope[index_1200hz] = 1.0f;
 			claimed[index_1200hz] = 1.0f; // heavily claimed
 
-			TemporalGroupingResult r{};
-			TemporalGrouping::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.0f, r, nullptr);
+			TemporalGroupingV0Result r{};
+			TemporalGroupingV0::eval_f0_with_mask(centers.data(), envelope.data(), claimed.data(), num_bands, config, 1200.0f, r, nullptr);
 
 			// With heavy claim and reuse penalty, accepted amplitude/harmonicity should drop
 			// (Exact thresholds depend on bin spacing; just assert they’re small but nonzero)

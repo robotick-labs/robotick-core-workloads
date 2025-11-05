@@ -1,7 +1,7 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 //
-// TemporalGrouping.h  (lean header: declarations only)
+// TemporalGroupingV0.h  (lean header: declarations only)
 
 #pragma once
 #include <cstdint>
@@ -9,7 +9,7 @@
 namespace robotick
 {
 
-	struct TemporalGroupingConfig
+	struct TemporalGroupingV0Settings
 	{
 		// Must match producer (cochlear)
 		float fmin_hz = 50.0f;
@@ -46,7 +46,7 @@ namespace robotick
 		uint8_t max_sources = 3;
 	};
 
-	struct TemporalGroupingResult
+	struct TemporalGroupingV0Result
 	{
 		float f0_hz = 0.0f;
 		float harmonicity = 0.0f;
@@ -62,7 +62,7 @@ namespace robotick
 		uint8_t band_count = 0;
 	};
 
-	class TemporalGrouping
+	class TemporalGroupingV0
 	{
 	  public:
 		// Single-frame f0 evaluation with soft deconflict mask.
@@ -72,9 +72,9 @@ namespace robotick
 			const float* envelope,
 			const float* claimed, // may be nullptr (treated as zeros)
 			int nb,
-			const TemporalGroupingConfig& cfg,
+			const TemporalGroupingV0Settings& cfg,
 			float f0,
-			TemporalGroupingResult& out,
+			TemporalGroupingV0Result& out,
 			float* E_h_out = nullptr // optional: energy per harmonic [32]
 		);
 
@@ -86,16 +86,17 @@ namespace robotick
 			float& out_within_tolerance,
 			float& out_envelope);
 
-		static float compute_band_contribution(float envelope, float within_tolerance, float claimed_fraction, const TemporalGroupingConfig& config);
+		static float compute_band_contribution(
+			float envelope, float within_tolerance, float claimed_fraction, const TemporalGroupingV0Settings& config);
 
-		static bool passes_missing_fundamental_gate(const TemporalGroupingConfig& config,
+		static bool passes_missing_fundamental_gate(const TemporalGroupingV0Settings& config,
 			bool fundamental_hit,
 			const float* harmonic_energy,
 			uint8_t band_count,
 			float early_energy_fraction,
 			uint8_t early_hits);
 
-		static void apply_span_based_harmonicity_adjustment(const float* band_center_hz, int num_bands, TemporalGroupingResult& out);
+		static void apply_span_based_harmonicity_adjustment(const float* band_center_hz, int num_bands, TemporalGroupingV0Result& out);
 
 		// Temporal coherence over a band group using caller-provided history.
 		// history_env: array of N pointers, each to an env frame of length nb.
@@ -120,7 +121,7 @@ namespace robotick
 			uint8_t selected_band_count,
 			int num_bands,
 			float tick_rate_hz,
-			const TemporalGroupingConfig& config);
+			const TemporalGroupingV0Settings& config);
 
 		// Utility (kept public for tests)
 		static int band_index_for_hz(const float* band_center_hz, int nb, float hz);

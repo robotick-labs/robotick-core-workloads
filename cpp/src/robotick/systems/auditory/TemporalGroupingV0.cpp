@@ -1,9 +1,11 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 //
-// TemporalGrouping.cpp
+// TemporalGroupingV0.cpp
 
-#include "robotick/systems/auditory/TemporalGrouping.h"
+#include "robotick/systems/auditory/TemporalGroupingV0.h"
+
+#include "robotick/api.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,8 +15,27 @@
 
 namespace robotick
 {
+	ROBOTICK_REGISTER_STRUCT_BEGIN(TemporalGroupingV0Settings)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, fmin_hz)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, fmax_hz)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, uint16_t, num_bands)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, f0_min_hz)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, f0_max_hz)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, uint8_t, max_harmonics)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, harmonic_tolerance_cents)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, min_harmonicity)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, min_amplitude)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, reuse_penalty)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, uint8_t, history_frames)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, coherence_min_window_s)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, uint8_t, modulation_bins)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, bool, infer_missing_fundamental)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, float, smooth_alpha)
+	ROBOTICK_STRUCT_FIELD(TemporalGroupingV0Settings, uint8_t, max_sources)
+	ROBOTICK_REGISTER_STRUCT_END(TemporalGroupingV0Settings)
+
 	// Clamp 'value' to the inclusive range [min_value, max_value].
-	float TemporalGrouping::clampf(float value, float min_value, float max_value)
+	float TemporalGroupingV0::clampf(float value, float min_value, float max_value)
 	{
 		if (value < min_value)
 			return min_value;
@@ -25,7 +46,7 @@ namespace robotick
 
 	// Musical cents between two frequencies (1200 cents per octave).
 	// Returns a large value if either input is non-positive.
-	float TemporalGrouping::cents_between(float base_hz, float target_hz)
+	float TemporalGroupingV0::cents_between(float base_hz, float target_hz)
 	{
 		if (base_hz <= 0.0f || target_hz <= 0.0f)
 			return 1200.0f;
@@ -35,7 +56,7 @@ namespace robotick
 
 	// Find the nearest band index to 'query_hz' given monotonically increasing band centers.
 	// Returns -1 if no reasonable index can be found (should be rare if inputs are valid).
-	int TemporalGrouping::band_index_for_hz(const float* band_center_hz, int num_bands, float query_hz)
+	int TemporalGroupingV0::band_index_for_hz(const float* band_center_hz, int num_bands, float query_hz)
 	{
 		if (num_bands <= 1)
 			return -1;
@@ -55,7 +76,7 @@ namespace robotick
 	}
 
 	// Local effective width (Hz) for a band, taken as the average gap to its neighbors.
-	float TemporalGrouping::band_local_width_hz(const float* band_center_hz, int num_bands, int band_index)
+	float TemporalGroupingV0::band_local_width_hz(const float* band_center_hz, int num_bands, int band_index)
 	{
 		if (num_bands <= 1)
 			return 1.0f;
@@ -70,7 +91,7 @@ namespace robotick
 	}
 
 	// Local effective width (cents) for a band, taken as the average gap to its neighbors.
-	float TemporalGrouping::band_width_cents(float* band_center_hz, int num_bands, int band_index)
+	float TemporalGroupingV0::band_width_cents(float* band_center_hz, int num_bands, int band_index)
 	{
 		const float width_hz = band_local_width_hz(band_center_hz, num_bands, band_index);
 		const float center_hz = band_center_hz[band_index];
@@ -90,7 +111,7 @@ namespace robotick
 	 * @return int                Index of the best matching band, or -1 if none found within tolerance.
 	 */
 
-	int TemporalGrouping::find_best_band_for_harmonic(float target_hz,
+	int TemporalGroupingV0::find_best_band_for_harmonic(float target_hz,
 		const float* band_center_hz,
 		const float* envelope,
 		int num_bands,
@@ -150,11 +171,11 @@ namespace robotick
 	 * @param envelope        The raw envelope (energy) at this band.
 	 * @param within_tolerance Tolerance weight from 0.0 (rejected) to 1.0 (exact match).
 	 * @param claimed_fraction Value from 0.0 (unused) to 1.0 (fully claimed by another source).
-	 * @param config          TemporalGrouping config containing reuse penalty.
+	 * @param config          TemporalGroupingV0 config containing reuse penalty.
 	 * @return float          Final contribution score (can be 0 if fully rejected).
 	 */
-	float TemporalGrouping::compute_band_contribution(
-		float envelope, float within_tolerance, float claimed_fraction, const TemporalGroupingConfig& config)
+	float TemporalGroupingV0::compute_band_contribution(
+		float envelope, float within_tolerance, float claimed_fraction, const TemporalGroupingV0Settings& config)
 	{
 		const float clamped = clampf(claimed_fraction, 0.0f, 1.0f);
 		const float reuse_penalty = 1.0f - config.reuse_penalty * clamped;
@@ -172,7 +193,7 @@ namespace robotick
 	 * @param early_hits            Number of harmonics accepted in h=1..2 range.
 	 * @return bool                 True if the candidate should be accepted; false otherwise.
 	 */
-	bool TemporalGrouping::passes_missing_fundamental_gate(const TemporalGroupingConfig& config,
+	bool TemporalGroupingV0::passes_missing_fundamental_gate(const TemporalGroupingV0Settings& config,
 		bool fundamental_hit,
 		const float* harmonic_energy,
 		uint8_t band_count,
@@ -204,7 +225,7 @@ namespace robotick
 	 * @param envelope       Per-band envelope values [num_bands].
 	 * @param out            Result struct with accepted band indices and current harmonicity.
 	 */
-	void TemporalGrouping::apply_span_based_harmonicity_adjustment(const float* band_center_hz, int num_bands, TemporalGroupingResult& out)
+	void TemporalGroupingV0::apply_span_based_harmonicity_adjustment(const float* band_center_hz, int num_bands, TemporalGroupingV0Result& out)
 	{
 		if (out.band_count < 2)
 			return;
@@ -351,7 +372,7 @@ namespace robotick
 
 		for (int k = 0; k < (int)peaks.size(); ++k)
 		{
-			const float cents = std::fabs(TemporalGrouping::cents_between(target_hz, peaks[k].centroid_hz));
+			const float cents = std::fabs(TemporalGroupingV0::cents_between(target_hz, peaks[k].centroid_hz));
 			if (cents > tolerance_cents)
 				continue;
 
@@ -374,16 +395,16 @@ namespace robotick
 	// Peak-based eval_f0_with_mask
 	// -----------------------------------------------------------------------------
 
-	void TemporalGrouping::eval_f0_with_mask(const float* band_center_hz,
+	void TemporalGroupingV0::eval_f0_with_mask(const float* band_center_hz,
 		const float* envelope,
 		const float* claimed,
 		int num_bands,
-		const TemporalGroupingConfig& config,
+		const TemporalGroupingV0Settings& config,
 		float f0,
-		TemporalGroupingResult& out,
+		TemporalGroupingV0Result& out,
 		float* harmonic_energy_out)
 	{
-		out = TemporalGroupingResult{};
+		out = TemporalGroupingV0Result{};
 		if (num_bands <= 0 || f0 <= 0.0f)
 			return;
 
@@ -517,7 +538,7 @@ namespace robotick
 
 	// Measure temporal coherence of a group of bands over recent history.
 	// Returns 0..1 where higher means the per-band envelopes co-vary with the group's mean envelope over time.
-	float TemporalGrouping::temporal_coherence_score(const float* const* history_envelopes,
+	float TemporalGroupingV0::temporal_coherence_score(const float* const* history_envelopes,
 		const double* timestamps,
 		uint8_t history_count,
 		uint8_t /*history_cap*/,
@@ -619,14 +640,14 @@ namespace robotick
 
 	// Estimate a coarse modulation (AM) rate in Hz of the group's envelope over the recent history.
 	// Uses a Goertzel pass over a small set of target frequencies (2..10 Hz speech-related syllabic rates).
-	float TemporalGrouping::estimate_modulation_rate_hz(const float* const* history_envelopes,
+	float TemporalGroupingV0::estimate_modulation_rate_hz(const float* const* history_envelopes,
 		uint8_t history_count,
 		uint8_t /*history_cap*/,
 		const uint16_t* selected_band_indices,
 		uint8_t selected_band_count,
 		int num_bands,
 		float tick_rate_hz,
-		const TemporalGroupingConfig& config)
+		const TemporalGroupingV0Settings& config)
 	{
 		if (!history_envelopes || history_count < 6 || selected_band_count == 0 || num_bands <= 0 || tick_rate_hz <= 0.0f)
 			return 0.0f;

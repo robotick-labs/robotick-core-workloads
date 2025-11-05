@@ -23,6 +23,7 @@ namespace robotick
 		bool log_scale = true;
 		float visual_gain = 1.0f;
 		bool draw_source_candidates = true;
+		bool draw_source_candidate_bounds = true;
 		float min_source_amplitude = 0.5f;
 	};
 
@@ -35,6 +36,7 @@ namespace robotick
 	struct CochlearVisualizerState
 	{
 		bool has_initialized = false;
+		bool is_rendering_paused = false;
 
 		SDL_Window* window = nullptr;
 		SDL_Renderer* renderer = nullptr;
@@ -55,8 +57,12 @@ namespace robotick
 				return;
 			}
 
-			window = SDL_CreateWindow(
-				"Cochlear Visualizer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, cfg.viewport_width, cfg.viewport_height, SDL_WINDOW_SHOWN);
+			window = SDL_CreateWindow("Cochlear Visualizer",
+				SDL_WINDOWPOS_CENTERED,
+				SDL_WINDOWPOS_CENTERED,
+				cfg.viewport_width,
+				cfg.viewport_height,
+				SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
 			renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 			if (!renderer)
@@ -100,7 +106,7 @@ namespace robotick
 		static inline SDL_Color palette(uint8_t idx)
 		{
 			static const SDL_Color colors[] = {
-				{0, 200, 0, 255},	 // green
+				{0, 128, 0, 255},	 // green
 				{255, 255, 96, 255}, // magenta
 				{64, 160, 255, 255}, // orange
 				{255, 64, 64, 255},	 // blue
@@ -232,8 +238,12 @@ namespace robotick
 					};
 
 					paint_pixel(y0, true); // bold F0
-					paint_pixel(ylo);	   // lower bound
-					paint_pixel(yhi);	   // upper bound
+
+					if (config.draw_source_candidate_bounds)
+					{
+						paint_pixel(ylo); // lower bound
+						paint_pixel(yhi); // upper bound
+					}
 				}
 			}
 
@@ -241,10 +251,17 @@ namespace robotick
 			SDL_UpdateTexture(s.texture, nullptr, s.pixels.data(), w * 4);
 
 			// === Stretch cochlear texture to viewport ===
-			SDL_Rect dest{0, 0, config.viewport_width, config.viewport_height};
+			int window_width, window_height;
+			SDL_GetWindowSize(s.window, &window_width, &window_height);
+
+			SDL_Rect dest{0, 0, window_width, window_height};
 			SDL_RenderClear(s.renderer);
 			SDL_RenderCopy(s.renderer, s.texture, nullptr, &dest);
-			SDL_RenderPresent(s.renderer);
+
+			if (!s.is_rendering_paused)
+			{
+				SDL_RenderPresent(s.renderer);
+			}
 
 			// Handle events
 			SDL_Event e;
@@ -254,6 +271,13 @@ namespace robotick
 				{
 					state->shutdown();
 					break;
+				}
+				else if (e.type == SDL_KEYDOWN)
+				{
+					if (e.key.keysym.sym == SDLK_SPACE)
+					{
+						s.is_rendering_paused = !s.is_rendering_paused;
+					}
 				}
 			}
 		}
