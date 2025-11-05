@@ -12,7 +12,7 @@ namespace robotick
 		// within a specific cochlear / ERB-spaced frequency channel.
 		// - Range: typically 0.0–1.0 (after compression/normalisation)
 		// - Captures loudness and temporal modulation cues
-		// - e.g. Used by TemporalGroupingWorkload to detect onsets, envelopes, and harmonics
+		// - e.g. Used by HarmonicPitchWorkload to detect onsets, envelopes, and harmonics
 		AudioBuffer128 envelope;
 
 		// === Instantaneous fine-grain phase across frequency bands (arg(analytic signal)) ===
@@ -27,7 +27,7 @@ namespace robotick
 		// Measures rhythmic fluctuation energy in each band’s amplitude envelope.
 		// - Captures prosodic or syllabic rhythm cues (speech rate, tremolo, etc.)
 		// - Computed as short-term power of the band-envelope derivative or filtered energy
-		// - e.g. Useful for TemporalGrouping and ProsodyAnalyser workloads
+		// - e.g. Useful for HarmonicPitch and ProsodyAnalyser workloads
 		AudioBuffer128 modulation_power;
 
 		// === Absolute timestamp of this frame (seconds since boot) ===

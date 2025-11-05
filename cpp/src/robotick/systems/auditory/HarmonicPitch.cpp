@@ -1,16 +1,16 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#include "robotick/systems/auditory/TemporalGrouping.h"
+#include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include "robotick/api.h"
 
 namespace robotick
 {
-	ROBOTICK_REGISTER_STRUCT_BEGIN(TemporalGroupingSettings)
-	ROBOTICK_STRUCT_FIELD(TemporalGroupingSettings, float, min_amplitude)
-	ROBOTICK_STRUCT_FIELD(TemporalGroupingSettings, float, min_peak_falloff_norm)
-	ROBOTICK_REGISTER_STRUCT_END(TemporalGroupingSettings)
+	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchSettings)
+	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_amplitude)
+	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_peak_falloff_norm)
+	ROBOTICK_REGISTER_STRUCT_END(HarmonicPitchSettings)
 
 	/**
 	 * @brief Find the first valid spectral peak in a cochlear envelope using an "island" detection strategy.
@@ -32,7 +32,7 @@ namespace robotick
 	 * @return The centroid index of the first valid peak, or -1 if none found.
 	 */
 
-	static int find_first_peak_value_index(const TemporalGroupingSettings& settings, const AudioBuffer128& envelope, const size_t start_band_id)
+	static int find_first_peak_value_index(const HarmonicPitchSettings& settings, const AudioBuffer128& envelope, const size_t start_band_id)
 	{
 		const size_t num_bands = envelope.size();
 		if (num_bands < 3 || start_band_id + 2 >= num_bands)
@@ -94,8 +94,8 @@ namespace robotick
 		return -1; // No valid peak found
 	}
 
-	int TemporalGrouping::find_strongest_f0_band_id(
-		const TemporalGroupingSettings& settings, const AudioBuffer128& centers, const AudioBuffer128& envelope, TemporalGroupingResult& result)
+	int HarmonicPitch::find_strongest_f0_band_id(
+		const HarmonicPitchSettings& settings, const AudioBuffer128& centers, const AudioBuffer128& envelope, HarmonicPitchResult& result)
 	{
 		ROBOTICK_ASSERT(centers.size() == envelope.size());
 		(void)centers;

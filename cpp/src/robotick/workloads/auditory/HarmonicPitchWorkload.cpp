@@ -1,13 +1,13 @@
 // Copyright Robotick
 // SPDX-License-Identifier: Apache-2.0
 //
-// TemporalGroupingWorkload.cpp  (thin wrapper around robotick::TemporalGrouping)
+// HarmonicPitchWorkload.cpp  (thin wrapper around robotick::HarmonicPitch)
 
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
+#include "robotick/systems/auditory/HarmonicPitch.h"
 #include "robotick/systems/auditory/SourceCandidate.h"
-#include "robotick/systems/auditory/TemporalGrouping.h"
 
 #include <cmath>
 #include <cstring>
@@ -15,27 +15,27 @@
 
 namespace robotick
 {
-	struct TemporalGroupingConfig
+	struct HarmonicPitchConfig
 	{
-		TemporalGroupingSettings settings;
+		HarmonicPitchSettings settings;
 	};
 
-	struct TemporalGroupingInputs
+	struct HarmonicPitchInputs
 	{
 		CochlearFrame cochlear_frame;
 	};
 
-	struct TemporalGroupingOutputs
+	struct HarmonicPitchOutputs
 	{
 		SourceCandidates8 source_candidates;
 		SourceCandidate first_source;
 	};
 
-	struct TemporalGroupingWorkload
+	struct HarmonicPitchWorkload
 	{
-		TemporalGroupingConfig config;
-		TemporalGroupingInputs inputs;
-		TemporalGroupingOutputs outputs;
+		HarmonicPitchConfig config;
+		HarmonicPitchInputs inputs;
+		HarmonicPitchOutputs outputs;
 
 		void tick(const TickInfo& tick_info)
 		{
@@ -48,9 +48,9 @@ namespace robotick
 			// analyse out current CochlearFrame
 			const CochlearFrame& cochlear_frame = inputs.cochlear_frame;
 
-			TemporalGroupingResult result{};
+			HarmonicPitchResult result{};
 			const int found_band_id =
-				TemporalGrouping::find_strongest_f0_band_id(config.settings, cochlear_frame.band_center_hz, cochlear_frame.envelope, result);
+				HarmonicPitch::find_strongest_f0_band_id(config.settings, cochlear_frame.band_center_hz, cochlear_frame.envelope, result);
 
 			// process & store our results to outputs
 			if (found_band_id >= 0)

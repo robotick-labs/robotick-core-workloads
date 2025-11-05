@@ -1,7 +1,7 @@
 // Copyright Robotick
 // SPDX-License-Identifier: Apache-2.0
 
-#include "robotick/systems/auditory/TemporalGrouping.h"
+#include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include <catch2/catch_all.hpp>
 
@@ -10,7 +10,7 @@
 #include <vector>
 
 // real-world data kept in seperate file for clarity
-#include "TemporalGrouping_data.cpp"
+#include "HarmonicPitch_data.cpp"
 
 namespace robotick::test
 {
@@ -30,11 +30,11 @@ namespace robotick::test
 		return best;
 	}
 
-	TEST_CASE("Unit/Audio/TemporalGrouping")
+	TEST_CASE("Unit/Audio/HarmonicPitch")
 	{
 		SECTION("Detects only the true fundamental in real-world 1200Hz sine-wave envelope profile")
 		{
-			TemporalGroupingSettings config;
+			HarmonicPitchSettings config;
 			config.min_amplitude = 0.1f;
 
 			const int num_bands = 128;
@@ -55,8 +55,8 @@ namespace robotick::test
 			const int ix1200 = find_closest_frequency_center_index(centers, 1200.0f);
 			REQUIRE(ix1200 >= 0);
 
-			TemporalGroupingResult result{};
-			const int found_band_id = TemporalGrouping::find_strongest_f0_band_id(config, centers, envelope, result);
+			HarmonicPitchResult result{};
+			const int found_band_id = HarmonicPitch::find_strongest_f0_band_id(config, centers, envelope, result);
 
 			CHECK(result.h1_amplitude > 0.5f);
 			CHECK(result.h1_f0_hz == Catch::Approx(expected_f0_hz).margin(5.0f));

@@ -1,7 +1,7 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 //
-// TemporalGrouping.h  (lean header: declarations only)
+// HarmonicPitch.h  (lean header: declarations only)
 
 #pragma once
 
@@ -13,12 +13,12 @@
 
 namespace robotick
 {
-	namespace temporal_grouping
+	namespace harmonic_pitch
 	{
 		static constexpr size_t MaxHarmonics = 16;
 	};
 
-	struct TemporalGroupingSettings
+	struct HarmonicPitchSettings
 	{
 		// Selection / gating
 		float min_amplitude = 0.3f;			 // minimum envelope value for it to be considered an interesting feature
@@ -26,19 +26,19 @@ namespace robotick
 											 // 	for it to count as a peak
 	};
 
-	struct TemporalGroupingResult
+	struct HarmonicPitchResult
 	{
 		float h1_f0_hz = 0.0f;
 		float h1_amplitude = 0.0f;
 
-		FixedVector<float, temporal_grouping::MaxHarmonics> harmonic_amplitudes;
+		FixedVector<float, harmonic_pitch::MaxHarmonics> harmonic_amplitudes;
 	};
 
-	class TemporalGrouping
+	class HarmonicPitch
 	{
 	  public:
 		static int find_strongest_f0_band_id(
-			const TemporalGroupingSettings& settings, const AudioBuffer128& centers, const AudioBuffer128& envelope, TemporalGroupingResult& result);
+			const HarmonicPitchSettings& settings, const AudioBuffer128& centers, const AudioBuffer128& envelope, HarmonicPitchResult& result);
 	};
 
 } // namespace robotick
