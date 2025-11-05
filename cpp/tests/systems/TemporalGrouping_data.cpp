@@ -4,7 +4,7 @@
 namespace robotick::test
 {
 	// === Inject real-world envelope profile (128 values) ===
-	static const float s_real_profile[] = {
+	static const float s_real_1200hz_sinewave_envelope[] = {
 		0.00133004f,
 		0.00127834f,
 		0.00123665f,
@@ -135,7 +135,7 @@ namespace robotick::test
 		0.000253145f,
 	};
 
-	static const float s_real_centers[] = {50.0f,
+	static const float s_real_1200hz_sinewave_centers[] = {50.0f,
 		55.7521f,
 		61.6228f,
 		67.6147f,

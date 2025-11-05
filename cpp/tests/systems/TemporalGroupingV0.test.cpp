@@ -242,13 +242,13 @@ namespace robotick::test
 
 			// === Inject real-world envelope profile (128 values) ===
 
-			static_assert(sizeof(s_real_centers) / sizeof(float) == 128, "Expected 128 values in real_centers");
-			static_assert(sizeof(s_real_profile) / sizeof(float) == 128, "Expected 128 values in real_profile");
+			static_assert(sizeof(s_real_1200hz_sinewave_centers) / sizeof(float) == 128, "Expected 128 values in real_centers");
+			static_assert(sizeof(s_real_1200hz_sinewave_envelope) / sizeof(float) == 128, "Expected 128 values in real_profile");
 
 			for (int i = 0; i < num_bands; ++i)
 			{
-				envelope[i] = s_real_profile[i];
-				centers[i] = s_real_centers[i];
+				envelope[i] = s_real_1200hz_sinewave_envelope[i];
+				centers[i] = s_real_1200hz_sinewave_centers[i];
 			}
 
 			// === Find closest band to 1200 Hz ===
