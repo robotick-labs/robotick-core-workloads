@@ -206,7 +206,7 @@ namespace robotick
 					// Write into pixel buffer (far-right column)
 					auto paint_pixel = [&](int yy, const bool bold = false)
 					{
-						const int thickness = bold ? 2 : 1;
+						const int thickness = bold ? 3 : 1;
 
 						for (int t = 0; t < thickness; ++t)
 						{
@@ -236,7 +236,7 @@ namespace robotick
 
 						const int y = (int)std::round(y_float);
 
-						const bool draw_bold = (h == 1);
+						const bool draw_bold = (harmonic_id == 1);
 						paint_pixel(y, draw_bold);
 					}
 				}

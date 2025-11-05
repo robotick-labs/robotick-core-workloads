@@ -214,6 +214,7 @@ namespace robotick
 		int best_match_count = 0;
 		FixedVector<float, harmonic_pitch::MaxHarmonics> best_amplitudes;
 
+		// For each peak in the spectrum, consider it as a possible fundamental frequency (f0)
 		for (const Peak& candidate : peaks)
 		{
 			const float candidate_f0 = candidate.frequency;
@@ -223,19 +224,27 @@ namespace robotick
 			int match_count = 0;
 			float score = 0.0f;
 
+			// Try to find matching harmonic peaks at integer multiples of this candidate f0
 			for (size_t harmonic_id = 1; harmonic_id <= harmonic_pitch::MaxHarmonics; ++harmonic_id)
 			{
 				const float expected_freq = candidate_f0 * harmonic_id;
+
+				// Track the best match for this harmonic across all peaks
 				float best_amp = 0.0f;
 				float best_cents_error = cents_tolerance + 1.0f;
 
 				for (const Peak& peak : peaks)
 				{
 					const float ratio = peak.frequency / expected_freq;
+
+					// Skip if frequency mismatch is too large (based on ratio tolerance)
 					if (ratio < (1.0f / ratio_tolerance) || ratio > ratio_tolerance)
 						continue;
 
+					// Convert ratio to musical 'cents' error (1 semitone = 100 cents)
 					const float cents_error = 1200.0f * std::abs(std::log2(ratio));
+
+					// Keep the closest (in cents) peak within tolerance
 					if (cents_error < best_cents_error)
 					{
 						best_cents_error = cents_error;
@@ -243,27 +252,34 @@ namespace robotick
 					}
 				}
 
+				// Record amplitude for this harmonic (0 if unmatched)
+				harmonics.add(best_amp);
+
 				if (best_amp > 0.0f)
 				{
-					match_count++;
-					score += best_amp;
-					max_non_zero_harmonic_id = harmonic_id;
+					match_count++;							// Count how many harmonics were matched
+					score += best_amp;						// Accumulate score (favor stronger matches)
+					max_non_zero_harmonic_id = harmonic_id; // Track furthest matched harmonic
 				}
-
-				harmonics.add(best_amp);
 			}
 
+			// Decide whether this candidate is worth considering:
+			// - valid stack: enough harmonics match (e.g. voiced sound)
+			// - or single peak, allowed by setting (e.g. whistle or sine tone)
 			const bool is_single_peak = (match_count == 1);
 			const bool is_valid_stack = (match_count >= min_stack_matches);
 
 			if (is_valid_stack || (is_single_peak && settings.allow_single_peak_mode))
 			{
+				// Prefer higher score, or equal score with more matched harmonics
 				const bool is_better = (score > best_score) || (score == best_score && match_count > best_match_count);
 
 				if (is_better)
 				{
 					best_score = score;
 					best_f0 = candidate_f0;
+
+					// Copy harmonic amplitudes up to last matched harmonic
 					best_amplitudes.set(harmonics.data(), max_non_zero_harmonic_id);
 					best_match_count = match_count;
 				}
@@ -280,7 +296,207 @@ namespace robotick
 		result.h1_f0_hz = best_f0;
 		result.harmonic_amplitudes = best_amplitudes;
 
+		// ------------------------------------------------------------------------------------------
+		// Step 4: Fill in any harmonics not detected as peaks, with the current band-envelope value
+		// ------------------------------------------------------------------------------------------
+
+		for (size_t harmonic_id = 1; harmonic_id <= result.harmonic_amplitudes.size(); ++harmonic_id)
+		{
+			// Skip any already-filled amplitudes (i.e. those already set reliably from peaks)
+			if (result.harmonic_amplitudes[harmonic_id - 1] > 0.0f)
+				continue;
+
+			const float harmonic_freq = best_f0 * harmonic_id;
+
+			// Find the band closest to the harmonic frequency
+			int closest_band_id = -1;
+			float closest_distance = 1e9f;
+
+			for (size_t band_id = 0; band_id < centers.size(); ++band_id)
+			{
+				const float dist = std::abs(centers[band_id] - harmonic_freq);
+				if (dist < closest_distance)
+				{
+					closest_distance = dist;
+					closest_band_id = static_cast<int>(band_id);
+				}
+			}
+
+			if (closest_band_id >= 0 && closest_band_id < static_cast<int>(envelope.size()))
+			{
+				result.harmonic_amplitudes[harmonic_id - 1] = envelope[closest_band_id];
+			}
+		}
+
 		return true;
+	}
+
+	bool HarmonicPitch::try_continue_previous_result(const HarmonicPitchSettings& settings,
+		const AudioBuffer128& centers,
+		const AudioBuffer128& envelope,
+		const HarmonicPitchResult& prev_result,
+		HarmonicPitchResult& result)
+	{
+		if (prev_result.h1_f0_hz <= 0.0f)
+			return false;
+
+		// Step 1: find band index closest to previous f0
+		const size_t num_bands = centers.size();
+		int prev_f0_band = -1;
+		float min_dist = 1e9f;
+
+		for (size_t i = 0; i < num_bands; ++i)
+		{
+			const float dist = std::abs(centers[i] - prev_result.h1_f0_hz);
+			if (dist < min_dist)
+			{
+				min_dist = dist;
+				prev_f0_band = static_cast<int>(i);
+			}
+		}
+
+		if (prev_f0_band < 0 || prev_f0_band >= static_cast<int>(num_bands))
+			return false;
+
+		// Step 2: check if we’re still "inside the white snake" at this band
+		if (envelope[prev_f0_band] < settings.min_amplitude)
+			return false;
+
+		// Step 3: walk outward in both directions to find the extent of this snake
+		int start_band = prev_f0_band;
+		int end_band = prev_f0_band;
+
+		while (start_band > 0 && envelope[start_band - 1] >= settings.min_amplitude)
+			--start_band;
+
+		while (end_band + 1 < static_cast<int>(num_bands) && envelope[end_band + 1] >= settings.min_amplitude)
+			++end_band;
+
+		// Step 4: compute centroid within this band range
+		float weighted_sum = 0.0f;
+		float total_weight = 0.0f;
+
+		for (int i = start_band; i <= end_band; ++i)
+		{
+			const float amp = envelope[i];
+			weighted_sum += centers[i] * amp;
+			total_weight += amp;
+		}
+
+		if (total_weight <= 0.0f)
+			return false;
+
+		const float new_f0 = weighted_sum / total_weight;
+
+		// Step 5: remeasure harmonic amplitudes using updated f0
+		FixedVector<float, harmonic_pitch::MaxHarmonics> harmonics;
+		int strong_count = 0;
+
+		for (size_t harmonic_id = 1; harmonic_id <= harmonic_pitch::MaxHarmonics; ++harmonic_id)
+		{
+			const float harmonic_freq = new_f0 * harmonic_id;
+
+			// Find closest band
+			int closest_band = -1;
+			float min_distance = 1e9f;
+			for (size_t i = 0; i < num_bands; ++i)
+			{
+				const float dist = std::abs(centers[i] - harmonic_freq);
+				if (dist < min_distance)
+				{
+					min_distance = dist;
+					closest_band = static_cast<int>(i);
+				}
+			}
+
+			float amp = 0.0f;
+			if (closest_band >= 0 && closest_band < static_cast<int>(envelope.size()))
+			{
+				amp = envelope[closest_band];
+				if (amp >= settings.min_amplitude)
+					strong_count++;
+			}
+
+			harmonics.add(amp);
+		}
+
+		if (strong_count < 2)
+			return false;
+
+		// Accept continuation
+		result.h1_f0_hz = new_f0;
+		result.harmonic_amplitudes = harmonics;
+		return true;
+	}
+
+	bool HarmonicPitch::find_or_continue_harmonic_features(const HarmonicPitchSettings& settings,
+		const AudioBuffer128& centers,
+		const AudioBuffer128& envelope,
+		const HarmonicPitchResult& prev_result,
+		HarmonicPitchResult& out_result)
+	{
+		HarmonicPitchResult fresh;
+		HarmonicPitchResult continued;
+
+		// Try detecting a new harmonic stack from scratch
+		const bool fresh_ok = find_harmonic_features(settings, centers, envelope, fresh);
+
+		// Try continuing the previous f₀ using nearby envelope structure
+		const bool continued_ok = try_continue_previous_result(settings, centers, envelope, prev_result, continued);
+
+		// If neither succeeded, give up
+		if (!fresh_ok && !continued_ok)
+			return false;
+
+		// If only one succeeded, use it directly
+		if (fresh_ok && !continued_ok)
+		{
+			out_result = fresh;
+			return true;
+		}
+		else if (!fresh_ok && continued_ok)
+		{
+			out_result = continued;
+			return true;
+		}
+		else
+		{
+			// Both succeeded — check if their f₀ values are similar (within cents threshold)
+			const float cents_diff = 1200.0f * std::fabs(std::log2(fresh.h1_f0_hz / continued.h1_f0_hz));
+
+			if (cents_diff < settings.harmonic_tolerance_cents)
+			{
+				// If similar, merge their amplitude profiles into one stronger result
+				out_result.h1_f0_hz = fresh.h1_f0_hz;
+				out_result.harmonic_amplitudes.clear();
+
+				const size_t max_allowed = out_result.harmonic_amplitudes.capacity();
+				const size_t num_harmonics = min(max(fresh.harmonic_amplitudes.size(), continued.harmonic_amplitudes.size()), max_allowed);
+
+				for (size_t i = 0; i < num_harmonics; ++i)
+				{
+					const float fresh_amp = (i < fresh.harmonic_amplitudes.size()) ? fresh.harmonic_amplitudes[i] : 0.0f;
+					const float continued_amp = (i < continued.harmonic_amplitudes.size()) ? continued.harmonic_amplitudes[i] : 0.0f;
+					const float out_amp = max(fresh_amp, continued_amp);
+
+					// Only include strong enough harmonics in merged result
+					out_result.harmonic_amplitudes.add((out_amp > settings.min_amplitude) ? out_amp : 0.0f);
+				}
+			}
+			else
+			{
+				// If f₀ values disagree, choose whichever has stronger cumulative amplitude
+				float fresh_score = 0.0f, continued_score = 0.0f;
+				for (float amp : fresh.harmonic_amplitudes)
+					fresh_score += amp;
+				for (float amp : continued.harmonic_amplitudes)
+					continued_score += amp;
+
+				out_result = (fresh_score >= continued_score) ? fresh : continued;
+			}
+
+			return true;
+		}
 	}
 
 } // namespace robotick

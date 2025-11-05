@@ -31,16 +31,21 @@ namespace robotick
 		SourceCandidate first_source;
 	};
 
+	struct HarmonicPitchState
+	{
+		HarmonicPitchResult prev_result = {};
+	};
+
 	struct HarmonicPitchWorkload
 	{
 		HarmonicPitchConfig config;
 		HarmonicPitchInputs inputs;
 		HarmonicPitchOutputs outputs;
 
-		void tick(const TickInfo& tick_info)
-		{
-			(void)tick_info;
+		State<HarmonicPitchState> state;
 
+		void tick(const TickInfo&)
+		{
 			// reset everything in case we don't find anything
 			outputs.source_candidates.clear();
 			outputs.first_source = SourceCandidate{};
@@ -48,20 +53,22 @@ namespace robotick
 			// analyse out current CochlearFrame
 			const CochlearFrame& cochlear_frame = inputs.cochlear_frame;
 
-			HarmonicPitchResult result{};
-			const int found_band_id =
-				HarmonicPitch::find_harmonic_features(config.settings, cochlear_frame.band_center_hz, cochlear_frame.envelope, result);
+			HarmonicPitchResult found_result{};
+			const bool has_found = HarmonicPitch::find_or_continue_harmonic_features(
+				config.settings, cochlear_frame.band_center_hz, cochlear_frame.envelope, state->prev_result, found_result);
 
 			// process & store our results to outputs
-			if (found_band_id >= 0)
+			if (has_found)
 			{
 				SourceCandidate out{};
-				out.h1_f0_hz = result.h1_f0_hz;
-				out.harmonic_amplitudes = result.harmonic_amplitudes;
+				out.h1_f0_hz = found_result.h1_f0_hz;
+				out.harmonic_amplitudes = found_result.harmonic_amplitudes;
 
 				outputs.first_source = out;
 				outputs.source_candidates.add(out);
 			}
+
+			state->prev_result = found_result;
 		}
 	};
 
