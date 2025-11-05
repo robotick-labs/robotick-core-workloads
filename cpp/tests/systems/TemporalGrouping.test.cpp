@@ -36,7 +36,6 @@ namespace robotick::test
 		{
 			TemporalGroupingSettings config;
 			config.min_amplitude = 0.1f;
-			config.reuse_penalty = 0.45f;
 
 			const int num_bands = 128;
 			const float expected_f0_hz = 1200.0f;

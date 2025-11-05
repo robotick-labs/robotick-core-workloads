@@ -21,8 +21,9 @@ namespace robotick
 	struct TemporalGroupingSettings
 	{
 		// Selection / gating
-		float min_amplitude = 0.3f;
-		float reuse_penalty = 0.45f;
+		float min_amplitude = 0.3f;			 // minimum envelope value for it to be considered an interesting feature
+		float min_peak_falloff_norm = 0.25f; // minimum falloff from a peak (as a fraction of its (peak-value - min_amplitude))
+											 // 	for it to count as a peak
 	};
 
 	struct TemporalGroupingResult
