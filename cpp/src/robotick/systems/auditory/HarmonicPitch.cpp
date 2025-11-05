@@ -441,7 +441,7 @@ namespace robotick
 		// Try detecting a new harmonic stack from scratch
 		const bool fresh_ok = find_harmonic_features(settings, centers, envelope, fresh);
 
-		// Try continuing the previous f₀ using nearby envelope structure
+		// Try continuing the previous f0 using nearby envelope structure
 		const bool continued_ok = try_continue_previous_result(settings, centers, envelope, prev_result, continued);
 
 		// If neither succeeded, give up
@@ -461,7 +461,7 @@ namespace robotick
 		}
 		else
 		{
-			// Both succeeded — check if their f₀ values are similar (within cents threshold)
+			// Both succeeded — check if their f0 values are similar (within cents threshold)
 			const float cents_diff = 1200.0f * std::fabs(std::log2(fresh.h1_f0_hz / continued.h1_f0_hz));
 
 			if (cents_diff < settings.harmonic_tolerance_cents)
@@ -485,7 +485,7 @@ namespace robotick
 			}
 			else
 			{
-				// If f₀ values disagree, choose whichever has stronger cumulative amplitude
+				// If f0 values disagree, choose whichever has stronger cumulative amplitude
 				float fresh_score = 0.0f, continued_score = 0.0f;
 				for (float amp : fresh.harmonic_amplitudes)
 					fresh_score += amp;
