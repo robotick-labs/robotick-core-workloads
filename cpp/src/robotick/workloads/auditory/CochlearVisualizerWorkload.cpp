@@ -5,7 +5,7 @@
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
-#include "robotick/systems/auditory/SourceCandidate.h"
+#include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include <SDL2/SDL.h>
 #include <algorithm>
@@ -22,15 +22,14 @@ namespace robotick
 		int viewport_height = 400;	 // window height (px)
 		bool log_scale = true;
 		float visual_gain = 1.0f;
-		bool draw_source_candidates = true;
-		bool draw_source_candidate_bounds = true;
+		bool draw_pitch_info = true;
 		float min_source_amplitude = 0.5f;
 	};
 
 	struct CochlearVisualizerInputs
 	{
 		CochlearFrame cochlear_frame;
-		SourceCandidates8 source_candidates;
+		HarmonicPitchResult pitch_info;
 	};
 
 	struct CochlearVisualizerState
@@ -101,22 +100,6 @@ namespace robotick
 		CochlearVisualizerConfig config;
 		CochlearVisualizerInputs inputs;
 		State<CochlearVisualizerState> state;
-
-		// simple colour palette
-		static inline SDL_Color palette(uint8_t idx)
-		{
-			static const SDL_Color colors[] = {
-				{0, 128, 0, 255},	 // green
-				{255, 255, 96, 255}, // magenta
-				{64, 160, 255, 255}, // orange
-				{255, 64, 64, 255},	 // blue
-				{255, 255, 64, 255}, // cyan
-				{64, 255, 200, 255}, // yellow
-				{64, 64, 255, 255},	 // red
-				{255, 64, 192, 255}	 // violet
-			};
-			return colors[idx % 8];
-		}
 
 		inline float hz_to_band_y(const AudioBuffer128& band_center_hz, float hz)
 		{
@@ -193,15 +176,13 @@ namespace robotick
 			}
 
 			// === Overlay source candidates directly into pixel column ===
-			if (config.draw_source_candidates)
+			if (config.draw_pitch_info)
 			{
-				for (size_t i = 0; i < inputs.source_candidates.size(); ++i)
+				const HarmonicPitchResult& pitch_info = inputs.pitch_info;
+				if (pitch_info.h1_f0_hz > 0.0f)
 				{
-					const auto& sc = inputs.source_candidates[i];
-					if (sc.h1_f0_hz <= 0.0f)
-						continue;
-
-					const SDL_Color colour_for_source = palette(i);
+					// TODO - lerp between mid-green and lime, based on pitch_info.harmonic_amplitudes[harmonic_id - 1]
+					const SDL_Color colour_for_source = {0, 128, 0, 255}; // mid-green
 
 					// Write into pixel buffer (far-right column)
 					auto paint_pixel = [&](int yy, const bool bold = false)
@@ -220,14 +201,14 @@ namespace robotick
 						}
 					};
 
-					for (size_t harmonic_id = 1; harmonic_id <= sc.harmonic_amplitudes.size(); harmonic_id++)
+					for (size_t harmonic_id = 1; harmonic_id <= pitch_info.harmonic_amplitudes.size(); harmonic_id++)
 					{
-						if (sc.harmonic_amplitudes[harmonic_id - 1] == 0.0f)
+						if (pitch_info.harmonic_amplitudes[harmonic_id - 1] == 0.0f)
 						{
 							continue;
 						}
 
-						const float harmonic_frequency = sc.h1_f0_hz * (float)harmonic_id;
+						const float harmonic_frequency = pitch_info.h1_f0_hz * (float)harmonic_id;
 						const float y_float = hz_to_band_y(inputs.cochlear_frame.band_center_hz, harmonic_frequency);
 						if (y_float < 0.0f)
 						{

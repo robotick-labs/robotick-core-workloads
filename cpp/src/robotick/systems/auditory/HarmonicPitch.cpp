@@ -31,6 +31,11 @@ namespace robotick
 
 	ROBOTICK_REGISTER_PRIMITIVE(HarmonicAmplitudes, harmonic_amplitudes_to_string, harmonic_amplitudes_from_string);
 
+	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchResult)
+	ROBOTICK_STRUCT_FIELD(HarmonicPitchResult, float, h1_f0_hz)
+	ROBOTICK_STRUCT_FIELD(HarmonicPitchResult, HarmonicAmplitudes, harmonic_amplitudes)
+	ROBOTICK_REGISTER_STRUCT_END(HarmonicPitchResult)
+
 	/**
 	 * @brief Find the first valid spectral peak in a cochlear envelope using an "island" detection strategy.
 	 *
