@@ -18,9 +18,9 @@ namespace robotick
 		uint16_t num_bands = 128;
 		float fmin_hz = 50.0f;
 		float fmax_hz = 3500.0f;
-		float envelope_lp_hz = 30.0f;	  // envelope smoothing (Hz)
-		float compression_gamma = 0.6f;	  // perceptual dynamic compression
-		float mod_low_hz = 1.5f;		  // modulation HP (on envelope)
+		float envelope_lp_hz = 100.0f;	  // envelope smoothing (Hz)
+		float compression_gamma = 1.0f;	  // perceptual dynamic compression
+		float mod_low_hz = 1.0f;		  // modulation HP (on envelope)
 		float mod_high_hz = 12.0f;		  // modulation LP (on envelope)
 		float erb_bandwidth_scale = 0.5f; // scales ERB width (narrower => sharper)
 		bool use_preemphasis = true;
