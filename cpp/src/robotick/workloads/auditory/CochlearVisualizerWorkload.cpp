@@ -132,48 +132,48 @@ namespace robotick
 
 		void tick(const TickInfo& tick_info)
 		{
-			auto& s = state.get();
+			auto& state_ref = state.get();
 
-			if (!s.has_initialized)
+			if (!state_ref.has_initialized)
 			{
 				const int num_bands = (int)inputs.cochlear_frame.envelope.capacity();
-				s.init_window(config, num_bands, tick_info.tick_rate_hz);
+				state_ref.init_window(config, num_bands, tick_info.tick_rate_hz);
 			}
 
-			if (!s.renderer || !s.texture)
+			if (!state_ref.renderer || !state_ref.texture)
 				return;
 
 			const int bands_size = (int)inputs.cochlear_frame.envelope.size();
 			if (bands_size <= 0)
 				return;
 
-			const int draw_bands = std::min(bands_size, s.tex_h);
-			const int w = s.tex_w;
-			const int h = s.tex_h;
+			const int draw_bands = std::min(bands_size, state_ref.tex_h);
+			const int tex_w = state_ref.tex_w;
+			const int tex_h = state_ref.tex_h;
 
 			// === Shift all pixels left by one column ===
-			std::memmove(s.pixels.data(), s.pixels.data() + 4, (size_t)(w - 1) * h * 4);
+			std::memmove(state_ref.pixels.data(), state_ref.pixels.data() + 4, (size_t)(tex_w - 1) * tex_h * 4);
 
 			// === Write new column on far-right edge ===
 
-			for (int y = 0; y < draw_bands; ++y)
+			for (int band_id = 0; band_id < draw_bands; ++band_id)
 			{
-				float v = inputs.cochlear_frame.envelope[y] * config.cochlear_visual_gain;
+				float amplitude = inputs.cochlear_frame.envelope[band_id] * config.cochlear_visual_gain;
 
 				if (config.log_scale)
 				{
-					v = std::log1p(v * 10.0f) / std::log1p(10.0f);
+					amplitude = std::log1p(amplitude * 10.0f) / std::log1p(10.0f);
 				}
 
-				v = clamp(v, 0.0f, 1.0f);
-				const Uint8 c = (Uint8)(v * 255.0f);
+				amplitude = clamp(amplitude, 0.0f, 1.0f);
+				const Uint8 c = (Uint8)(amplitude * 255.0f);
 
-				const int tex_y = (h - 1 - y);
-				const int idx = (tex_y * w + (w - 1)) * 4;
-				s.pixels[idx + 0] = c;
-				s.pixels[idx + 1] = c;
-				s.pixels[idx + 2] = c;
-				s.pixels[idx + 3] = 255;
+				const int tex_y = (tex_h - 1 - band_id);
+				const int idx = (tex_y * tex_w + (tex_w - 1)) * 4;
+				state_ref.pixels[idx + 0] = c;
+				state_ref.pixels[idx + 1] = c;
+				state_ref.pixels[idx + 2] = c;
+				state_ref.pixels[idx + 3] = 255;
 			}
 
 			// === Overlay source candidates directly into pixel column ===
@@ -205,45 +205,45 @@ namespace robotick
 						const SDL_Color colour_for_source = {red, green, 0, 255};
 
 						const float harmonic_frequency = pitch_info.h1_f0_hz * static_cast<float>(harmonic_id);
-						const float y_float = hz_to_band_y(inputs.cochlear_frame.band_center_hz, harmonic_frequency);
-						if (y_float < 0.0f)
+						const float draw_y_float = hz_to_band_y(inputs.cochlear_frame.band_center_hz, harmonic_frequency);
+						if (draw_y_float < 0.0f)
 						{
 							continue;
 						}
 
-						const int y = static_cast<int>(std::round(y_float));
+						const int draw_y = static_cast<int>(std::round(draw_y_float));
 
 						const bool draw_bold = (harmonic_id == 1);
 						const int thickness = draw_bold ? 3 : 1;
 
-						for (int t = 0; t < thickness; ++t)
+						for (int thickness_id = 0; thickness_id < thickness; ++thickness_id)
 						{
-							const int tex_y = clamp(h - 1 - (y + t), 0, h - 1);
-							const int idx = (tex_y * w + (w - 1)) * 4;
+							const int tex_y = clamp(tex_h - 1 - (draw_y + thickness_id), 0, tex_h - 1);
+							const int idx = (tex_y * tex_w + (tex_w - 1)) * 4;
 
-							s.pixels[idx + 0] = colour_for_source.r;
-							s.pixels[idx + 1] = colour_for_source.g;
-							s.pixels[idx + 2] = colour_for_source.b;
-							s.pixels[idx + 3] = 255;
+							state_ref.pixels[idx + 0] = colour_for_source.r;
+							state_ref.pixels[idx + 1] = colour_for_source.g;
+							state_ref.pixels[idx + 2] = colour_for_source.b;
+							state_ref.pixels[idx + 3] = 255;
 						}
 					}
 				}
 			}
 
 			// Update texture contents
-			SDL_UpdateTexture(s.texture, nullptr, s.pixels.data(), w * 4);
+			SDL_UpdateTexture(state_ref.texture, nullptr, state_ref.pixels.data(), tex_w * 4);
 
 			// === Stretch cochlear texture to viewport ===
 			int window_width, window_height;
-			SDL_GetWindowSize(s.window, &window_width, &window_height);
+			SDL_GetWindowSize(state_ref.window, &window_width, &window_height);
 
 			SDL_Rect dest{0, 0, window_width, window_height};
-			SDL_RenderClear(s.renderer);
-			SDL_RenderCopy(s.renderer, s.texture, nullptr, &dest);
+			SDL_RenderClear(state_ref.renderer);
+			SDL_RenderCopy(state_ref.renderer, state_ref.texture, nullptr, &dest);
 
-			if (!s.is_rendering_paused)
+			if (!state_ref.is_rendering_paused)
 			{
-				SDL_RenderPresent(s.renderer);
+				SDL_RenderPresent(state_ref.renderer);
 			}
 
 			// Handle events
@@ -259,7 +259,7 @@ namespace robotick
 				{
 					if (e.key.keysym.sym == SDLK_SPACE)
 					{
-						s.is_rendering_paused = !s.is_rendering_paused;
+						state_ref.is_rendering_paused = !state_ref.is_rendering_paused;
 					}
 				}
 			}
