@@ -21,9 +21,10 @@ namespace robotick
 		int viewport_width = 800;	 // window width (px)
 		int viewport_height = 400;	 // window height (px)
 		bool log_scale = true;
-		float visual_gain = 1.0f;
+		float cochlear_visual_gain = 1.0f;
 		bool draw_pitch_info = true;
-		float min_source_amplitude = 0.5f;
+		float pitch_visual_gain = 1.0f;
+		float pitch_min_amplitude = 0.2f;
 	};
 
 	struct CochlearVisualizerInputs
@@ -157,14 +158,14 @@ namespace robotick
 
 			for (int y = 0; y < draw_bands; ++y)
 			{
-				float v = inputs.cochlear_frame.envelope[y] * config.visual_gain;
+				float v = inputs.cochlear_frame.envelope[y] * config.cochlear_visual_gain;
 
 				if (config.log_scale)
 				{
 					v = std::log1p(v * 10.0f) / std::log1p(10.0f);
 				}
 
-				v = std::clamp(v, 0.0f, 1.0f);
+				v = clamp(v, 0.0f, 1.0f);
 				const Uint8 c = (Uint8)(v * 255.0f);
 
 				const int tex_y = (h - 1 - y);
@@ -181,44 +182,50 @@ namespace robotick
 				const HarmonicPitchResult& pitch_info = inputs.pitch_info;
 				if (pitch_info.h1_f0_hz > 0.0f)
 				{
-					// TODO - lerp between mid-green and lime, based on pitch_info.harmonic_amplitudes[harmonic_id - 1]
-					const SDL_Color colour_for_source = {0, 128, 0, 255}; // mid-green
-
-					// Write into pixel buffer (far-right column)
-					auto paint_pixel = [&](int yy, const bool bold = false)
-					{
-						const int thickness = bold ? 3 : 1;
-
-						for (int t = 0; t < thickness; ++t)
-						{
-							const int tex_y = std::clamp(h - 1 - (yy + t), 0, h - 1);
-							const int idx = (tex_y * w + (w - 1)) * 4;
-
-							s.pixels[idx + 0] = colour_for_source.r;
-							s.pixels[idx + 1] = colour_for_source.g;
-							s.pixels[idx + 2] = colour_for_source.b;
-							s.pixels[idx + 3] = 255; // keep opaque overall
-						}
-					};
-
 					for (size_t harmonic_id = 1; harmonic_id <= pitch_info.harmonic_amplitudes.size(); harmonic_id++)
 					{
-						if (pitch_info.harmonic_amplitudes[harmonic_id - 1] == 0.0f)
+						const float amplitude = pitch_info.harmonic_amplitudes[harmonic_id - 1];
+						if (amplitude == 0.0f)
 						{
 							continue;
 						}
 
-						const float harmonic_frequency = pitch_info.h1_f0_hz * (float)harmonic_id;
+						float amplitude_norm = (amplitude - config.pitch_min_amplitude) * config.pitch_visual_gain;
+						if (config.log_scale)
+						{
+							amplitude_norm = std::log1p(amplitude_norm * 10.0f) / std::log1p(10.0f);
+						}
+						amplitude_norm = clamp(amplitude_norm, 0.0f, 1.0f);
+
+						// -----------------------------------------------------------------------------
+						// Colour: Lerp from dark-green {0,32,0} to lime {64,255,0} based on amplitude
+						// -----------------------------------------------------------------------------
+						const Uint8 red = static_cast<Uint8>(0.0f + amplitude_norm * 64.0f);
+						const Uint8 green = static_cast<Uint8>(64.0f + amplitude_norm * (255.0f - 128.0f));
+						const SDL_Color colour_for_source = {red, green, 0, 255};
+
+						const float harmonic_frequency = pitch_info.h1_f0_hz * static_cast<float>(harmonic_id);
 						const float y_float = hz_to_band_y(inputs.cochlear_frame.band_center_hz, harmonic_frequency);
 						if (y_float < 0.0f)
 						{
 							continue;
 						}
 
-						const int y = (int)std::round(y_float);
+						const int y = static_cast<int>(std::round(y_float));
 
 						const bool draw_bold = (harmonic_id == 1);
-						paint_pixel(y, draw_bold);
+						const int thickness = draw_bold ? 3 : 1;
+
+						for (int t = 0; t < thickness; ++t)
+						{
+							const int tex_y = clamp(h - 1 - (y + t), 0, h - 1);
+							const int idx = (tex_y * w + (w - 1)) * 4;
+
+							s.pixels[idx + 0] = colour_for_source.r;
+							s.pixels[idx + 1] = colour_for_source.g;
+							s.pixels[idx + 2] = colour_for_source.b;
+							s.pixels[idx + 3] = 255;
+						}
 					}
 				}
 			}
