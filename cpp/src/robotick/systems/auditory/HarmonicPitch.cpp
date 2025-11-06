@@ -329,7 +329,7 @@ namespace robotick
 
 			if (closest_band_id >= 0 && closest_band_id < static_cast<int>(envelope.size()))
 			{
-				result.harmonic_amplitudes[harmonic_id - 1] = envelope[closest_band_id];
+				result.harmonic_amplitudes[harmonic_id - 1] = envelope[closest_band_id] > settings.min_amplitude ? envelope[closest_band_id] : 0.0f;
 			}
 		}
 

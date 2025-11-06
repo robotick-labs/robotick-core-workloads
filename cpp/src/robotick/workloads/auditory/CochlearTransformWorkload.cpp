@@ -24,7 +24,8 @@ namespace robotick
 		float mod_high_hz = 12.0f;		  // modulation LP (on envelope)
 		float erb_bandwidth_scale = 0.5f; // scales ERB width (narrower => sharper)
 		bool use_preemphasis = true;
-		float preemph = 0.97f; // preemphasis factor
+		float preemph = 0.97f;					  // preemphasis factor
+		float envelope_temporal_smooth_hz = 5.0f; // new config param (Hz)
 	};
 
 	struct CochlearTransformInputs
@@ -88,6 +89,10 @@ namespace robotick
 		alignas(16) unsigned char kiss_cfg_mem[131072]{};
 
 		float window_rms = 1.0f;
+
+		// --- Secondary envelope smoothing ---
+		float env_smooth_alpha = 0.0f;	// smoothing coefficient [0..1]
+		AudioBuffer128 env_smooth_prev; // per-band previous smoothed envelope
 
 		// ---------------- Window/FFT planning ----------------
 		void build_window()
@@ -178,6 +183,10 @@ namespace robotick
 			const double tau = 1.0 / (2.0 * M_PI * fc_env);
 			env_alpha = float(1.0 - std::exp(-dt / tau));
 
+			const double fc_smooth = std::clamp(double(cfg.envelope_temporal_smooth_hz), 0.1, 30.0);
+			const double tau_smooth = 1.0 / (2.0 * M_PI * fc_smooth);
+			env_smooth_alpha = float(1.0 - std::exp(-dt / tau_smooth));
+
 			const double fs = frame_rate;
 			// Simple first-order HP on envelope
 			{
@@ -206,6 +215,7 @@ namespace robotick
 			samples_since_last_frame = 0;
 
 			env_prev.fill(0.0f);
+			env_smooth_prev.fill(0.0f);
 			mod_hp_z1.fill(0.0f);
 			mod_lp_z1.fill(0.0f);
 			x_prev = 0.0f;
@@ -347,7 +357,12 @@ namespace robotick
 
 				const float env_vis = comp;
 
-				outputs.cochlear_frame.envelope[bandId] = env_vis;
+				const float env_smooth = state->env_smooth_alpha * env_vis + (1.0f - state->env_smooth_alpha) * state->env_smooth_prev[bandId];
+				state->env_smooth_prev[bandId] = env_smooth;
+
+				outputs.cochlear_frame.envelope[bandId] = env_smooth;
+
+				// outputs.cochlear_frame.envelope[bandId] = env_vis;
 				outputs.cochlear_frame.modulation_power[bandId] = lp_y * lp_y;
 				outputs.cochlear_frame.fine_phase[bandId] = state->phase[band.center_bin];
 			}
