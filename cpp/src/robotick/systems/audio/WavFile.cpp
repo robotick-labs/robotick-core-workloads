@@ -195,7 +195,7 @@ namespace robotick
 	// === Write (recording) ===
 	// ------------------------------------------------------------------------
 
-	void WavFile::write_header_placeholder(uint32_t sr, uint16_t ch)
+	void WavFileWriter::write_header_placeholder(uint32_t sr, uint16_t ch)
 	{
 		const uint16_t bits_per_sample = 16;
 		const uint32_t byte_rate = sr * ch * bits_per_sample / 8;
@@ -222,7 +222,7 @@ namespace robotick
 		std::fwrite(&data_size_placeholder, 4, 1, fp);
 	}
 
-	bool WavFile::open_write(const char* path, uint32_t sr, uint16_t ch)
+	bool WavFileWriter::open(const char* path, uint32_t sr, uint16_t ch)
 	{
 		fp = std::fopen(path, "wb");
 		if (!fp)
@@ -237,7 +237,7 @@ namespace robotick
 		return true;
 	}
 
-	void WavFile::patch_header()
+	void WavFileWriter::patch_header()
 	{
 		if (!fp)
 			return;
@@ -262,7 +262,7 @@ namespace robotick
 		}
 	}
 
-	void WavFile::append_mono(const float* samples, size_t count)
+	void WavFileWriter::append_mono(const float* samples, size_t count)
 	{
 		if (!fp || write_channels != 1 || count == 0)
 			return;
@@ -278,7 +278,7 @@ namespace robotick
 		patch_header(); // keep file valid even on crash
 	}
 
-	void WavFile::append_stereo(const float* left, const float* right, size_t count)
+	void WavFileWriter::append_stereo(const float* left, const float* right, size_t count)
 	{
 		if (!fp || write_channels != 2 || count == 0)
 			return;
@@ -297,7 +297,7 @@ namespace robotick
 		patch_header(); // always keep header current
 	}
 
-	void WavFile::close_write()
+	void WavFileWriter::close()
 	{
 		if (!fp)
 			return;

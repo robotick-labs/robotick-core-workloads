@@ -24,12 +24,6 @@ namespace robotick
 		const HeapVector<float>& get_left_samples() const { return left_samples; }
 		const HeapVector<float>& get_right_samples() const { return right_samples; }
 
-		// === Write (record) ===
-		bool open_write(const char* path, uint32_t sample_rate, uint16_t num_channels = 1);
-		void append_mono(const float* samples, size_t count);
-		void append_stereo(const float* left, const float* right, size_t count);
-		void close_write();
-
 		static bool exists(const char* path);
 
 	  private:
@@ -41,14 +35,26 @@ namespace robotick
 		// Read buffers
 		HeapVector<float> left_samples;
 		HeapVector<float> right_samples;
+	};
 
+	class WavFileWriter
+	{
+	  public:
+		bool open(const char* path, uint32_t sample_rate, uint16_t num_channels = 1);
+		void append_mono(const float* samples, size_t count);
+		void append_stereo(const float* left, const float* right, size_t count);
+		void close();
+
+	  protected:
+		void write_header_placeholder(uint32_t sr, uint16_t ch);
+		void patch_header();
+
+	  private:
 		// Write state
 		FILE* fp = nullptr;
 		uint16_t write_channels = 0;
 		uint32_t data_bytes_written = 0;
-
-		void write_header_placeholder(uint32_t sr, uint16_t ch);
-		void patch_header();
+		uint32_t sample_rate = 44100;
 	};
 
 } // namespace robotick

@@ -33,7 +33,7 @@ namespace robotick
 
 	struct WavRecorderState
 	{
-		WavFile wav_file;
+		WavFileWriter wav_file;
 	};
 
 	struct WavRecorderWorkload
@@ -54,7 +54,7 @@ namespace robotick
 				ROBOTICK_FATAL_EXIT("WAV Recorder: file exists and overwrite=false: %s", path);
 
 			const int fs = AudioSystem::get_sample_rate();
-			if (!state->wav_file.open_write(path, fs, config.stereo ? 2 : 1))
+			if (!state->wav_file.open(path, fs, config.stereo ? 2 : 1))
 				ROBOTICK_FATAL_EXIT("WAV Recorder: failed to open for writing: %s", path);
 
 			outputs.file_open = true;
@@ -87,7 +87,7 @@ namespace robotick
 		{
 			if (outputs.file_open)
 			{
-				state->wav_file.close_write();
+				state->wav_file.close();
 				outputs.file_open = false;
 			}
 		}
