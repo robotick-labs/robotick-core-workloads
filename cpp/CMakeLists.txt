@@ -219,6 +219,16 @@ target_compile_definitions(mqtt-c PUBLIC
 
 target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 
+# ========================
+# ✅ Add whisper.cpp (speech-to-text backend)
+# ========================
+
+# Add whisper.cpp submodule at: cpp/tests/external/whisper.cpp
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tests/external/whisper.cpp ${CMAKE_CURRENT_BINARY_DIR}/whisper_build)
+
+# Link whisper.cpp directly into the test target
+target_link_libraries(robotick-core-workloads PRIVATE whisper)
+
 # =========================
 # ✅ ESP32 libs (if needed)
 # =========================

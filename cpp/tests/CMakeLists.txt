@@ -56,7 +56,10 @@ target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_ENABLE
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_TEST_MODE=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE CATCH_CONFIG_ENABLE_EXCEPTIONS)
 
+# =========================================
 # Discover Catch2 TEST_CASEs automatically
+# =========================================
+
 include(Catch)
 catch_discover_tests(robotick_core_workloads_tests)
 
