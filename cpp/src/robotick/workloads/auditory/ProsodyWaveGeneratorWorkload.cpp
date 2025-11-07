@@ -331,8 +331,10 @@ namespace robotick
 				// --- Synthetic partials ---
 				if (partials_gain > 0.0f && f0 > 0.0)
 				{
+#if ENABLE_PARTIALS_LOG
 					const bool emit_log = (tick_info.tick_count % 10) == 0;
 					FixedString<512> harmonic_log = "partials: ";
+#endif // #if ENABLE_PARTIALS_LOG
 
 					const int num_partials = std::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1);
 					for (int harmonic_index = 0; harmonic_index < num_partials; ++harmonic_index)
@@ -354,13 +356,21 @@ namespace robotick
 						const double harmonic_step = two_pi * harmonic_frequency / static_cast<double>(sample_rate);
 						phase_local[phase_index] += harmonic_step;
 
+#if ENABLE_PARTIALS_LOG
 						// Append to single-line log
 						if (emit_log)
+						{
 							harmonic_log.appendf("h%d=%.3f ", harmonic_index + 1, harmonic_amplitude);
+						}
+#endif // #if ENABLE_PARTIALS_LOG
 					}
 
+#if ENABLE_PARTIALS_LOG
 					if (emit_log)
+					{
 						ROBOTICK_INFO("%s", harmonic_log.c_str());
+					}
+#endif // #if ENABLE_PARTIALS_LOG
 				}
 
 				// --- Noise (one-pole LPF) ---

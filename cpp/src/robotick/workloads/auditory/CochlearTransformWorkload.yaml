@@ -4,6 +4,7 @@ platforms:
       - robotick/systems/audio/AudioFrame.cpp
       - robotick/systems/audio/AudioSystem.cpp
       - robotick/systems/auditory/CochlearFrame.cpp
+      - robotick/systems/auditory/CochlearTransform.cpp
 
     deps:
       - name: SDL2
