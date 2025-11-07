@@ -122,18 +122,23 @@ namespace robotick
 			// Ensure at least one-bin width and a center within the span.
 			if (band_info.right_bin <= band_info.left_bin)
 			{
-				band_info.right_bin = std::min(static_cast<int>(CochlearTransformState::fft_bins - 1), band_info.left_bin + 1);
+				const int min_exclusive_right = band_info.left_bin + 1;
+				band_info.right_bin = std::min(static_cast<int>(CochlearTransformState::fft_bins), min_exclusive_right);
 			}
-			if (band_info.center_bin <= band_info.left_bin)
+
+			if (band_info.center_bin < band_info.left_bin || band_info.center_bin >= band_info.right_bin)
 			{
-				const int half_span = (band_info.right_bin - band_info.left_bin) / 2;
-				band_info.center_bin = std::min(band_info.right_bin - 1, band_info.left_bin + half_span);
+				const int span = std::max(1, band_info.right_bin - band_info.left_bin);
+				const int proposed_center = band_info.left_bin + span / 2;
+				band_info.center_bin = std::clamp(proposed_center, band_info.left_bin, band_info.right_bin - 1);
 			}
 		}
 	}
 
 	void CochlearTransform::build_env_filters(const CochlearTransformConfig& config, CochlearTransformState& state)
 	{
+		ROBOTICK_ASSERT_MSG(state.frame_rate_hz > 0.0f, "state.frame_rate_hz should have been set by the calling code");
+
 		const double frame_period_seconds = 1.0 / state.frame_rate_hz;
 
 		// Envelope low-pass.

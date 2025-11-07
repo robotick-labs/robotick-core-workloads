@@ -100,7 +100,7 @@ namespace robotick
 
 				for (int i = 0; i < emit_samples; ++i)
 				{
-					const float t = static_cast<float>(i) / static_cast<float>(emit_samples - 1);
+					const float t = (emit_samples > 1) ? static_cast<float>(i) / static_cast<float>(emit_samples - 1) : 0.0f;
 					const float freq = f0_prev + t * (frequency - f0_prev);
 					const float amp = a0_prev + t * (amplitude - a0_prev);
 					outputs.mono.samples[i] += amp * std::sin(phase);

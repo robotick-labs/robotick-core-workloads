@@ -11,7 +11,31 @@
 
 namespace robotick
 {
+	// ------------------------------------------------------------------------
+	// === Helpers ===
+	// ------------------------------------------------------------------------
 
+	static bool read_u32le(std::ifstream& f, uint32_t& out)
+	{
+		unsigned char b[4];
+		f.read(reinterpret_cast<char*>(b), 4);
+		if (!f.good() || f.gcount() != 4)
+			return false;
+		out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+		return true;
+	}
+
+	static bool read_u16le(std::ifstream& f, uint16_t& out)
+	{
+		unsigned char b[2];
+		f.read(reinterpret_cast<char*>(b), 2);
+		if (!f.good() || f.gcount() != 2)
+			return false;
+		out = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
+		return true;
+	}
+
+	// ------------------------------------------------------------------------
 	bool WavFile::exists(const char* path)
 	{
 		std::ifstream f(path, std::ios::binary);
@@ -21,6 +45,7 @@ namespace robotick
 	// ------------------------------------------------------------------------
 	// === Load (read-only) ===
 	// ------------------------------------------------------------------------
+
 	bool WavFile::load(const char* path)
 	{
 		std::ifstream f(path, std::ios::binary);
@@ -30,27 +55,17 @@ namespace robotick
 			return false;
 		}
 
-		// Little-endian helpers
-		auto read_u32le = [&](uint32_t& out)
-		{
-			unsigned char b[4];
-			f.read(reinterpret_cast<char*>(b), 4);
-			out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
-		};
-		auto read_u16le = [&](uint16_t& out)
-		{
-			unsigned char b[2];
-			f.read(reinterpret_cast<char*>(b), 2);
-			out = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
-		};
-
-		// RIFF header
 		char riff_id[4];
-		f.read(riff_id, 4);
 		uint32_t riff_size;
-		read_u32le(riff_size);
 		char wave_id[4];
-		f.read(wave_id, 4);
+
+		f.read(riff_id, 4);
+		if (f.gcount() != 4 || !read_u32le(f, riff_size) || !f.read(wave_id, 4) || f.gcount() != 4)
+		{
+			ROBOTICK_WARNING("Truncated or invalid WAV header in %s", path);
+			return false;
+		}
+
 		if (std::strncmp(riff_id, "RIFF", 4) != 0 || std::strncmp(wave_id, "WAVE", 4) != 0)
 		{
 			ROBOTICK_WARNING("Not a RIFF/WAVE file: %s", path);
@@ -58,31 +73,45 @@ namespace robotick
 		}
 
 		bool have_fmt = false, have_data = false;
-		uint16_t audio_format = 0, num_channels = 0, bits_per_sample = 0;
+		uint16_t audio_format = 0, bits_per_sample = 0;
 		uint32_t data_size = 0;
 		std::streampos data_pos;
 
 		while (f && (!have_fmt || !have_data))
 		{
 			char chunk_id[4];
-			uint32_t chunk_size;
+			uint32_t chunk_size = 0;
+
 			f.read(chunk_id, 4);
-			if (!f)
-				break;
-			read_u32le(chunk_size);
+			if (f.gcount() != 4 || !read_u32le(f, chunk_size))
+			{
+				ROBOTICK_WARNING("Unexpected EOF or corrupt chunk header in %s", path);
+				return false;
+			}
 
 			if (std::strncmp(chunk_id, "fmt ", 4) == 0)
 			{
-				read_u16le(audio_format);
-				read_u16le(num_channels);
-				read_u32le(sample_rate);
+				if (!read_u16le(f, audio_format) || !read_u16le(f, num_channels) || !read_u32le(f, sample_rate))
+				{
+					ROBOTICK_WARNING("Corrupt fmt chunk in %s", path);
+					return false;
+				}
 				uint32_t byte_rate;
-				read_u32le(byte_rate);
 				uint16_t block_align;
-				read_u16le(block_align);
-				read_u16le(bits_per_sample);
+				if (!read_u32le(f, byte_rate) || !read_u16le(f, block_align) || !read_u16le(f, bits_per_sample))
+				{
+					ROBOTICK_WARNING("Corrupt fmt chunk in %s", path);
+					return false;
+				}
 				if (chunk_size > 16)
+				{
 					f.seekg(chunk_size - 16, std::ios::cur);
+					if (!f.good())
+					{
+						ROBOTICK_WARNING("Failed to skip extra fmt bytes in %s", path);
+						return false;
+					}
+				}
 				have_fmt = true;
 			}
 			else if (std::strncmp(chunk_id, "data", 4) == 0)
@@ -94,10 +123,22 @@ namespace robotick
 			else
 			{
 				f.seekg(chunk_size, std::ios::cur);
+				if (!f.good())
+				{
+					ROBOTICK_WARNING("Failed to skip unknown chunk in %s", path);
+					return false;
+				}
 			}
 
 			if (chunk_size & 1)
+			{
 				f.seekg(1, std::ios::cur);
+				if (!f.good())
+				{
+					ROBOTICK_WARNING("Failed to skip padding byte in %s", path);
+					return false;
+				}
+			}
 		}
 
 		if (!have_fmt || !have_data || audio_format != 1 || (bits_per_sample != 16) || (num_channels != 1 && num_channels != 2))
@@ -117,10 +158,26 @@ namespace robotick
 		{
 			int16_t l = 0, r = 0;
 			f.read(reinterpret_cast<char*>(&l), 2);
+			if (!f.good() || f.gcount() != 2)
+			{
+				ROBOTICK_WARNING("Truncated left sample at frame %zu in %s", i, path);
+				return false;
+			}
+
 			if (num_channels == 2)
+			{
 				f.read(reinterpret_cast<char*>(&r), 2);
+				if (!f.good() || f.gcount() != 2)
+				{
+					ROBOTICK_WARNING("Truncated right sample at frame %zu in %s", i, path);
+					return false;
+				}
+			}
 			else
+			{
 				r = l;
+			}
+
 			left_samples[i] = static_cast<float>(l) / 32768.0f;
 			right_samples[i] = static_cast<float>(r) / 32768.0f;
 		}

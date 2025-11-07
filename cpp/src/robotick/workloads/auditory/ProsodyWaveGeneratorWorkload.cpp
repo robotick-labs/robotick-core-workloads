@@ -138,13 +138,27 @@ namespace robotick
 			const double slope = std::cos(s.phase[0]) * s.last_step_fundamental * static_cast<double>(s.tone_gain_smooth) *
 								 static_cast<double>(s.previous_amplitude_linear);
 
+			const int upper = std::min(max_tail_samples, capacity);
+			if (upper <= 0)
+			{
+				return 0;
+			}
+
 			int num_samples = 0;
 			if (std::fabs(slope) > 1e-9)
 			{
 				num_samples = static_cast<int>(std::ceil(std::fabs(current_value / slope)));
 			}
 
-			num_samples = std::clamp(num_samples, 4, std::min(max_tail_samples, capacity));
+			num_samples = std::clamp(num_samples, 0, upper);
+			if (upper >= 4)
+			{
+				num_samples = std::max(num_samples, 4);
+			}
+			else
+			{
+				num_samples = upper;
+			}
 
 			double value = current_value;
 			for (int sample_index = 0; sample_index < num_samples; ++sample_index)

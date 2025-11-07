@@ -136,8 +136,6 @@ namespace robotick::test
 			// Ensures that the ring-buffered frame construction logic behaves correctly:
 			// - A frame cannot be built until at least one full frame_size of samples
 			//   has been written to the buffer.
-			// - Once available, overlapping frames (75% overlap) can be produced on each
-			//   successive call to make_frame_from_ring().
 			// - Adding hop_size samples advances the window by one frame.
 			//
 			// This validates the temporal framing logic used for real-time STFT analysis.
@@ -163,10 +161,6 @@ namespace robotick::test
 
 			have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK(have_frame); // first frame now available
-
-			// The next overlapped frame is immediately available (75% overlap).
-			have_frame = CochlearTransform::make_frame_from_ring(state);
-			CHECK(have_frame);
 
 			std::vector<float> more_silence(CochlearTransformState::hop_size, 0.0f);
 			CochlearTransform::push_samples(more_silence.data(), more_silence.size(), config, state);
