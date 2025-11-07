@@ -13,7 +13,8 @@ apt-get install -y --no-install-recommends \
   libsdl2-dev libsdl2-ttf-dev libsdl2-gfx-dev \
   libssl-dev libcurl4-openssl-dev \
   python3-dev \
-  libyaml-cpp-dev
+  libyaml-cpp-dev \
+  libkissfft-dev
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*
