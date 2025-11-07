@@ -1,0 +1,25 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/audio/AudioFrame.cpp
+      - robotick/systems/audio/AudioSystem.cpp
+      - robotick/systems/auditory/ProsodyState.cpp
+
+    deps:
+      - name: SDL2
+        source:
+          type: apt
+          package: libsdl2-dev
+          pin: ">=2.0.14"
+        find_package: SDL2
+        link_target: SDL2::SDL2
+
+      - name: KissFFT
+        source:
+          type: apt
+          package: libkissfft-dev
+          pin: ">=130"
+        include_dirs:
+          - /usr/include
+        link_libraries:
+          - kissfft-float

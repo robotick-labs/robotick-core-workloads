@@ -73,3 +73,16 @@ add_custom_command(TARGET robotick_core_workloads_tests POST_BUILD
     $<TARGET_FILE_DIR:robotick_core_workloads_tests>
 )
 
+# =======================================================
+# ✅ Test data for WavFile and other tests
+# =======================================================
+
+set(TEST_DATA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data)
+set(TEST_DATA_DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/data)
+
+message(STATUS "📦 Copying test data from: ${TEST_DATA_SOURCE_DIR}")
+message(STATUS "📦 Copying test data to:   ${TEST_DATA_DEST_DIR}")
+
+file(COPY ${TEST_DATA_SOURCE_DIR}
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
