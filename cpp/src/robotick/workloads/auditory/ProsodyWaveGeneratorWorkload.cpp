@@ -27,8 +27,8 @@ namespace robotick
 
 		// --- Synthetic partials ---
 		bool enable_partials = true;
-		float partials_base = 0.6f;
-		int max_num_partials = 5; // synthetic harmonics beyond f0
+		float partials_base = 1.0f;
+		int max_num_partials = 16; // synthetic harmonics beyond f0
 
 		// --- Noise ---
 		bool enable_noise = true;
@@ -36,7 +36,7 @@ namespace robotick
 
 		// --- Brightness → noise and partial shaping ---
 		float brightness_to_noise_scale = 0.8f;
-		float brightness_to_partial_scale = 1.0f;
+		float brightness_to_partial_scale = 5.0f;
 
 		// --- Harmonicity influence ---
 		float harmonicity_to_noise_scale = 0.03f;
@@ -47,7 +47,7 @@ namespace robotick
 		float noise_cutoff_default_hz = 2000.0f;
 
 		// --- Smoothing ---
-		float mix_smooth_alpha = 0.2f;
+		float mix_smooth_alpha = 0.8f;
 
 		// --- Safety ---
 		float min_component_gain = 0.0f;
@@ -162,6 +162,47 @@ namespace robotick
 			return capacity;
 		}
 
+		double compute_partial_weight(const ProsodyState& prosody, int harmonic_index_zero_based, int max_harmonics)
+		{
+			const int h = harmonic_index_zero_based + 1; // 1..N
+			const double N = static_cast<double>(std::max(1, max_harmonics));
+
+			// Tilt (convert dB/har to linear)
+			const double tilt_db_per_h = prosody.harmonic_tilt_db_per_h;
+			const double tilt_linear = std::pow(10.0, (tilt_db_per_h * (h - 1)) / 20.0);
+
+			// Even/odd emphasis
+			const float even_odd_ratio = (prosody.even_odd_ratio > 0.0f) ? prosody.even_odd_ratio : 1.0f;
+			const bool is_even = ((h % 2) == 0);
+			const double clamped_eo = std::clamp(static_cast<double>(even_odd_ratio), 0.25, 4.0);
+			const double eo = is_even ? clamped_eo : (1.0 / clamped_eo);
+
+			// Centroid pull
+			const double centroid_ratio = std::clamp(static_cast<double>(prosody.centroid_ratio), 0.0, 1.0);
+			const double center = 1.0 + centroid_ratio * (N - 1.0); // 1..N
+			const double dist = std::abs(static_cast<double>(h) - center);
+			const double centroid_weight = 1.0 / (1.0 + 0.15 * dist);
+
+			// Formant bumps
+			auto gaussian = [](double x, double m, double s)
+			{
+				const double d = (x - m) / std::max(1e-6, s);
+				return std::exp(-0.5 * d * d);
+			};
+
+			const double f1 = 1.0 + std::clamp(static_cast<double>(prosody.formant1_ratio), 0.0, 1.0) * (N - 1.0);
+			const double f2 = 1.0 + std::clamp(static_cast<double>(prosody.formant2_ratio), 0.0, 1.0) * (N - 1.0);
+			const double formant_emphasis = 0.6 * gaussian(h, f1, 1.2) + 0.4 * gaussian(h, f2, 1.8) + 0.3; // floor
+
+			// Support gating
+			const double support_ratio = std::clamp(static_cast<double>(prosody.harmonic_support_ratio), 0.0, 1.0);
+			const double support_falloff = 1.0 / (1.0 + (1.0 - support_ratio) * 0.5 * (h - 1));
+
+			// Final weight
+			double w = tilt_linear * eo * centroid_weight * formant_emphasis * support_falloff;
+			return std::clamp(w, 0.0, 4.0);
+		}
+
 		void tick(const TickInfo& tick_info)
 		{
 			static constexpr double ns_to_sec = 1e-9;
@@ -197,8 +238,11 @@ namespace robotick
 			}
 
 			// --- Interpret expressive cues ---
-			const float brightness = clamp01(prosody.spectral_brightness / 10.0f); // normalized heuristic
+			const float brightness01 = clamp01(prosody.spectral_brightness / 150.0f); // normalized heuristic
 			const float harmonicity = prosody.harmonicity_hnr_db;
+
+			// harmonic descriptors
+			const float support_ratio = clamp01(prosody.harmonic_support_ratio); // 0..1: how many harmonics present
 
 			// --- Compute component gains ---
 			float tone_gain = config.enable_tone ? config.tone_base : 0.0f;
@@ -208,14 +252,16 @@ namespace robotick
 			// Harmonicity tends to reduce noise and increase partials
 			if (config.enable_noise)
 			{
-				noise_gain *= (1.0f + config.brightness_to_noise_scale * brightness);
+				noise_gain *= (1.0f + config.brightness_to_noise_scale * brightness01);
 				noise_gain *= (1.0f - config.harmonicity_to_noise_scale * std::max(0.0f, harmonicity));
+				noise_gain *= (0.7f + 0.6f * (1.0f - support_ratio));
 			}
 
 			if (config.enable_partials)
 			{
-				partials_gain *= (1.0f + config.brightness_to_partial_scale * brightness);
+				partials_gain *= (1.0f + config.brightness_to_partial_scale * brightness01);
 				partials_gain *= (1.0f + config.harmonicity_to_partial_scale * std::max(0.0f, harmonicity));
+				partials_gain *= (0.5f + 0.5f * support_ratio);
 			}
 
 			// Clamp
@@ -237,7 +283,7 @@ namespace robotick
 			float cutoff_hz = config.noise_cutoff_default_hz;
 			if (config.use_brightness_for_noise_lpf)
 			{
-				cutoff_hz = 400.0f + brightness * 3000.0f;
+				cutoff_hz = 400.0f + brightness01 * 3000.0f;
 			}
 			cutoff_hz = std::clamp(cutoff_hz, 80.0f, static_cast<float>(nyquist_hz - 1.0));
 			const float alpha =
@@ -285,6 +331,9 @@ namespace robotick
 				// --- Synthetic partials ---
 				if (partials_gain > 0.0f && f0 > 0.0)
 				{
+					const bool emit_log = (tick_info.tick_count % 10) == 0;
+					FixedString<512> harmonic_log = "partials: ";
+
 					const int num_partials = std::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1);
 					for (int harmonic_index = 0; harmonic_index < num_partials; ++harmonic_index)
 					{
@@ -294,13 +343,24 @@ namespace robotick
 							continue;
 						}
 
-						const double harmonic_step = two_pi * harmonic_frequency / static_cast<double>(sample_rate);
-						const double amplitude_scale = 1.0 / (1.0 + harmonic_index); // roll off higher harmonics
-
 						const int phase_index = 1 + harmonic_index;
-						signal_partials += amplitude_scale * std::sin(phase_local[phase_index]);
+
+						const double baseRolloff = 1.0 / (1.0 + harmonic_index); // keep your gentle rolloff
+						const double w = compute_partial_weight(
+							prosody, harmonic_index, std::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1));
+						const double harmonic_amplitude = w * baseRolloff;
+						signal_partials += harmonic_amplitude * std::sin(phase_local[phase_index]);
+
+						const double harmonic_step = two_pi * harmonic_frequency / static_cast<double>(sample_rate);
 						phase_local[phase_index] += harmonic_step;
+
+						// Append to single-line log
+						if (emit_log)
+							harmonic_log.appendf("h%d=%.3f ", harmonic_index + 1, harmonic_amplitude);
 					}
+
+					if (emit_log)
+						ROBOTICK_INFO("%s", harmonic_log.c_str());
 				}
 
 				// --- Noise (one-pole LPF) ---

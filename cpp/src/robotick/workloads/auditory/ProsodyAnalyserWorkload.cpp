@@ -67,6 +67,118 @@ namespace robotick
 			return fallback;
 		}
 
+		static inline float db(float x) { return 20.0f * std::log10(std::max(1e-12f, x)); }
+
+		void compute_harmonic_descriptors(const HarmonicPitchResult& hp, ProsodyState& prosody)
+		{
+			const size_t H = hp.harmonic_amplitudes.size();
+			if (H == 0 || hp.h1_f0_hz <= 0.0f)
+			{
+				prosody.h1_to_h2_db = 0.0f;
+				prosody.harmonic_tilt_db_per_h = 0.0f;
+				prosody.even_odd_ratio = 1.0f;
+				prosody.harmonic_support_ratio = 0.0f;
+				prosody.centroid_ratio = 0.0f;
+				prosody.formant1_ratio = 0.0f;
+				prosody.formant2_ratio = 0.0f;
+				return;
+			}
+
+			// H1 vs H2 (in dB). If H2 missing, treat as very low.
+			const float h1 = hp.harmonic_amplitudes[0];
+			const float h2 = (H >= 2) ? hp.harmonic_amplitudes[1] : 1e-6f;
+			prosody.h1_to_h2_db = db(h1) - db(h2);
+
+			// Linear fit of dB(ampl) vs harmonic index -> simple tilt per harmonic
+			double sx = 0.0, sy = 0.0, sxy = 0.0, sx2 = 0.0;
+			double total = 0.0, weighted_index_sum = 0.0;
+			double even_sum = 0.0, odd_sum = 0.0;
+			int support_count = 0;
+
+			// Relative threshold vs H1 (e.g., 12 dB down)
+			const float rel_thresh = std::max(1e-6f, h1 * std::pow(10.0f, -12.0f / 20.0f));
+
+			for (size_t i = 0; i < H; ++i)
+			{
+				const double idx = static_cast<double>(i + 1); // harmonic number
+				const double a = static_cast<double>(std::max(1e-12f, hp.harmonic_amplitudes[i]));
+				const double adb = 20.0 * std::log10(a);
+
+				sx += idx;
+				sy += adb;
+				sxy += idx * adb;
+				sx2 += idx * idx;
+
+				total += a;
+				weighted_index_sum += idx * a;
+
+				if (((i + 1) % 2) == 0)
+				{
+					even_sum += a;
+				}
+				else
+				{
+					odd_sum += a;
+				}
+
+				if (a >= rel_thresh)
+				{
+					support_count++;
+				}
+			}
+
+			const double n = static_cast<double>(H);
+			const double denom = std::max(1e-9, (n * sx2 - sx * sx));
+			const double slope_db_per_h = (n * sxy - sx * sy) / denom; // dB per harmonic increase
+			prosody.harmonic_tilt_db_per_h = static_cast<float>(slope_db_per_h);
+
+			prosody.even_odd_ratio = (odd_sum > 0.0) ? static_cast<float>(even_sum / odd_sum) : 1.0f;
+			prosody.harmonic_support_ratio = static_cast<float>(support_count) / static_cast<float>(H);
+			prosody.centroid_ratio = (total > 0.0) ? static_cast<float>((weighted_index_sum / total) / n) : 0.0f;
+
+			// Very rough “formant” peaks over the harmonic envelope: smooth + local maxima over dB
+			// Simple 3-point check after a tiny moving average in index domain
+			float smoothed_db[64]; // enough for your current MaxHarmonics
+			const size_t N = std::min(H, static_cast<size_t>(64));
+
+			// 3-tap moving average on dB amplitude
+			for (size_t i = 0; i < N; ++i)
+			{
+				const double a0 = 20.0 * std::log10(std::max(1e-12f, hp.harmonic_amplitudes[i]));
+				const double aL = 20.0 * std::log10(std::max(1e-12f, hp.harmonic_amplitudes[(i > 0) ? i - 1 : i]));
+				const double aR = 20.0 * std::log10(std::max(1e-12f, hp.harmonic_amplitudes[(i + 1 < N) ? i + 1 : i]));
+				smoothed_db[i] = static_cast<float>((aL + a0 + aR) / 3.0);
+			}
+
+			// Find top two local maxima indices (by dB)
+			int best_i = -1, second_i = -1;
+			float best_v = -1e9f, second_v = -1e9f;
+			for (size_t i = 1; i + 1 < N; ++i)
+			{
+				const float v = smoothed_db[i];
+				if (v > smoothed_db[i - 1] && v >= smoothed_db[i + 1])
+				{
+					if (v > best_v)
+					{
+						second_v = best_v;
+						second_i = best_i;
+						best_v = v;
+						best_i = static_cast<int>(i);
+					}
+					else if (v > second_v)
+					{
+						second_v = v;
+						second_i = static_cast<int>(i);
+					}
+				}
+			}
+
+			// Normalise to 0..1 by harmonic count
+			const float denom_idx = (N > 1) ? static_cast<float>(N - 1) : 1.0f;
+			prosody.formant1_ratio = (best_i >= 0) ? static_cast<float>(best_i) / denom_idx : 0.0f;
+			prosody.formant2_ratio = (second_i >= 0) ? static_cast<float>(second_i) / denom_idx : 0.0f;
+		}
+
 		// ----------------------------------------------------------
 		// Main tick: compute expressive prosody from harmonics
 		// ----------------------------------------------------------
@@ -191,6 +303,9 @@ namespace robotick
 			{
 				prosody.spectral_brightness = 0.0f;
 			}
+
+			// --- harmonic descriptors ---
+			compute_harmonic_descriptors(pitch_info, prosody);
 
 			// --- Jitter & shimmer (rough proxies) ---
 			const float pitch_delta = std::fabs(current_pitch - previous_pitch);
