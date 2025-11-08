@@ -88,6 +88,7 @@
     "scoped_allocator": "cpp",
     "shared_mutex": "cpp",
     "stdfloat": "cpp",
-    "*.inc": "cpp"
+    "*.inc": "cpp",
+    "hash_map": "cpp"
   }
 }

@@ -12,9 +12,9 @@
 namespace robotick
 {
 
-	void SpeechToText::initialize(const SpeechToTextConfig& settings, SpeechToTextInternalState& state)
+	void SpeechToText::initialize(const SpeechToTextConfig& config, SpeechToTextInternalState& state)
 	{
-		const char* model_path = settings.model_path.c_str();
+		const char* model_path = config.model_path.c_str();
 
 		// --- Init Whisper context (like CLI) ---
 		whisper_context_params& cparams = state.whisper_cparams;
@@ -28,7 +28,7 @@ namespace robotick
 		// --- Full params: mirror CLI defaults (beam=5, best_of=5 seen in your log) ---
 		whisper_full_params& wparams = state.whisper_params;
 		wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-		wparams.n_threads = std::min(4U, std::thread::hardware_concurrency());
+		wparams.n_threads = clamp<int>(config.num_threads, 1, std::thread::hardware_concurrency());
 		wparams.offset_ms = 0;
 		wparams.duration_ms = 0;
 		wparams.translate = false;

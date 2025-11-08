@@ -161,12 +161,13 @@ namespace robotick::test
 			REQUIRE(pcmf32.size() == 176000);
 
 			// set up SpeechToText - loading model etc
-			SpeechToTextConfig settings;
-			settings.model_path = model_path;
+			SpeechToTextConfig config;
+			config.model_path = model_path;
+			config.num_threads = std::thread::hardware_concurrency(); // allow use of all available threads to keep test fast
 
 			SpeechToTextInternalState state;
 
-			SpeechToText::initialize(settings, state);
+			SpeechToText::initialize(config, state);
 
 			// perform our transcription
 			TranscribedWords words;

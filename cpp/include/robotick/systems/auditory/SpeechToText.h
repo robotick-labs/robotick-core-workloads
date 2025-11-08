@@ -27,6 +27,7 @@ namespace robotick
 	struct SpeechToTextConfig
 	{
 		FixedString256 model_path;
+		uint16_t num_threads = 4;
 	};
 
 	struct SpeechToTextInternalState
@@ -39,7 +40,7 @@ namespace robotick
 
 	struct SpeechToText
 	{
-		static void initialize(const SpeechToTextConfig& settings, SpeechToTextInternalState& state);
+		static void initialize(const SpeechToTextConfig& config, SpeechToTextInternalState& state);
 		static void uninitialize(SpeechToTextInternalState& state);
 
 		static bool transcribe(const SpeechToTextInternalState& state, const float* buffer, const size_t num_samples, TranscribedWords& out_words);
