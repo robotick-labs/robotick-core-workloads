@@ -4,145 +4,189 @@
 #include "robotick/systems/auditory/SpeechToText.h"
 #include "robotick/systems/audio/WavFile.h"
 
+#include "whisper.h"
+
 #include <catch2/catch_all.hpp>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <thread>
 
 namespace robotick::test
 {
 
-	TEST_CASE("Unit/Systems/Auditory/SpeechToText")
+	namespace utils
 	{
-		ROBOTICK_INFO("Current working dir: '%s'", std::filesystem::current_path().string().c_str());
-		SpeechToText::reset();
-		SpeechToText::init();
-
-		SECTION("Transcript is empty on init")
+		// Tiny WAV reader (16-bit PCM mono @ 16 kHz).
+		// - parses RIFF header and finds the "data" chunk.
+		static bool load_wav_s16_mono_16k(const char* path, std::vector<float>& out)
 		{
-			auto& t = SpeechToText::transcript();
-			REQUIRE(t.size() == 0);
-		}
-
-		SECTION("Push mono WAV into ring and extract window")
-		{
-			WavFile wav;
-			REQUIRE(wav.load("data/wav/mono_valid.wav"));
-
-			REQUIRE(wav.get_sample_rate() == 44100);
-			REQUIRE(wav.get_num_channels() == 1);
-			REQUIRE(wav.get_frame_count() == 44100);
-			REQUIRE(wav.get_duration_seconds() == 1.0f);
-
-			const float* mono = wav.get_left_samples().data();
-			REQUIRE(mono != nullptr);
-
-			const float start_time = 123.0f;
-			SpeechToText::push_audio(mono, wav.get_frame_count(), wav.get_sample_rate(), start_time);
-
-			SpeechToTextBuffer query;
-			query.start_time = 123.1f;
-			query.end_time = 123.3f;
-
-			const float* view = nullptr;
-			size_t count = 0;
-			size_t rate = 0;
-
-			REQUIRE(SpeechToText::get_audio_window(query, view, count, rate));
-			REQUIRE(view != nullptr);
-			REQUIRE(count > 0);
-			REQUIRE(rate == speech_to_text::target_sample_rate_hz);
-		}
-
-		SECTION("Rejects query with no audio pushed")
-		{
-			SpeechToText::reset();
-			SpeechToText::init();
-
-			SpeechToTextBuffer query{100.0f, 101.0f};
-			const float* view = nullptr;
-			size_t count = 0, rate = 0;
-			REQUIRE_FALSE(SpeechToText::get_audio_window(query, view, count, rate));
-		}
-
-		SECTION("Handles resample from 48000Hz")
-		{
-			constexpr size_t frames = 48000;
-			std::vector<float> samples(frames);
-			for (size_t i = 0; i < frames; ++i)
-				samples[i] = std::sin(2 * 3.14159f * 440.0f * i / 48000.0f);
-
-			SpeechToText::push_audio(samples.data(), frames, 48000, 200.0f);
-
-			SpeechToTextBuffer query{200.2f, 200.6f};
-			const float* view = nullptr;
-			size_t count = 0, rate = 0;
-			REQUIRE(SpeechToText::get_audio_window(query, view, count, rate));
-			REQUIRE(rate == speech_to_text::target_sample_rate_hz);
-			REQUIRE(count > 0);
-		}
-
-		SECTION("Multiple push_audio calls form continuous stream")
-		{
-			std::vector<float> block(22050, 0.5f); // 0.5s @ 44100Hz
-			SpeechToText::push_audio(block.data(), block.size(), 44100, 300.0f);
-			SpeechToText::push_audio(block.data(), block.size(), 44100, 300.5f);
-
-			SpeechToTextBuffer query{300.3f, 300.7f};
-			const float* view = nullptr;
-			size_t count = 0, rate = 0;
-			REQUIRE(SpeechToText::get_audio_window(query, view, count, rate));
-			REQUIRE(count > 0);
-		}
-
-		SECTION("Ring buffer wraparound does not crash")
-		{
-			std::vector<float> block(16000, 0.25f); // 1s @ 16kHz
-			const float base_time = 500.0f;
-			for (int i = 0; i < 12; ++i)
+			std::ifstream f(path, std::ios::binary);
+			if (!f)
 			{
-				float t = base_time + static_cast<float>(i);
-				SpeechToText::push_audio(block.data(), block.size(), 16000, t);
+				return false;
 			}
 
-			SpeechToTextBuffer query{base_time + 10.0f, base_time + 10.5f};
-			const float* view = nullptr;
-			size_t count = 0, rate = 0;
-			REQUIRE(SpeechToText::get_audio_window(query, view, count, rate));
-			REQUIRE(count > 0);
-			REQUIRE(rate == speech_to_text::target_sample_rate_hz);
+			auto rd32 = [&](uint32_t& v)
+			{
+				f.read(reinterpret_cast<char*>(&v), 4);
+				return bool(f);
+			};
+			auto rd16 = [&](uint16_t& v)
+			{
+				f.read(reinterpret_cast<char*>(&v), 2);
+				return bool(f);
+			};
+
+			uint32_t riff, riff_size, wave;
+			if (!rd32(riff) || !rd32(riff_size) || !rd32(wave))
+			{
+				return false;
+			}
+			if (riff != 0x46464952 /*"RIFF"*/ || wave != 0x45564157 /*"WAVE"*/)
+			{
+				return false;
+			}
+
+			uint16_t audio_format = 0, num_channels = 0, bits_per_sample = 0;
+			uint32_t sample_rate = 0;
+			uint32_t data_size = 0;
+			std::streampos data_pos = -1;
+
+			while (f && data_pos < 0)
+			{
+				uint32_t chunk_id = 0, chunk_sz = 0;
+				if (!rd32(chunk_id) || !rd32(chunk_sz))
+				{
+					return false;
+				}
+				const std::streampos next = f.tellg() + static_cast<std::streamoff>(chunk_sz);
+
+				if (chunk_id == 0x20746d66 /*"fmt "*/)
+				{
+					if (chunk_sz < 16)
+						return false;
+					if (!rd16(audio_format) || !rd16(num_channels) || !rd32(sample_rate))
+						return false;
+					uint32_t byte_rate = 0;
+					uint16_t block_align = 0;
+					if (!rd32(byte_rate) || !rd16(block_align) || !rd16(bits_per_sample))
+						return false;
+					f.seekg(next);
+				}
+				else if (chunk_id == 0x61746164 /*"data"*/)
+				{
+					data_pos = f.tellg();
+					data_size = chunk_sz;
+					f.seekg(next); // leave loop afterward
+				}
+				else
+				{
+					f.seekg(next);
+				}
+			}
+
+			if (data_pos < 0)
+				return false;
+			if (audio_format != 1 /*PCM*/ || num_channels != 1 || bits_per_sample != 16 || sample_rate != 16000)
+			{
+				return false; // keep the test strict to match the CLI sample
+			}
+
+			// Read PCM16 payload
+			f.clear();
+			f.seekg(data_pos);
+			const size_t num_samples = data_size / 2;
+			std::vector<int16_t> pcm16(num_samples);
+			f.read(reinterpret_cast<char*>(pcm16.data()), data_size);
+			if (!f)
+				return false;
+
+			out.resize(num_samples);
+			for (size_t i = 0; i < num_samples; ++i)
+			{
+				out[i] = static_cast<float>(pcm16[i]) / 32768.0f;
+			}
+			return true;
 		}
 
-		SECTION("Push WAV and simulate transcript")
+	} // namespace utils
+
+	TEST_CASE("Unit/Systems/Auditory/SpeechToText")
+	{
+		const char* model_path = "data/models/whisper/ggml-base.en.bin";
+		const char* wav_path_jfk = "data/wav/jfk.wav";
+
+		// Expected JFK transcription as word-level spans
+		static const TranscribedWord expected_words_jfk[] = {
+			{"[_BEG_]", 0.000000f, 0.000000f},
+			{" And", 0.320000f, 0.370000f},
+			{" so", 0.370000f, 0.530000f},
+			{" my", 0.690000f, 0.850000f},
+			{" fellow", 0.850000f, 1.590000f},
+			{" Americans", 1.590000f, 2.100000f},
+			{",", 2.850000f, 3.300000f},
+			{" ask", 3.300000f, 4.140000f},
+			{" not", 4.140000f, 4.280000f},
+			{" what", 5.030000f, 5.350000f},
+			{" your", 5.410000f, 5.740000f},
+			{" country", 5.740000f, 6.410000f},
+			{" can", 6.410000f, 6.740000f},
+			{" do", 6.740000f, 6.920000f},
+			{" for", 7.000000f, 7.000000f},
+			{" you", 7.010000f, 7.520000f},
+			{",", 7.810000f, 8.050000f},
+			{" ask", 8.190000f, 8.370000f},
+			{" what", 8.370000f, 8.750000f},
+			{" you", 8.910000f, 9.040000f},
+			{" can", 9.040000f, 9.320000f},
+			{" do", 9.320000f, 9.380000f},
+			{" for", 9.440000f, 9.760000f},
+			{" your", 9.760000f, 9.990000f},
+			{" country", 10.020000f, 10.360000f},
+			{".", 10.510000f, 10.990000f},
+			{"[_TT_550]", 11.000000f, 11.000000f},
+		};
+
+		static constexpr size_t num_expected_words_jfk = sizeof(expected_words_jfk) / sizeof(expected_words_jfk[0]);
+
+		ROBOTICK_INFO("Current working dir: '%s'", std::filesystem::current_path().string().c_str());
+
+		SECTION("SpeechToText transcribes JFK WAV correctly")
 		{
-			WavFile wav;
-			REQUIRE(wav.load("data/wav/mono_valid.wav"));
-			const float* mono = wav.get_left_samples().data();
-			REQUIRE(mono);
-			REQUIRE(wav.get_frame_count() > 0);
+			// load our wav-file in required format
+			std::vector<float> pcmf32;
+			REQUIRE(utils::load_wav_s16_mono_16k(wav_path_jfk, pcmf32));
+			REQUIRE(!pcmf32.empty());
+			REQUIRE(pcmf32.size() == 176000);
 
-			// Push whole file at time 100.0
-			SpeechToText::push_audio(mono, wav.get_frame_count(), wav.get_sample_rate(), 100.0f);
+			// set up SpeechToText - loading model etc
+			SpeechToTextConfig settings;
+			settings.model_path = model_path;
 
-			// Query entire span
-			SpeechToTextBuffer buffer;
-			buffer.start_time = 100.0f;
-			buffer.end_time = 101.0f;
+			SpeechToTextInternalState state;
 
-			const float* view = nullptr;
-			size_t count = 0;
-			size_t rate = 0;
-			REQUIRE(SpeechToText::get_audio_window(buffer, view, count, rate));
-			REQUIRE(view);
-			REQUIRE(count > 0);
-			REQUIRE(rate == speech_to_text::target_sample_rate_hz);
+			SpeechToText::initialize(settings, state);
 
-			const auto& transcript = SpeechToText::transcript();
+			// perform our transcription
+			TranscribedWords words;
+			const bool success = SpeechToText::transcribe(state, pcmf32.data(), pcmf32.size(), words);
 
-			REQUIRE(transcript.size() == 2);
-			REQUIRE(transcript[0].word == "hello");
-			REQUIRE(transcript[1].word == "robotick");
-			REQUIRE(transcript[0].engine_time >= buffer.start_time);
-			REQUIRE(transcript[1].engine_time <= buffer.end_time);
+			// ensure the results are what we expect:
+			REQUIRE(success);
+
+			REQUIRE(num_expected_words_jfk == 27);
+			REQUIRE(words.size() == num_expected_words_jfk);
+
+			for (size_t word_index = 0; word_index < words.size(); word_index++)
+			{
+				const TranscribedWord& word = words[word_index];
+				const TranscribedWord& expected_word = expected_words_jfk[word_index];
+
+				CHECK(word.text == expected_word.text);
+				CHECK(word.start_time_sec == Catch::Approx(expected_word.start_time_sec).margin(0.01f));
+				CHECK(word.end_time_sec == Catch::Approx(expected_word.end_time_sec).margin(0.01f));
+			}
 		}
 	}
 
