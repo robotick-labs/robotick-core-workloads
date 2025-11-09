@@ -223,27 +223,8 @@ target_compile_definitions(mqtt-c PUBLIC
 target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 
 # ==================================================
-# ✅ Whisper.cpp (speech-to-text backend — Release fast path)
+# ✅ Configure SpeechToText / Whisper.cpp
 # ==================================================
-
-include(FetchContent)
-include(CheckCXXCompilerFlag)
-
-# --------------------------------------------------
-# Disable extras we don't need
-# --------------------------------------------------
-set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(WHISPER_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
-set(WHISPER_SDL2           OFF CACHE BOOL "" FORCE)
-set(WHISPER_FFMPEG         OFF CACHE BOOL "" FORCE)
-set(WHISPER_COREML         OFF CACHE BOOL "" FORCE)
-set(WHISPER_OPENVINO       OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS      OFF CACHE BOOL "" FORCE)
-
-# --------------------------------------------------
-# Confiigure SpeechToText / Whisper.cpp
-# --------------------------------------------------
 
 # Include Robotick’s Whisper integration module
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/robotick/systems/auditory/SpeechToText.cmake)

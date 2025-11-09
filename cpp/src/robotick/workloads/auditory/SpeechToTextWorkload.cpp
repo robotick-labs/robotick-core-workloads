@@ -6,14 +6,14 @@
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/SpeechToText.h"
 
+#include <atomic>
 #include <cmath>
 #include <condition_variable>
+#include <cstring> // for std::memmove
 #include <mutex>
-#include <thread>
 
 namespace robotick
 {
-#if 0
 	struct SpeechToTextInputs
 	{
 		AudioFrame mono;
@@ -27,36 +27,40 @@ namespace robotick
 
 	static constexpr uint32_t accumulator_capacity_sec = 10;
 	static constexpr uint32_t accumulator_sample_rate_hz = 16000;
-
 	using AudioAccumulator = FixedVector<float, accumulator_capacity_sec * accumulator_sample_rate_hz>;
 
 	struct SpeechToTextState
 	{
 		SpeechToTextInternalState internal_state;
 
-		// Double-buffered accumulators (10 s @ 16 kHz)
-		AudioAccumulator audio_accumulator[2];
-		uint8_t fg_buffer_id = 0;
-		uint8_t bg_buffer_id = 1;
+		AudioAccumulator audio_accumulators[2];
+		std::atomic<bool> is_buffer_swapped{false}; // false → [0] is FG, true → [1] is FG
+
+		TranscribedWords last_result;
+		FixedString512 last_transcript;
 
 		AtomicFlag is_bgthread_active;
 		AtomicFlag has_new_transcript;
 
-		std::thread bg_thread;
+		Thread bg_thread;
 		std::mutex mutex;
 		std::condition_variable cv;
 		bool thread_should_exit = false;
 		bool thread_has_work = false;
+
+		AudioAccumulator& get_fg() { return is_buffer_swapped.load() ? audio_accumulators[1] : audio_accumulators[0]; }
+
+		AudioAccumulator& get_bg() { return is_buffer_swapped.load() ? audio_accumulators[0] : audio_accumulators[1]; }
 	};
 
 	// ---------------------------------------------------------------
 	// Simple linear downsampler to 16 kHz
 	// ---------------------------------------------------------------
-	static void downsample_to_16k(const float* src, size_t src_count, float src_rate, AudioAccumulator& dst)
+	static void downsample_to_16k(const AudioBuffer512& input, const uint32_t input_rate, AudioBuffer512& output)
 	{
-		const float dst_rate = 16000.0f;
-		const float ratio = src_rate / dst_rate;
-		const size_t dst_count = static_cast<size_t>(src_count / ratio);
+		const uint32_t output_rate = 16000.0f;
+		const float ratio = (float)input_rate / (float)output_rate;
+		const size_t dst_count = static_cast<size_t>((float)input.size() / ratio);
 
 		for (size_t dst_index = 0; dst_index < dst_count; ++dst_index)
 		{
@@ -64,10 +68,12 @@ namespace robotick
 			const size_t src_index_i = static_cast<size_t>(src_index_f);
 			const float frac = src_index_f - static_cast<float>(src_index_i);
 
-			const float sample = (src_index_i + 1 < src_count) ? src[src_index_i] * (1.0f - frac) + src[src_index_i + 1] * frac : src[src_index_i];
-			if (dst.size() < dst.capacity())
+			const float sample =
+				(src_index_i + 1 < input.size()) ? input[src_index_i] * (1.0f - frac) + input[src_index_i + 1] * frac : input[src_index_i];
+
+			if (output.size() < output.capacity())
 			{
-				dst.add(sample);
+				output.add(sample);
 			}
 		}
 	}
@@ -75,9 +81,11 @@ namespace robotick
 	// ---------------------------------------------------------------
 	// Background inference thread
 	// ---------------------------------------------------------------
-	static void speech_to_text_thread(SpeechToTextState* state)
+	static void speech_to_text_thread(void* user_data)
 	{
-		while (!state->thread_should_exit)
+		SpeechToTextState* state = static_cast<SpeechToTextState*>(user_data);
+
+		while (true)
 		{
 			std::unique_lock<std::mutex> lock(state->mutex);
 			state->cv.wait(lock,
@@ -85,6 +93,7 @@ namespace robotick
 				{
 					return state->thread_has_work || state->thread_should_exit;
 				});
+
 			if (state->thread_should_exit)
 			{
 				break;
@@ -95,23 +104,23 @@ namespace robotick
 
 			state->is_bgthread_active.set();
 
-			const uint8_t buffer_id = state->bg_buffer_id;
-			const AudioAccumulator& audio_accumulator = state->audio_accumulator[buffer_id];
+			const AudioAccumulator& audio_accumulator = state->get_bg();
 
 			if (!audio_accumulator.empty())
 			{
 				TranscribedWords result;
 				FixedString512 transcript;
+
 				SpeechToText::transcribe(state->internal_state, audio_accumulator.data(), audio_accumulator.size(), result);
 
 				lock.lock();
-				state->internal_state.last_result = result;
-				state->internal_state.last_transcript = transcript;
+				state->last_result = result;
+				state->last_transcript = transcript;
 				state->has_new_transcript.set();
 				lock.unlock();
 			}
 
-			state->is_bgthread_active.clear();
+			state->is_bgthread_active.unset();
 		}
 	}
 
@@ -128,62 +137,60 @@ namespace robotick
 		void load()
 		{
 			SpeechToText::initialize(config, state->internal_state);
-			state->is_bgthread_active.clear();
-			state->has_new_transcript.clear();
-			state->bg_thread = std::thread(speech_to_text_thread, state.get());
+			state->is_bgthread_active.unset();
+			state->has_new_transcript.unset();
+			state->is_buffer_swapped.store(false);
+
+			state->bg_thread = Thread(speech_to_text_thread, static_cast<void*>(&state.get()), "SpeechToTextThread");
 		}
 
 		void tick(const TickInfo& tick_info)
 		{
 			(void)tick_info;
-			const AudioFrame& mono = inputs.mono;
 
-			// downsample new frame to 16 kHz
-			FixedVector<float, 4096> downsampled;
-			downsample_to_16k(mono.samples.data(), mono.samples.size(), static_cast<float>(mono.sample_rate), downsampled);
+			AudioBuffer512 downsampled;
+			downsample_to_16k(inputs.mono.samples, inputs.mono.sample_rate, downsampled);
 
-			AudioAccumulator& audio_accumulator_fg = state->audio_accumulator[state->fg_buffer_id];
+			AudioAccumulator& fg = state->get_fg();
 
-			// append new samples
+			// Append new samples
 			for (size_t i = 0; i < downsampled.size(); ++i)
 			{
-				if (audio_accumulator_fg.size() >= audio_accumulator_fg.capacity())
+				if (fg.size() >= fg.capacity())
 				{
 					// Sliding window: keep last 9 s, drop oldest 1 s
 					const size_t keep_count = 9 * 16000;
-					const size_t drop_count = audio_accumulator_fg.size() - keep_count;
+					const size_t drop_count = fg.size() - keep_count;
 					std::memmove(fg.data(), fg.data() + drop_count, keep_count * sizeof(float));
-					audio_accumulator_fg.resize(keep_count);
-				}
 
-				audio_accumulator_fg.add(downsampled[i]);
+					fg.set_size(keep_count);
+				}
+				fg.add(downsampled[i]);
 			}
 
-			// if background thread finished last batch → swap immediately
-			if (!state->is_bgthread_active.test())
+			// Swap buffers if background thread is idle
+			if (!state->is_bgthread_active.is_set())
 			{
 				std::lock_guard<std::mutex> lock(state->mutex);
 
-				// Copy current fg contents into the soon-to-be background buffer
-				state->audio_accumulator[state->bg_buffer_id] = state->audio_accumulator[state->fg_buffer_id];
+				AudioAccumulator& bg = state->get_bg();
+				bg = fg;	// copy current FG into BG
+				fg.clear(); // start fresh
 
-				// Swap buffer roles
-				std::swap(state->fg_buffer_id, state->bg_buffer_id);
-
-				// Clear new fg buffer to start accumulating fresh samples
-				state->audio_accumulator[state->fg_buffer_id].clear();
+				// Toggle active buffer
+				state->is_buffer_swapped.store(!state->is_buffer_swapped.load());
 
 				// Signal background thread to process
 				state->thread_has_work = true;
 				state->cv.notify_one();
 			}
 
-			// retrieve completed transcript if ready
-			if (state->has_new_transcript.test())
+			// Retrieve transcript if ready
+			if (state->has_new_transcript.is_set())
 			{
-				state->has_new_transcript.clear();
-				outputs.words = state->internal_state.last_result;
-				outputs.transcript = state->internal_state.last_transcript;
+				state->has_new_transcript.unset();
+				outputs.words = state->last_result;
+				outputs.transcript = state->last_transcript;
 			}
 		}
 
@@ -194,12 +201,14 @@ namespace robotick
 				state->thread_should_exit = true;
 				state->cv.notify_one();
 			}
-			if (state->bg_thread.joinable())
+
+			if (state->bg_thread.is_joining_supported() && state->bg_thread.is_joinable())
 			{
 				state->bg_thread.join();
 			}
-			SpeechToText::shutdown(state->internal_state);
+
+			// No SpeechToText::shutdown() currently defined; omit safely
 		}
 	};
-#endif // #if 0
+
 } // namespace robotick
