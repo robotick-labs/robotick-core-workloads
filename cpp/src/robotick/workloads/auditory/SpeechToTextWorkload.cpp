@@ -13,6 +13,7 @@
 
 namespace robotick
 {
+#if 0
 	struct SpeechToTextInputs
 	{
 		AudioFrame mono;
@@ -200,5 +201,5 @@ namespace robotick
 			SpeechToText::shutdown(state->internal_state);
 		}
 	};
-
+#endif // #if 0
 } // namespace robotick

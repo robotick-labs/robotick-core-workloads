@@ -223,81 +223,33 @@ target_compile_definitions(mqtt-c PUBLIC
 target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 
 # ==================================================
-# ✅ Add whisper.cpp (speech-to-text backend)
+# ✅ Whisper.cpp (speech-to-text backend — Release fast path)
 # ==================================================
 
+include(FetchContent)
 include(CheckCXXCompilerFlag)
 
-message(STATUS "Checking for CPU SIMD feature support...")
+# --------------------------------------------------
+# Disable extras we don't need
+# --------------------------------------------------
+set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
+set(WHISPER_SDL2           OFF CACHE BOOL "" FORCE)
+set(WHISPER_FFMPEG         OFF CACHE BOOL "" FORCE)
+set(WHISPER_COREML         OFF CACHE BOOL "" FORCE)
+set(WHISPER_OPENVINO       OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS      OFF CACHE BOOL "" FORCE)
 
-check_cxx_compiler_flag("-mavx2" COMPILER_SUPPORTS_AVX2)
-check_cxx_compiler_flag("-mfma"  COMPILER_SUPPORTS_FMA)
-check_cxx_compiler_flag("-mf16c" COMPILER_SUPPORTS_F16C)
-check_cxx_compiler_flag("-mbmi2" COMPILER_SUPPORTS_BMI2)
+# --------------------------------------------------
+# Confiigure SpeechToText / Whisper.cpp
+# --------------------------------------------------
 
-set(SIMD_FLAGS "")
-set(SIMD_DEFS "")
+# Include Robotick’s Whisper integration module
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/robotick/systems/auditory/SpeechToText.cmake)
 
-if (COMPILER_SUPPORTS_AVX2)
-    list(APPEND SIMD_FLAGS "-mavx2")
-    list(APPEND SIMD_DEFS "GGML_USE_AVX2")
-endif()
-
-if (COMPILER_SUPPORTS_FMA)
-    list(APPEND SIMD_FLAGS "-mfma")
-endif()
-
-if (COMPILER_SUPPORTS_F16C)
-    list(APPEND SIMD_FLAGS "-mf16c")
-    list(APPEND SIMD_DEFS "GGML_USE_F16C")
-endif()
-
-if (COMPILER_SUPPORTS_BMI2)
-    list(APPEND SIMD_FLAGS "-mbmi2")
-    list(APPEND SIMD_DEFS "GGML_USE_BMI2")
-endif()
-
-if (SIMD_FLAGS)
-    message(STATUS "✅ Enabling SIMD flags: ${SIMD_FLAGS}")
-    add_compile_options(${SIMD_FLAGS})
-else()
-    message(WARNING "⚠️  No SIMD instruction set flags supported on this compiler")
-endif()
-
-find_package(OpenMP)
-if (OpenMP_CXX_FOUND)
-    message(STATUS "✅ OpenMP found — enabling multithreaded whisper decoding")
-    add_compile_definitions(WHISPER_USE_OPENMP)
-    target_link_libraries(robotick-core-workloads PRIVATE OpenMP::OpenMP_CXX)
-else()
-    message(WARNING "⚠️  OpenMP not found — whisper will run single-threaded")
-endif()
-
-add_subdirectory(tests/external/whisper.cpp/ggml)
-add_subdirectory(tests/external/whisper.cpp/src)
-
-foreach(tgt whisper ggml ggml-cpu)
-    if (TARGET ${tgt})
-        # Force optimization and remove debug symbols (so runs quickly even on debug builds)
-        target_compile_options(${tgt} PRIVATE
-            ${SIMD_FLAGS}
-            -O3 -g0                         # Force release-like settings
-            -ffast-math -funsafe-math-optimizations
-            -fno-finite-math-only           # Required to avoid ggml #error
-            -DNDEBUG                        # Disable asserts
-        )
-
-        target_compile_definitions(${tgt} PRIVATE
-            WHISPER_VERSION=\"1.8.1\"
-            WHISPER_USE_FLASH_ATTN
-            ${SIMD_DEFS}
-        )
-    endif()
-endforeach()
-
-
+# Link the generated library into your target
 target_link_libraries(robotick-core-workloads PRIVATE whisper)
-
 
 # =========================
 # ✅ ESP32 libs (if needed)

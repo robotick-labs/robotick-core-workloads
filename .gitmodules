@@ -1,6 +1,3 @@
 [submodule "cpp/tests/external/mqtt-c"]
 	path = cpp/tests/external/mqtt-c
 	url = https://github.com/LiamBindle/MQTT-C.git
-[submodule "cpp/tests/external/whisper.cpp"]
-	path = cpp/tests/external/whisper.cpp
-	url = https://github.com/ggml-org/whisper.cpp.git
