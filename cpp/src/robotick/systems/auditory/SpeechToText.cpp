@@ -11,6 +11,10 @@
 
 namespace robotick
 {
+	ROBOTICK_REGISTER_STRUCT_BEGIN(SpeechToTextConfig)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextConfig, FixedString256, model_path)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextConfig, uint16_t, num_threads)
+	ROBOTICK_REGISTER_STRUCT_END(SpeechToTextConfig)
 
 	void SpeechToText::initialize(const SpeechToTextConfig& config, SpeechToTextInternalState& state)
 	{

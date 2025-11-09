@@ -13,8 +13,6 @@
 
 namespace robotick
 {
-
-#if 0
 	struct SpeechToTextInputs
 	{
 		AudioFrame mono;
@@ -26,7 +24,10 @@ namespace robotick
 		FixedString512 transcript;
 	};
 
-	using AudioAccumulator = AudioAccumulator;
+	static constexpr uint32_t accumulator_capacity_sec = 10;
+	static constexpr uint32_t accumulator_sample_rate_hz = 16000;
+
+	using AudioAccumulator = FixedVector<float, accumulator_capacity_sec * accumulator_sample_rate_hz>;
 
 	struct SpeechToTextState
 	{
@@ -100,7 +101,7 @@ namespace robotick
 			{
 				TranscribedWords result;
 				FixedString512 transcript;
-				SpeechToText::run_inference(state->internal_state, audio_accumulator, result, transcript);
+				SpeechToText::transcribe(state->internal_state, audio_accumulator.data(), audio_accumulator.size(), result);
 
 				lock.lock();
 				state->internal_state.last_result = result;
@@ -200,5 +201,4 @@ namespace robotick
 		}
 	};
 
-#endif // #if 0
 } // namespace robotick
