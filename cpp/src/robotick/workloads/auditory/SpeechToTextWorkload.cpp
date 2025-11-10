@@ -22,16 +22,19 @@ namespace robotick
 	struct SpeechToTextInputs
 	{
 		AudioFrame mono;
+		bool is_voiced = false;
 	};
 
 	struct SpeechToTextOutputs
 	{
 		TranscribedWords words;
 		FixedString512 transcript;
+		float transcribe_duration_sec = 0.0f;
 
 		float accumulator_duration_sec = 0.0f;
 		float accumulator_capacity_sec = 0.0f;
 
+		bool is_transcribe_thread_active = false;
 		uint32_t transcribe_session_count = 0;
 	};
 
@@ -71,7 +74,8 @@ namespace robotick
 
 		TranscribedWords last_result;
 		FixedString512 last_transcript;
-		uint32_t transcribe_session_count = 0;
+
+		float transcribe_start_time_sec = 0.0f;
 
 		AtomicFlag is_bgthread_active{false};
 		AtomicFlag has_new_transcript{false};
@@ -81,6 +85,10 @@ namespace robotick
 		std::condition_variable cv;
 		bool thread_should_exit = false;
 		bool thread_has_work = false;
+
+		double last_voiced_time = 0.0;
+		bool was_voiced_last_tick = false;
+		bool is_voiced_segment_pending = false;
 
 		AudioAccumulator& get_foreground_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[1] : audio_accumulators[0]; }
 		AudioAccumulator& get_background_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[0] : audio_accumulators[1]; }
@@ -156,7 +164,6 @@ namespace robotick
 
 				SpeechToText::transcribe(
 					state->internal_state, audio_accumulator.samples.data(), audio_accumulator.samples.size(), transcribed_words);
-				state->transcribe_session_count++;
 
 				for (TranscribedWord& word : transcribed_words)
 				{
@@ -225,23 +232,45 @@ namespace robotick
 				ROBOTICK_ASSERT(foreground_accumulator.samples.size() <= foreground_accumulator.samples.capacity());
 			}
 
-			// Swap buffers if background thread is idle
-			if (!state->is_bgthread_active.is_set())
+			// Swap buffers if background thread is idle, and we're comfortably beyond the end of a "voiced" piece of audio
 			{
-				std::lock_guard<std::mutex> lock(state->mutex);
+				const bool is_voiced = inputs.is_voiced;
+				const double now = tick_info.time_now;
 
-				AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
-				AudioAccumulator& background_accumulator = state->get_background_accumulator();
+				if (is_voiced)
+				{
+					state->last_voiced_time = now;
+					state->is_voiced_segment_pending = true;
+				}
 
-				// copy current FG into BG pre-swap (so we always have up to date buffer to accumulate to)
-				background_accumulator = foreground_accumulator;
+				const double silence_duration = now - state->last_voiced_time;
+				const bool should_submit =
+					(!is_voiced && state->is_voiced_segment_pending && silence_duration > config.settings.silence_hangover_sec);
 
-				// Toggle active buffer
-				state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
+				if (should_submit && !state->is_bgthread_active.is_set())
+				{
+					state->is_voiced_segment_pending = false;
+					outputs.transcribe_session_count++;
 
-				// Signal background thread to process
-				state->thread_has_work = true;
-				state->cv.notify_one();
+					state->transcribe_start_time_sec = tick_info.time_now;
+
+					std::lock_guard<std::mutex> lock(state->mutex);
+
+					AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
+					AudioAccumulator& background_accumulator = state->get_background_accumulator();
+
+					// copy FG → BG
+					background_accumulator = foreground_accumulator;
+
+					// swap and clear FG
+					state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
+					state->get_foreground_accumulator().samples.clear();
+					state->get_foreground_accumulator().end_time_sec = now;
+
+					// signal thread
+					state->thread_has_work = true;
+					state->cv.notify_one();
+				}
 			}
 
 			// Retrieve transcript if ready
@@ -251,44 +280,12 @@ namespace robotick
 
 				outputs.words = state->last_result;
 				outputs.transcript = state->last_transcript;
-				outputs.transcribe_session_count = state->transcribe_session_count;
-
-				// If we detect and end-of-sentence character in the translation - find the last such character and prune up to and including
-				// 	that time in the foreground AudioAccumulator
-				{
-					float eos_end_time = -1.0f;
-
-					for (const TranscribedWord& word : outputs.words)
-					{
-						const char* text = word.text.c_str();
-						if (text && text[0])
-						{
-							const char last_char = text[strlen(text) - 1];
-							if (last_char == '.' || last_char == '?' || last_char == '!')
-							{
-								eos_end_time = word.end_time_sec;
-							}
-						}
-					}
-
-					if (eos_end_time > 0.0f)
-					{
-						AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
-
-						const float fg_duration_sec = foreground_accumulator.get_duration_sec();
-						const float fg_start_time = foreground_accumulator.end_time_sec - fg_duration_sec;
-
-						if (eos_end_time > fg_start_time)
-						{
-							const float drop_secs = eos_end_time - fg_start_time;
-							foreground_accumulator.request_drop_oldest_duration_sec(drop_secs);
-						}
-					}
-				}
+				outputs.transcribe_duration_sec = tick_info.time_now - state->transcribe_start_time_sec;
 			}
 
 			outputs.accumulator_duration_sec = state->get_foreground_accumulator().get_duration_sec();
 			outputs.accumulator_capacity_sec = state->get_foreground_accumulator().get_capacity_sec();
+			outputs.is_transcribe_thread_active = state->is_bgthread_active.is_set();
 		}
 
 		void stop()

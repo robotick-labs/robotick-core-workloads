@@ -14,7 +14,7 @@ namespace robotick
 
 	// ===== Core =====
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, rms)
-	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, voiced)
+	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, is_voiced)
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, voiced_confidence)
 
 	// ===== Temporal rhythm =====

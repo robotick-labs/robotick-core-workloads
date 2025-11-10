@@ -28,6 +28,8 @@ namespace robotick
 	{
 		FixedString256 model_path;
 		uint16_t num_threads = 4;
+
+		float silence_hangover_sec = 0.1f; // how long after voicer is no longer detected, to request a transcribe
 	};
 
 	struct SpeechToTextInternalState

@@ -212,7 +212,7 @@ namespace robotick
 
 				prosody = ProsodyState{}; // zero the struct if you like
 				prosody.rms = state->smoothed_rms;
-				prosody.voiced = false;
+				prosody.is_voiced = false;
 				prosody.voiced_confidence = 0.0f;
 
 				// Keep the multi-second EMA slowly fading
@@ -221,7 +221,7 @@ namespace robotick
 				return;
 			}
 
-			prosody.voiced = true;
+			prosody.is_voiced = true;
 
 			// --- Smooth voiced confidence ---
 			if (voiced_now)
