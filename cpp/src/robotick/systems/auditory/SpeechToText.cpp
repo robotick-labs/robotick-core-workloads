@@ -41,6 +41,21 @@ namespace robotick
 
 	ROBOTICK_REGISTER_PRIMITIVE(TranscribedWords, transcribed_words_to_string, transcribed_words_from_string);
 
+	void whisper_log_handler(enum ggml_log_level level, const char* text, void* user_data)
+	{
+		(void)user_data;
+
+		if (level == GGML_LOG_LEVEL_ERROR)
+		{
+			ROBOTICK_WARNING("[WHISPER ERROR] %s", text);
+		}
+		else if (level == GGML_LOG_LEVEL_WARN)
+		{
+			ROBOTICK_WARNING("[WHISPER WARN] %s", text);
+		}
+		// else ignore all other logs
+	}
+
 	void SpeechToText::initialize(const SpeechToTextSettings& settings, SpeechToTextInternalState& state)
 	{
 		const char* model_path = settings.model_path.c_str();
@@ -95,6 +110,9 @@ namespace robotick
 			wparams.n_threads,
 			(int)std::thread::hardware_concurrency(),
 			whisper_print_system_info());
+
+		// now we've finished setting up, silence all logs but errors and warnings
+		whisper_log_set(whisper_log_handler, nullptr);
 	}
 
 	bool SpeechToText::transcribe(const SpeechToTextInternalState& state, const float* buffer, size_t num_samples, TranscribedWords& out_words)
@@ -117,11 +135,12 @@ namespace robotick
 			return false;
 		}
 
+		bool is_at_capacity = false;
 		const int num_segments = whisper_full_n_segments_from_state(wstate);
-		for (int seg = 0; seg < num_segments; ++seg)
+		for (int seg = 0; seg < num_segments && !is_at_capacity; ++seg)
 		{
 			const int num_tokens = whisper_full_n_tokens_from_state(wstate, seg);
-			for (int tok = 0; tok < num_tokens; ++tok)
+			for (int tok = 0; tok < num_tokens && !is_at_capacity; ++tok)
 			{
 				const whisper_token token = whisper_full_get_token_id_from_state(wstate, seg, tok);
 				const whisper_token_data data = whisper_full_get_token_data_from_state(wstate, seg, tok);
@@ -129,6 +148,7 @@ namespace robotick
 				if (data.t0 >= 0 && data.t1 >= data.t0)
 				{
 					out_words.add({text, 0.01f * data.t0, 0.01f * data.t1, data.p});
+					is_at_capacity = (out_words.size() >= out_words.capacity());
 				}
 			}
 		}
