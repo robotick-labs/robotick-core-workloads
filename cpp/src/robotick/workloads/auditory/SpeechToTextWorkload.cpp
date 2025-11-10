@@ -28,14 +28,39 @@ namespace robotick
 	{
 		TranscribedWords words;
 		FixedString512 transcript;
-		bool is_bgthread_active = false;
+
+		float accumulator_duration_sec = 0.0f;
+		float accumulator_capacity_sec = 0.0f;
 
 		uint32_t transcribe_session_count = 0;
 	};
 
-	static constexpr uint32_t accumulator_capacity_sec = 12;
+	static constexpr uint32_t accumulator_capacity_sec = 20;
 	static constexpr uint32_t accumulator_sample_rate_hz = 16000;
-	using AudioAccumulator = FixedVector<float, accumulator_capacity_sec * accumulator_sample_rate_hz>;
+
+	struct AudioAccumulator
+	{
+		using AccumulatorSamples = FixedVector<float, accumulator_capacity_sec * accumulator_sample_rate_hz>;
+
+		AccumulatorSamples samples;
+		float end_time_sec = 0.0f;
+
+		float get_duration_sec() const { return static_cast<float>(samples.size()) / accumulator_sample_rate_hz; }
+		static constexpr float get_capacity_sec() { return static_cast<float>(AccumulatorSamples::capacity()) / accumulator_sample_rate_hz; }
+
+		void request_drop_oldest_duration_sec(const float drop_secs)
+		{
+			size_t samples_to_drop = static_cast<size_t>(drop_secs * (float)accumulator_sample_rate_hz);
+			if (samples_to_drop > samples.size())
+			{
+				samples_to_drop = samples.size();
+			}
+
+			const size_t keep_count = samples.size() - samples_to_drop;
+			std::memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
+			samples.set_size(keep_count);
+		}
+	};
 
 	struct SpeechToTextState
 	{
@@ -57,32 +82,39 @@ namespace robotick
 		bool thread_should_exit = false;
 		bool thread_has_work = false;
 
-		AudioAccumulator& get_fg() { return is_buffer_swapped.is_set() ? audio_accumulators[1] : audio_accumulators[0]; }
-		AudioAccumulator& get_bg() { return is_buffer_swapped.is_set() ? audio_accumulators[0] : audio_accumulators[1]; }
+		AudioAccumulator& get_foreground_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[1] : audio_accumulators[0]; }
+		AudioAccumulator& get_background_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[0] : audio_accumulators[1]; }
 	};
 
 	// ---------------------------------------------------------------
 	// Simple linear downsampler to 16 kHz
 	// ---------------------------------------------------------------
-	static void downsample_to_16k(const AudioBuffer512& input, const uint32_t input_rate, AudioBuffer512& output)
+	static void downsample_to_accumulator_rate(const AudioBuffer512& input, const uint32_t input_rate, AudioBuffer512& output)
 	{
-		const uint32_t output_rate = 16000.0f;
-		const float ratio = (float)input_rate / (float)output_rate;
-		const size_t dst_count = static_cast<size_t>((float)input.size() / ratio);
+		const double ratio = static_cast<double>(input_rate) / static_cast<double>(accumulator_sample_rate_hz);
+		if (ratio <= 0.0)
+		{
+			return;
+		}
+
+		const size_t ideal_dst = static_cast<size_t>(static_cast<double>(input.size()) / ratio);
+		const size_t dst_count = (ideal_dst < output.capacity()) ? ideal_dst : output.capacity();
+		output.clear(); // make sure it's empty, as expected
 
 		for (size_t dst_index = 0; dst_index < dst_count; ++dst_index)
 		{
-			const float src_index_f = dst_index * ratio;
+			const double src_index_f = static_cast<double>(dst_index) * ratio;
 			const size_t src_index_i = static_cast<size_t>(src_index_f);
-			const float frac = src_index_f - static_cast<float>(src_index_i);
+			const double frac = src_index_f - static_cast<double>(src_index_i);
+
+			// Clamp hi index to last valid sample to be extra safe on edge rounding.
+			const size_t src_next = (src_index_i + 1 < input.size()) ? (src_index_i + 1) : src_index_i;
 
 			const float sample =
-				(src_index_i + 1 < input.size()) ? input[src_index_i] * (1.0f - frac) + input[src_index_i + 1] * frac : input[src_index_i];
+				static_cast<float>(static_cast<double>(input[src_index_i]) * (1.0 - frac) + static_cast<double>(input[src_next]) * frac);
 
-			if (output.size() < output.capacity())
-			{
-				output.add(sample);
-			}
+			// No need to check size each iteration because we clamp dst_count.
+			output.add(sample);
 		}
 	}
 
@@ -112,18 +144,25 @@ namespace robotick
 
 			state->is_bgthread_active.set();
 
-			const AudioAccumulator& audio_accumulator = state->get_bg();
+			const AudioAccumulator& audio_accumulator = state->get_background_accumulator();
 
-			if (!audio_accumulator.empty())
+			const float audio_accumulator_duration_sec = audio_accumulator.get_duration_sec();
+			const float start_time_sec_engine = audio_accumulator.end_time_sec - audio_accumulator_duration_sec;
+
+			if (!audio_accumulator.samples.empty())
 			{
 				TranscribedWords transcribed_words;
 				FixedString512 transcript;
 
-				SpeechToText::transcribe(state->internal_state, audio_accumulator.data(), audio_accumulator.size(), transcribed_words);
+				SpeechToText::transcribe(
+					state->internal_state, audio_accumulator.samples.data(), audio_accumulator.samples.size(), transcribed_words);
 				state->transcribe_session_count++;
 
-				for (const TranscribedWord& word : transcribed_words)
+				for (TranscribedWord& word : transcribed_words)
 				{
+					word.start_time_sec += start_time_sec_engine;
+					word.end_time_sec += start_time_sec_engine;
+
 					transcript.append(word.text.c_str());
 				}
 
@@ -160,26 +199,30 @@ namespace robotick
 
 		void tick(const TickInfo& tick_info)
 		{
-			(void)tick_info;
-
-			AudioBuffer512 downsampled;
-			downsample_to_16k(inputs.mono.samples, inputs.mono.sample_rate, downsampled);
-
-			AudioAccumulator& foreground_accumulator = state->get_fg();
-
-			// Append new samples
-			for (size_t i = 0; i < downsampled.size(); ++i)
+			// Downsample and append new samples
 			{
-				if (foreground_accumulator.size() >= foreground_accumulator.capacity())
-				{
-					// Sliding window - drop oldest 1 second of audio
-					const size_t drop_count = 1 * 16000;
-					const size_t keep_count = foreground_accumulator.capacity() - drop_count;
-					std::memmove(foreground_accumulator.data(), foreground_accumulator.data() + drop_count, keep_count * sizeof(float));
+				AudioBuffer512 downsampled;
+				downsample_to_accumulator_rate(inputs.mono.samples, inputs.mono.sample_rate, downsampled);
 
-					foreground_accumulator.set_size(keep_count);
+				AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
+				foreground_accumulator.end_time_sec = tick_info.time_now;
+
+				// if we don't have room for the full new set of samples, drop the oldest 2 seconds from the accumulator
+				if (foreground_accumulator.samples.size() + downsampled.size() >= foreground_accumulator.samples.capacity())
+				{
+					foreground_accumulator.request_drop_oldest_duration_sec(2.0f);
 				}
-				foreground_accumulator.add(downsampled[i]);
+
+				const size_t old_size = foreground_accumulator.samples.size();
+				const size_t add_count = downsampled.size();
+
+				ROBOTICK_ASSERT(old_size + add_count <= foreground_accumulator.samples.capacity());
+
+				std::memcpy(foreground_accumulator.samples.data() + old_size, downsampled.data(), add_count * sizeof(float));
+
+				foreground_accumulator.samples.set_size(old_size + add_count);
+
+				ROBOTICK_ASSERT(foreground_accumulator.samples.size() <= foreground_accumulator.samples.capacity());
 			}
 
 			// Swap buffers if background thread is idle
@@ -187,9 +230,11 @@ namespace robotick
 			{
 				std::lock_guard<std::mutex> lock(state->mutex);
 
-				AudioAccumulator& background_accumulator = state->get_bg();
-				background_accumulator =
-					foreground_accumulator; // copy current FG into BG pre-swap (so we always have up to date buffer to accumulate to)
+				AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
+				AudioAccumulator& background_accumulator = state->get_background_accumulator();
+
+				// copy current FG into BG pre-swap (so we always have up to date buffer to accumulate to)
+				background_accumulator = foreground_accumulator;
 
 				// Toggle active buffer
 				state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
@@ -197,22 +242,53 @@ namespace robotick
 				// Signal background thread to process
 				state->thread_has_work = true;
 				state->cv.notify_one();
-
-				outputs.is_bgthread_active = false;
-			}
-			else
-			{
-				outputs.is_bgthread_active = true;
 			}
 
 			// Retrieve transcript if ready
 			if (state->has_new_transcript.is_set())
 			{
 				state->has_new_transcript.unset();
+
 				outputs.words = state->last_result;
 				outputs.transcript = state->last_transcript;
 				outputs.transcribe_session_count = state->transcribe_session_count;
+
+				// If we detect and end-of-sentence character in the translation - find the last such character and prune up to and including
+				// 	that time in the foreground AudioAccumulator
+				{
+					float eos_end_time = -1.0f;
+
+					for (const TranscribedWord& word : outputs.words)
+					{
+						const char* text = word.text.c_str();
+						if (text && text[0])
+						{
+							const char last_char = text[strlen(text) - 1];
+							if (last_char == '.' || last_char == '?' || last_char == '!')
+							{
+								eos_end_time = word.end_time_sec;
+							}
+						}
+					}
+
+					if (eos_end_time > 0.0f)
+					{
+						AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
+
+						const float fg_duration_sec = foreground_accumulator.get_duration_sec();
+						const float fg_start_time = foreground_accumulator.end_time_sec - fg_duration_sec;
+
+						if (eos_end_time > fg_start_time)
+						{
+							const float drop_secs = eos_end_time - fg_start_time;
+							foreground_accumulator.request_drop_oldest_duration_sec(drop_secs);
+						}
+					}
+				}
 			}
+
+			outputs.accumulator_duration_sec = state->get_foreground_accumulator().get_duration_sec();
+			outputs.accumulator_capacity_sec = state->get_foreground_accumulator().get_capacity_sec();
 		}
 
 		void stop()

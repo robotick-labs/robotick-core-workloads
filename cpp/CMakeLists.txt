@@ -227,7 +227,7 @@ target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 # ==================================================
 
 # Include Robotick’s Whisper integration module
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/robotick/systems/auditory/SpeechToText.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/src/robotick/workloads/auditory/SpeechToTextWorkload.cmake)
 
 # Link the generated library into your target
 target_link_libraries(robotick-core-workloads PRIVATE whisper)

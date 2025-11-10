@@ -98,41 +98,38 @@ namespace robotick
 			whisper_print_system_info());
 	}
 
-	bool SpeechToText::transcribe(const SpeechToTextInternalState& state, const float* buffer, const size_t num_samples, TranscribedWords& out_words)
+	bool SpeechToText::transcribe(const SpeechToTextInternalState& state, const float* buffer, size_t num_samples, TranscribedWords& out_words)
 	{
 		out_words.clear();
 
-		const bool success = whisper_full(state.whisper_ctx, state.whisper_params, buffer, (int)num_samples) == 0;
+		// create a temporary clean state for this inference (so we don't keep accumulating history between calls)
+		struct whisper_state* st = whisper_init_state(state.whisper_ctx);
+
+		const bool success = whisper_full_with_state(state.whisper_ctx, st, state.whisper_params, buffer, static_cast<int>(num_samples)) == 0;
 		if (!success)
 		{
-			ROBOTICK_WARNING("SpeechToText - whisper failed to transscribe");
+			ROBOTICK_WARNING("SpeechToText - whisper failed to transcribe");
+			whisper_free_state(st);
 			return false;
 		}
 
-		const int num_segments = whisper_full_n_segments(state.whisper_ctx);
-		for (int segment_index = 0; segment_index < num_segments; ++segment_index)
+		const int num_segments = whisper_full_n_segments_from_state(st);
+		for (int seg = 0; seg < num_segments; ++seg)
 		{
-			const int num_tokens = whisper_full_n_tokens(state.whisper_ctx, segment_index);
-			for (int token_index = 0; token_index < num_tokens; ++token_index)
+			const int num_tokens = whisper_full_n_tokens_from_state(st, seg);
+			for (int tok = 0; tok < num_tokens; ++tok)
 			{
-				const whisper_token token = whisper_full_get_token_id(state.whisper_ctx, segment_index, token_index);
-				const whisper_token_data data = whisper_full_get_token_data(state.whisper_ctx, segment_index, token_index);
-
+				const whisper_token token = whisper_full_get_token_id_from_state(st, seg, tok);
+				const whisper_token_data data = whisper_full_get_token_data_from_state(st, seg, tok);
 				const char* text = whisper_token_to_str(state.whisper_ctx, token);
-				const float word_start_sec = 0.01f * (float)data.t0; // seconds
-				const float word_end_sec = 0.01f * (float)data.t1;
-
 				if (data.t0 >= 0 && data.t1 >= data.t0)
 				{
-					out_words.add({text, word_start_sec, word_end_sec});
-				}
-				else
-				{
-					ROBOTICK_WARNING("Malformed word start/end time (%f/%f)", word_start_sec, word_end_sec);
+					out_words.add({text, 0.01f * data.t0, 0.01f * data.t1});
 				}
 			}
 		}
 
+		whisper_free_state(st);
 		return true;
 	}
 
