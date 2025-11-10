@@ -38,7 +38,7 @@ echo "🎤 Checking for Whisper model..."
 mkdir -p "${WHISPER_MODEL_DIR}"
 if [ ! -f "${WHISPER_MODEL_PATH}" ]; then
   echo "⬇️  Downloading Whisper model (ggml-base.en.bin)..."
-  curl -L "${WHISPER_MODEL_URL}" -o "${WHISPER_MODEL_PATH}"
+  curl -L "${WHISPER_MODEL_URL}" -o "${WHISPER_MODEL_PATH}" || { echo "Download failed"; exit 1; }
 else
   echo "✅ Whisper model already present at ${WHISPER_MODEL_PATH}"
 fi

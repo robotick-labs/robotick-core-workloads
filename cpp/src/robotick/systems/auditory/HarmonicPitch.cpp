@@ -182,7 +182,7 @@ namespace robotick
 			float amplitude;
 		};
 
-		FixedVector<Peak, envelope.capacity()> peaks;
+		FixedVector<Peak, AudioBuffer128::capacity()> peaks;
 		size_t band_id = 0;
 
 		while (band_id < envelope.size())

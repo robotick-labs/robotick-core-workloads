@@ -204,6 +204,8 @@ namespace robotick
 		void load()
 		{
 			SpeechToText::initialize(config.settings, state->internal_state);
+			state->thread_should_exit = false;
+			state->thread_has_work = false;
 			state->is_bgthread_active.unset();
 			state->has_new_transcript.unset();
 			state->is_buffer_swapped.set(false);
@@ -222,7 +224,7 @@ namespace robotick
 				foreground_accumulator.end_time_sec = tick_info.time_now;
 
 				// if we don't have room for the full new set of samples, drop the oldest 2 seconds from the accumulator
-				if (foreground_accumulator.samples.size() + downsampled.size() >= foreground_accumulator.samples.capacity())
+				if (foreground_accumulator.samples.size() + downsampled.size() > foreground_accumulator.samples.capacity())
 				{
 					foreground_accumulator.request_drop_oldest_duration_sec(2.0f);
 				}
@@ -286,6 +288,7 @@ namespace robotick
 			{
 				state->has_new_transcript.unset();
 
+				std::lock_guard<std::mutex> lock(state->mutex);
 				outputs.words = state->last_result;
 				outputs.transcript = state->last_transcript;
 				outputs.transcribe_duration_sec = tick_info.time_now - state->transcribe_start_time_sec;
@@ -310,7 +313,7 @@ namespace robotick
 				state->bg_thread.join();
 			}
 
-			// No SpeechToText::shutdown() currently defined; omit safely
+			SpeechToText::uninitialize(state->internal_state);
 		}
 	};
 

@@ -86,13 +86,17 @@ endif()
 # --------------------------------------------------
 foreach(tgt whisper ggml ggml-cpu)
     if (TARGET ${tgt})
-        target_compile_options(${tgt} PRIVATE
-            ${SIMD_FLAGS}
-            -O3 -g0
-            -ffast-math -funsafe-math-optimizations
-            -fno-finite-math-only
-            -DNDEBUG
-        )
+		if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+			target_compile_options(${tgt} PRIVATE /O2 /DNDEBUG)
+		else()
+			target_compile_options(${tgt} PRIVATE
+				${SIMD_FLAGS}
+				-O3 -g0
+				-ffast-math -funsafe-math-optimizations
+				-fno-finite-math-only
+				-DNDEBUG
+			)
+		endif()
         target_compile_definitions(${tgt} PRIVATE
             WHISPER_VERSION=\"1.8.2\"
             WHISPER_USE_FLASH_ATTN

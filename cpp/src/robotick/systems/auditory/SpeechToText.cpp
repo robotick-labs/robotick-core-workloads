@@ -84,7 +84,6 @@ namespace robotick
 		// Decoding knobs matching
 		wparams.greedy.best_of = 5;
 		wparams.beam_search.beam_size = 5;
-		wparams.token_timestamps = false;
 		wparams.debug_mode = false;
 		wparams.audio_ctx = 0;
 		wparams.token_timestamps = true;
@@ -103,24 +102,29 @@ namespace robotick
 		out_words.clear();
 
 		// create a temporary clean state for this inference (so we don't keep accumulating history between calls)
-		struct whisper_state* st = whisper_init_state(state.whisper_ctx);
-
-		const bool success = whisper_full_with_state(state.whisper_ctx, st, state.whisper_params, buffer, static_cast<int>(num_samples)) == 0;
-		if (!success)
+		struct whisper_state* wstate = whisper_init_state(state.whisper_ctx);
+		if (!wstate)
 		{
-			ROBOTICK_WARNING("SpeechToText - whisper failed to transcribe");
-			whisper_free_state(st);
+			ROBOTICK_WARNING("SpeechToText - failed to allocate whisper state");
 			return false;
 		}
 
-		const int num_segments = whisper_full_n_segments_from_state(st);
+		const bool success = whisper_full_with_state(state.whisper_ctx, wstate, state.whisper_params, buffer, static_cast<int>(num_samples)) == 0;
+		if (!success)
+		{
+			ROBOTICK_WARNING("SpeechToText - whisper failed to transcribe");
+			whisper_free_state(wstate);
+			return false;
+		}
+
+		const int num_segments = whisper_full_n_segments_from_state(wstate);
 		for (int seg = 0; seg < num_segments; ++seg)
 		{
-			const int num_tokens = whisper_full_n_tokens_from_state(st, seg);
+			const int num_tokens = whisper_full_n_tokens_from_state(wstate, seg);
 			for (int tok = 0; tok < num_tokens; ++tok)
 			{
-				const whisper_token token = whisper_full_get_token_id_from_state(st, seg, tok);
-				const whisper_token_data data = whisper_full_get_token_data_from_state(st, seg, tok);
+				const whisper_token token = whisper_full_get_token_id_from_state(wstate, seg, tok);
+				const whisper_token_data data = whisper_full_get_token_data_from_state(wstate, seg, tok);
 				const char* text = whisper_token_to_str(state.whisper_ctx, token);
 				if (data.t0 >= 0 && data.t1 >= data.t0)
 				{
@@ -129,7 +133,7 @@ namespace robotick
 			}
 		}
 
-		whisper_free_state(st);
+		whisper_free_state(wstate);
 		return true;
 	}
 
