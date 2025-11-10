@@ -11,14 +11,39 @@
 
 namespace robotick
 {
-	ROBOTICK_REGISTER_STRUCT_BEGIN(SpeechToTextConfig)
-	ROBOTICK_STRUCT_FIELD(SpeechToTextConfig, FixedString256, model_path)
-	ROBOTICK_STRUCT_FIELD(SpeechToTextConfig, uint16_t, num_threads)
-	ROBOTICK_REGISTER_STRUCT_END(SpeechToTextConfig)
+	ROBOTICK_REGISTER_STRUCT_BEGIN(SpeechToTextSettings)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, FixedString256, model_path)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, uint16_t, num_threads)
+	ROBOTICK_REGISTER_STRUCT_END(SpeechToTextSettings)
 
-	void SpeechToText::initialize(const SpeechToTextConfig& config, SpeechToTextInternalState& state)
+	ROBOTICK_REGISTER_STRUCT_BEGIN(TranscribedWord)
+	ROBOTICK_STRUCT_FIELD(TranscribedWord, FixedString32, text)
+	ROBOTICK_STRUCT_FIELD(TranscribedWord, float, start_time_sec)
+	ROBOTICK_STRUCT_FIELD(TranscribedWord, float, end_time_sec)
+	ROBOTICK_REGISTER_STRUCT_END(TranscribedWord)
+
+	static bool transcribed_words_to_string(const void* data, char* out_buffer, size_t buffer_size)
 	{
-		const char* model_path = config.model_path.c_str();
+		const TranscribedWords* buf = static_cast<const TranscribedWords*>(data);
+		if (!buf || !out_buffer || buffer_size < 32)
+			return false;
+
+		// Format: <TranscribedWords(size/capacity)>
+		int written = snprintf(out_buffer, buffer_size, "<TranscribedWords(%zu/%zu)>", buf->size(), buf->capacity());
+		return written > 0 && static_cast<size_t>(written) < buffer_size;
+	}
+
+	static bool transcribed_words_from_string(const char*, void*)
+	{
+		// Read-only string representation, parsing not supported
+		return false;
+	}
+
+	ROBOTICK_REGISTER_PRIMITIVE(TranscribedWords, transcribed_words_to_string, transcribed_words_from_string);
+
+	void SpeechToText::initialize(const SpeechToTextSettings& settings, SpeechToTextInternalState& state)
+	{
+		const char* model_path = settings.model_path.c_str();
 
 		// --- Init Whisper context (like CLI) ---
 		whisper_context_params& cparams = state.whisper_cparams;
@@ -32,7 +57,7 @@ namespace robotick
 		// --- Full params: mirror CLI defaults (beam=5, best_of=5 seen in your log) ---
 		whisper_full_params& wparams = state.whisper_params;
 		wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-		wparams.n_threads = clamp<int>(config.num_threads, 1, std::thread::hardware_concurrency());
+		wparams.n_threads = clamp<int>(settings.num_threads, 1, std::thread::hardware_concurrency());
 		wparams.offset_ms = 0;
 		wparams.duration_ms = 0;
 		wparams.translate = false;

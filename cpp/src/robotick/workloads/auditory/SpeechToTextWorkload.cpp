@@ -9,11 +9,16 @@
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
-#include <cstring> // for std::memmove
+#include <cstring>
 #include <mutex>
 
 namespace robotick
 {
+	struct SpeechToTextConfig
+	{
+		SpeechToTextSettings settings;
+	};
+
 	struct SpeechToTextInputs
 	{
 		AudioFrame mono;
@@ -23,6 +28,7 @@ namespace robotick
 	{
 		TranscribedWords words;
 		FixedString512 transcript;
+		bool is_bgthread_active = false;
 	};
 
 	static constexpr uint32_t accumulator_capacity_sec = 10;
@@ -34,13 +40,13 @@ namespace robotick
 		SpeechToTextInternalState internal_state;
 
 		AudioAccumulator audio_accumulators[2];
-		std::atomic<bool> is_buffer_swapped{false}; // false → [0] is FG, true → [1] is FG
+		AtomicFlag is_buffer_swapped{false}; // false → [0] is FG, true → [1] is FG
 
 		TranscribedWords last_result;
 		FixedString512 last_transcript;
 
-		AtomicFlag is_bgthread_active;
-		AtomicFlag has_new_transcript;
+		AtomicFlag is_bgthread_active{false};
+		AtomicFlag has_new_transcript{false};
 
 		Thread bg_thread;
 		std::mutex mutex;
@@ -48,9 +54,8 @@ namespace robotick
 		bool thread_should_exit = false;
 		bool thread_has_work = false;
 
-		AudioAccumulator& get_fg() { return is_buffer_swapped.load() ? audio_accumulators[1] : audio_accumulators[0]; }
-
-		AudioAccumulator& get_bg() { return is_buffer_swapped.load() ? audio_accumulators[0] : audio_accumulators[1]; }
+		AudioAccumulator& get_fg() { return is_buffer_swapped.is_set() ? audio_accumulators[1] : audio_accumulators[0]; }
+		AudioAccumulator& get_bg() { return is_buffer_swapped.is_set() ? audio_accumulators[0] : audio_accumulators[1]; }
 	};
 
 	// ---------------------------------------------------------------
@@ -108,13 +113,20 @@ namespace robotick
 
 			if (!audio_accumulator.empty())
 			{
-				TranscribedWords result;
+				TranscribedWords transcribed_words;
 				FixedString512 transcript;
 
-				SpeechToText::transcribe(state->internal_state, audio_accumulator.data(), audio_accumulator.size(), result);
+				ROBOTICK_INFO("Starting transcribe...");
+				SpeechToText::transcribe(state->internal_state, audio_accumulator.data(), audio_accumulator.size(), transcribed_words);
+				ROBOTICK_INFO("Completed transcribe...");
+
+				for (const TranscribedWord& word : transcribed_words)
+				{
+					transcript.append(word.text.c_str());
+				}
 
 				lock.lock();
-				state->last_result = result;
+				state->last_result = transcribed_words;
 				state->last_transcript = transcript;
 				state->has_new_transcript.set();
 				lock.unlock();
@@ -136,10 +148,10 @@ namespace robotick
 
 		void load()
 		{
-			SpeechToText::initialize(config, state->internal_state);
+			SpeechToText::initialize(config.settings, state->internal_state);
 			state->is_bgthread_active.unset();
 			state->has_new_transcript.unset();
-			state->is_buffer_swapped.store(false);
+			state->is_buffer_swapped.set(false);
 
 			state->bg_thread = Thread(speech_to_text_thread, static_cast<void*>(&state.get()), "SpeechToTextThread");
 		}
@@ -174,15 +186,20 @@ namespace robotick
 				std::lock_guard<std::mutex> lock(state->mutex);
 
 				AudioAccumulator& bg = state->get_bg();
-				bg = fg;	// copy current FG into BG
-				fg.clear(); // start fresh
+				bg = fg; // copy current FG into BG pre-swap (so we always have up to date buffer)
 
 				// Toggle active buffer
-				state->is_buffer_swapped.store(!state->is_buffer_swapped.load());
+				state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
 
 				// Signal background thread to process
 				state->thread_has_work = true;
 				state->cv.notify_one();
+
+				outputs.is_bgthread_active = false;
+			}
+			else
+			{
+				outputs.is_bgthread_active = true;
 			}
 
 			// Retrieve transcript if ready
@@ -194,7 +211,7 @@ namespace robotick
 			}
 		}
 
-		void shutdown()
+		void stop()
 		{
 			{
 				std::lock_guard<std::mutex> lock(state->mutex);

@@ -24,7 +24,7 @@ namespace robotick
 
 	using TranscribedWords = FixedVector<TranscribedWord, 64>;
 
-	struct SpeechToTextConfig
+	struct SpeechToTextSettings
 	{
 		FixedString256 model_path;
 		uint16_t num_threads = 4;
@@ -40,7 +40,7 @@ namespace robotick
 
 	struct SpeechToText
 	{
-		static void initialize(const SpeechToTextConfig& config, SpeechToTextInternalState& state);
+		static void initialize(const SpeechToTextSettings& config, SpeechToTextInternalState& state);
 		static void uninitialize(SpeechToTextInternalState& state);
 
 		static bool transcribe(const SpeechToTextInternalState& state, const float* buffer, const size_t num_samples, TranscribedWords& out_words);

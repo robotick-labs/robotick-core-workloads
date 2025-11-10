@@ -4,8 +4,7 @@ platforms:
       - robotick/systems/auditory/SpeechToText.cpp
 
     deps:
-      - name: whisper.cpp
+      - name: Whisper
         source:
-          type: git
-          url: https://github.com/ggml-org/whisper.cpp.git
-          # pin: b57b9d3 # example commit; pin what you test
+          type: workload_cmake
+        link_target: whisper
