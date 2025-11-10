@@ -20,6 +20,8 @@ namespace robotick
 
 		float start_time_sec = 0.0f;
 		float end_time_sec = 0.0f;
+
+		float confidence = 0.0f;
 	};
 
 	using TranscribedWords = FixedVector<TranscribedWord, 64>;

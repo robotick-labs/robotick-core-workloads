@@ -30,6 +30,7 @@ namespace robotick
 		TranscribedWords words;
 		FixedString512 transcript;
 		float transcribe_duration_sec = 0.0f;
+		float transcript_mean_confidence = 0.0f;
 
 		float accumulator_duration_sec = 0.0f;
 		float accumulator_capacity_sec = 0.0f;
@@ -74,6 +75,7 @@ namespace robotick
 
 		TranscribedWords last_result;
 		FixedString512 last_transcript;
+		float last_transcript_mean_confidence = 0.0f;
 
 		float transcribe_start_time_sec = 0.0f;
 
@@ -165,10 +167,14 @@ namespace robotick
 				SpeechToText::transcribe(
 					state->internal_state, audio_accumulator.samples.data(), audio_accumulator.samples.size(), transcribed_words);
 
+				float mean_confidence = 0.0f;
+
 				for (TranscribedWord& word : transcribed_words)
 				{
 					word.start_time_sec += start_time_sec_engine;
 					word.end_time_sec += start_time_sec_engine;
+
+					mean_confidence += word.confidence / (float)transcribed_words.size();
 
 					transcript.append(word.text.c_str());
 				}
@@ -176,6 +182,7 @@ namespace robotick
 				lock.lock();
 				state->last_result = transcribed_words;
 				state->last_transcript = transcript;
+				state->last_transcript_mean_confidence = mean_confidence;
 				state->has_new_transcript.set();
 				lock.unlock();
 			}
@@ -282,6 +289,7 @@ namespace robotick
 				outputs.words = state->last_result;
 				outputs.transcript = state->last_transcript;
 				outputs.transcribe_duration_sec = tick_info.time_now - state->transcribe_start_time_sec;
+				outputs.transcript_mean_confidence = state->last_transcript_mean_confidence;
 			}
 
 			outputs.accumulator_duration_sec = state->get_foreground_accumulator().get_duration_sec();

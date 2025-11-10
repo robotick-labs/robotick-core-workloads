@@ -124,7 +124,7 @@ namespace robotick
 				const char* text = whisper_token_to_str(state.whisper_ctx, token);
 				if (data.t0 >= 0 && data.t1 >= data.t0)
 				{
-					out_words.add({text, 0.01f * data.t0, 0.01f * data.t1});
+					out_words.add({text, 0.01f * data.t0, 0.01f * data.t1, data.p});
 				}
 			}
 		}
