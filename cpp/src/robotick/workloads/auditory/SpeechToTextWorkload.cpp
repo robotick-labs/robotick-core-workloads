@@ -29,9 +29,11 @@ namespace robotick
 		TranscribedWords words;
 		FixedString512 transcript;
 		bool is_bgthread_active = false;
+
+		uint32_t transcribe_session_count = 0;
 	};
 
-	static constexpr uint32_t accumulator_capacity_sec = 10;
+	static constexpr uint32_t accumulator_capacity_sec = 12;
 	static constexpr uint32_t accumulator_sample_rate_hz = 16000;
 	using AudioAccumulator = FixedVector<float, accumulator_capacity_sec * accumulator_sample_rate_hz>;
 
@@ -44,6 +46,7 @@ namespace robotick
 
 		TranscribedWords last_result;
 		FixedString512 last_transcript;
+		uint32_t transcribe_session_count = 0;
 
 		AtomicFlag is_bgthread_active{false};
 		AtomicFlag has_new_transcript{false};
@@ -116,9 +119,8 @@ namespace robotick
 				TranscribedWords transcribed_words;
 				FixedString512 transcript;
 
-				ROBOTICK_INFO("Starting transcribe...");
 				SpeechToText::transcribe(state->internal_state, audio_accumulator.data(), audio_accumulator.size(), transcribed_words);
-				ROBOTICK_INFO("Completed transcribe...");
+				state->transcribe_session_count++;
 
 				for (const TranscribedWord& word : transcribed_words)
 				{
@@ -163,21 +165,21 @@ namespace robotick
 			AudioBuffer512 downsampled;
 			downsample_to_16k(inputs.mono.samples, inputs.mono.sample_rate, downsampled);
 
-			AudioAccumulator& fg = state->get_fg();
+			AudioAccumulator& foreground_accumulator = state->get_fg();
 
 			// Append new samples
 			for (size_t i = 0; i < downsampled.size(); ++i)
 			{
-				if (fg.size() >= fg.capacity())
+				if (foreground_accumulator.size() >= foreground_accumulator.capacity())
 				{
-					// Sliding window: keep last 9 s, drop oldest 1 s
-					const size_t keep_count = 9 * 16000;
-					const size_t drop_count = fg.size() - keep_count;
-					std::memmove(fg.data(), fg.data() + drop_count, keep_count * sizeof(float));
+					// Sliding window - drop oldest 1 second of audio
+					const size_t drop_count = 1 * 16000;
+					const size_t keep_count = foreground_accumulator.capacity() - drop_count;
+					std::memmove(foreground_accumulator.data(), foreground_accumulator.data() + drop_count, keep_count * sizeof(float));
 
-					fg.set_size(keep_count);
+					foreground_accumulator.set_size(keep_count);
 				}
-				fg.add(downsampled[i]);
+				foreground_accumulator.add(downsampled[i]);
 			}
 
 			// Swap buffers if background thread is idle
@@ -185,8 +187,9 @@ namespace robotick
 			{
 				std::lock_guard<std::mutex> lock(state->mutex);
 
-				AudioAccumulator& bg = state->get_bg();
-				bg = fg; // copy current FG into BG pre-swap (so we always have up to date buffer)
+				AudioAccumulator& background_accumulator = state->get_bg();
+				background_accumulator =
+					foreground_accumulator; // copy current FG into BG pre-swap (so we always have up to date buffer to accumulate to)
 
 				// Toggle active buffer
 				state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
@@ -208,6 +211,7 @@ namespace robotick
 				state->has_new_transcript.unset();
 				outputs.words = state->last_result;
 				outputs.transcript = state->last_transcript;
+				outputs.transcribe_session_count = state->transcribe_session_count;
 			}
 		}
 
