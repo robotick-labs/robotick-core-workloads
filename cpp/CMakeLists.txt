@@ -164,8 +164,11 @@ if (ROBOTICK_PLATFORM_LINUX)
         GIT_REPOSITORY https://github.com/deepmind/mujoco.git
         GIT_TAG        3.1.5
         CMAKE_ARGS
-            -DMJ_BUILD_PYTHON=OFF
             -DMJ_BUILD_EXAMPLES=OFF
+            -DMJ_BUILD_TESTS=OFF
+            -DMJ_BUILD_BENCHMARKS=OFF
+            -DMJ_BUILD_SIMULATE=OFF
+            -DBUILD_TESTING=OFF
             -DMJ_USE_AVX_INTRINSICS=OFF
             -DMJ_USE_CUDA=OFF
     )
@@ -218,6 +221,16 @@ target_compile_definitions(mqtt-c PUBLIC
 )
 
 target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
+
+# ==================================================
+# ✅ Configure SpeechToText / Whisper.cpp
+# ==================================================
+
+# Include Robotick’s Whisper integration module
+include(${CMAKE_CURRENT_SOURCE_DIR}/src/robotick/workloads/auditory/SpeechToTextWorkload.cmake)
+
+# Link the generated library into your target
+target_link_libraries(robotick-core-workloads PRIVATE whisper)
 
 # =========================
 # ✅ ESP32 libs (if needed)

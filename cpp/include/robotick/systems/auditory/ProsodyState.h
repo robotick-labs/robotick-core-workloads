@@ -6,7 +6,7 @@ namespace robotick
 	{
 		// --- Core ---
 		float rms = 0.0f;				// loudness (captures voiced + unvoiced)
-		bool voiced = false;			// true if harmonic pitch present
+		bool is_voiced = false;			// true if harmonic pitch present
 		float voiced_confidence = 0.0f; // based on harmonic energy
 
 		// --- Temporal rhythm ---

@@ -224,7 +224,7 @@ namespace robotick
 
 			const ProsodyState& prosody = inputs.prosody_state;
 
-			if (config.use_voiced_gate && !prosody.voiced)
+			if (config.use_voiced_gate && !prosody.is_voiced)
 			{
 				emit_smooth_zero(outputs.mono, state.get(), 64);
 				return;

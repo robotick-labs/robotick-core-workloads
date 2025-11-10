@@ -182,7 +182,7 @@ namespace robotick
 			float amplitude;
 		};
 
-		FixedVector<Peak, 32> peaks;
+		FixedVector<Peak, AudioBuffer128::capacity()> peaks;
 		size_t band_id = 0;
 
 		while (band_id < envelope.size())
@@ -230,7 +230,7 @@ namespace robotick
 			float score = 0.0f;
 
 			// Try to find matching harmonic peaks at integer multiples of this candidate f0
-			for (size_t harmonic_id = 1; harmonic_id <= harmonic_pitch::MaxHarmonics; ++harmonic_id)
+			for (size_t harmonic_id = 1; harmonic_id <= harmonics.capacity(); ++harmonic_id)
 			{
 				const float expected_freq = candidate_f0 * harmonic_id;
 

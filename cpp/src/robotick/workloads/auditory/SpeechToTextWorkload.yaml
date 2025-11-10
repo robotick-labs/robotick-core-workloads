@@ -1,0 +1,10 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/auditory/SpeechToText.cpp
+
+    deps:
+      - name: Whisper
+        source:
+          type: workload_cmake
+        link_target: whisper
