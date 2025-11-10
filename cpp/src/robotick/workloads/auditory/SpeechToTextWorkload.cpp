@@ -237,10 +237,12 @@ namespace robotick
 				const bool is_voiced = inputs.is_voiced;
 				const double now = tick_info.time_now;
 
+				AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
+
 				if (is_voiced)
 				{
 					state->last_voiced_time = now;
-					state->is_voiced_segment_pending = true;
+					state->is_voiced_segment_pending = foreground_accumulator.get_duration_sec() >= config.settings.min_voiced_duration_sec;
 				}
 
 				const double silence_duration = now - state->last_voiced_time;
@@ -256,7 +258,6 @@ namespace robotick
 
 					std::lock_guard<std::mutex> lock(state->mutex);
 
-					AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
 					AudioAccumulator& background_accumulator = state->get_background_accumulator();
 
 					// copy FG → BG
