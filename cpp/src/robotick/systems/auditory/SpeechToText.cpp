@@ -58,6 +58,9 @@ namespace robotick
 
 	void SpeechToText::initialize(const SpeechToTextSettings& settings, SpeechToTextInternalState& state)
 	{
+		// silence all logs but errors and warnings
+		whisper_log_set(whisper_log_handler, nullptr);
+
 		const char* model_path = settings.model_path.c_str();
 
 		// --- Init Whisper context (like CLI) ---
@@ -110,9 +113,6 @@ namespace robotick
 			wparams.n_threads,
 			(int)std::thread::hardware_concurrency(),
 			whisper_print_system_info());
-
-		// now we've finished setting up, silence all logs but errors and warnings
-		whisper_log_set(whisper_log_handler, nullptr);
 	}
 
 	bool SpeechToText::transcribe(const SpeechToTextInternalState& state, const float* buffer, size_t num_samples, TranscribedWords& out_words)
