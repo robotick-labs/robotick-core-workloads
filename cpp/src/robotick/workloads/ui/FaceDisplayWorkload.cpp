@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
 
 namespace robotick
@@ -26,7 +27,7 @@ namespace robotick
 
 	struct FaceDisplayOutputs
 	{
-		FixedVector16k face_png_data;
+		ImagePng16k face_png_data;
 		// ^- size estimate, tune as needed
 	};
 

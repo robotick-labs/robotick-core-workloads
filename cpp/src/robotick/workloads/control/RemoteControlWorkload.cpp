@@ -3,6 +3,7 @@
 
 #include "robotick/api.h"
 #include "robotick/platform/WebServer.h"
+#include "robotick/systems/Image.h"
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP)
 #include <nlohmann/json.hpp>
@@ -33,7 +34,7 @@ namespace robotick
 		float right_trigger = 0.0f;
 
 		// JPEG passthrough
-		FixedVector128k jpeg_data;
+		ImageJpeg128k jpeg_data;
 
 		// --- Added: Xbox 360 button booleans ---
 		bool a = false;

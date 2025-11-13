@@ -2,6 +2,7 @@ platforms:
   linux:
     files:
       - robotick/systems/Camera_desktop.cpp
+      - robotick/systems/Image.cpp
 
     deps:
       - name: SDL2
