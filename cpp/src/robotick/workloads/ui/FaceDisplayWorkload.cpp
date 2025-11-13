@@ -57,6 +57,7 @@ namespace robotick
 			// Init renderer if needed
 			if (!s.has_init_renderer)
 			{
+				s.renderer.set_texture_only_size(800, 480);
 				s.renderer.set_viewport(320, 240);
 				s.renderer.init(config.render_to_texture);
 				s.has_init_renderer = true;

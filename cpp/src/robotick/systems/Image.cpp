@@ -12,6 +12,7 @@ namespace robotick
 
 	ROBOTICK_REGISTER_PRIMITIVE_WITH_MIME_TYPE(ImagePngByte, "image/png");
 	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng16k, ImagePngByte);
+	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng64k, ImagePngByte);
 	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng128k, ImagePngByte);
 
 } // namespace robotick

@@ -22,8 +22,8 @@ namespace robotick
 	struct CochlearVisualizerConfig
 	{
 		float window_seconds = 5.0f; // visible history in seconds (x axis)
-		int viewport_width = 800;	 // logical render width
-		int viewport_height = 480;	 // logical render height
+		int viewport_width = 250;	 // logical render width
+		int viewport_height = 128;	 // logical render height
 		bool log_scale = true;		 // log mapping of amplitudes
 		float cochlear_visual_gain = 1.0f;
 
@@ -44,7 +44,7 @@ namespace robotick
 
 	struct CochlearVisualizerOutputs
 	{
-		ImagePng128k vis_png_data;
+		ImagePng64k vis_png_data;
 	};
 
 	// ------------------------------------------------------------
@@ -115,6 +115,7 @@ namespace robotick
 			s.rgba.assign(static_cast<size_t>(s.tex_w) * static_cast<size_t>(s.tex_h) * 4u, 0);
 
 			// Renderer is our single path for both live and offscreen
+			s.renderer.set_texture_only_size(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
 			s.renderer.set_viewport(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
 			s.renderer.init(config.render_to_texture);
 
