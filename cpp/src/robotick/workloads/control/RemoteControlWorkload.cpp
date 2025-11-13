@@ -92,7 +92,7 @@ namespace robotick
 		RemoteControlInputs inputs;
 		RemoteControlOutputs outputs;
 
-		State<RemoteControlState> state;
+		StatePtr<RemoteControlState> state;
 
 		void setup()
 		{

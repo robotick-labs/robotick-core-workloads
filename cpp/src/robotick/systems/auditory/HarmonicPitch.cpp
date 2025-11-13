@@ -7,29 +7,12 @@
 
 namespace robotick
 {
+	ROBOTICK_REGISTER_PRIMITIVE(HarmonicAmplitudes);
+
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchSettings)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_amplitude)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_peak_falloff_norm)
 	ROBOTICK_REGISTER_STRUCT_END(HarmonicPitchSettings)
-
-	static bool harmonic_amplitudes_to_string(const void* data, char* out_buffer, size_t buffer_size)
-	{
-		const HarmonicAmplitudes* buf = static_cast<const HarmonicAmplitudes*>(data);
-		if (!buf || !out_buffer || buffer_size < 32)
-			return false;
-
-		// Format: <HarmonicAmplitudes(size/capacity)>
-		int written = snprintf(out_buffer, buffer_size, "<HarmonicAmplitudes(%zu/%zu)>", buf->size(), buf->capacity());
-		return written > 0 && static_cast<size_t>(written) < buffer_size;
-	}
-
-	static bool harmonic_amplitudes_from_string(const char*, void*)
-	{
-		// Read-only string representation, parsing not supported
-		return false;
-	}
-
-	ROBOTICK_REGISTER_PRIMITIVE(HarmonicAmplitudes, harmonic_amplitudes_to_string, harmonic_amplitudes_from_string);
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchResult)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchResult, float, h1_f0_hz)

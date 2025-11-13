@@ -22,24 +22,7 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(TranscribedWord, float, end_time_sec)
 	ROBOTICK_REGISTER_STRUCT_END(TranscribedWord)
 
-	static bool transcribed_words_to_string(const void* data, char* out_buffer, size_t buffer_size)
-	{
-		const TranscribedWords* buf = static_cast<const TranscribedWords*>(data);
-		if (!buf || !out_buffer || buffer_size < 32)
-			return false;
-
-		// Format: <TranscribedWords(size/capacity)>
-		int written = snprintf(out_buffer, buffer_size, "<TranscribedWords(%zu/%zu)>", buf->size(), buf->capacity());
-		return written > 0 && static_cast<size_t>(written) < buffer_size;
-	}
-
-	static bool transcribed_words_from_string(const char*, void*)
-	{
-		// Read-only string representation, parsing not supported
-		return false;
-	}
-
-	ROBOTICK_REGISTER_PRIMITIVE(TranscribedWords, transcribed_words_to_string, transcribed_words_from_string);
+	ROBOTICK_REGISTER_PRIMITIVE(TranscribedWords);
 
 	void whisper_log_handler(enum ggml_log_level level, const char* text, void* user_data)
 	{

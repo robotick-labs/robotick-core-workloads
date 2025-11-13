@@ -199,7 +199,7 @@ namespace robotick
 		SpeechToTextConfig config;
 		SpeechToTextInputs inputs;
 		SpeechToTextOutputs outputs;
-		State<SpeechToTextState> state;
+		StatePtr<SpeechToTextState> state;
 
 		void load()
 		{

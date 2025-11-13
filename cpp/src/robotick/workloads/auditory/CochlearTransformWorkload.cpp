@@ -24,7 +24,7 @@ namespace robotick
 		CochlearTransformConfig config;
 		CochlearTransformInputs inputs;
 		CochlearTransformOutputs outputs;
-		State<CochlearTransformState> state;
+		StatePtr<CochlearTransformState> state;
 
 		void load()
 		{
