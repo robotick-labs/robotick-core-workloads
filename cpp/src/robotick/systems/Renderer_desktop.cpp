@@ -36,8 +36,8 @@ namespace robotick
 	{
 		if (texture_only)
 		{
-			physical_w = 640;
-			physical_h = 400;
+			physical_w = 800;
+			physical_h = 480;
 
 			SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest
