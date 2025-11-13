@@ -2,269 +2,222 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/systems/Image.h"
+#include "robotick/systems/Renderer.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
-#include <SDL2/SDL.h>
-#include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <vector>
+#include <vector> // desktop/test only; single allocation at init
 
 namespace robotick
 {
+	// ------------------------------------------------------------
+	// Config / IO
+	// ------------------------------------------------------------
+
 	struct CochlearVisualizerConfig
 	{
-		float window_seconds = 5.0f; // horizontal duration shown (s)
-		int viewport_width = 800;	 // window width (px)
-		int viewport_height = 400;	 // window height (px)
-		bool log_scale = true;
+		float window_seconds = 5.0f; // visible history in seconds (x axis)
+		int viewport_width = 640;	 // logical render width
+		int viewport_height = 360;	 // logical render height
+		bool log_scale = true;		 // log mapping of amplitudes
 		float cochlear_visual_gain = 1.0f;
+
 		bool draw_pitch_info = true;
 		float pitch_visual_gain = 1.0f;
 		float pitch_min_amplitude = 0.2f;
+
+		// If true: render offscreen and export PNG bytes to outputs.vis_png_data
+		// If false: present to the active display/window
+		bool render_to_texture = true;
 	};
 
 	struct CochlearVisualizerInputs
 	{
-		CochlearFrame cochlear_frame;
-		HarmonicPitchResult pitch_info;
+		CochlearFrame cochlear_frame;	// envelope[Nbands], band_center_hz[Nbands]
+		HarmonicPitchResult pitch_info; // h1_f0_hz, harmonic_amplitudes[k]
 	};
+
+	struct CochlearVisualizerOutputs
+	{
+		ImagePng128k vis_png_data;
+	};
+
+	// ------------------------------------------------------------
+	// Internal state (single allocation for the rolling image)
+	// ------------------------------------------------------------
 
 	struct CochlearVisualizerState
 	{
-		bool has_initialized = false;
-		bool is_rendering_paused = false;
+		bool initialized = false;
 
-		SDL_Window* window = nullptr;
-		SDL_Renderer* renderer = nullptr;
-		SDL_Texture* texture = nullptr;
+		int tex_w = 0;			   // columns (history)
+		int tex_h = 0;			   // rows (cochlear bands)
+		std::vector<uint8_t> rgba; // RGBA8888, size = tex_w * tex_h * 4 (desktop/test)
 
-		int tex_w = 0;
-		int tex_h = 0;
-
-		std::vector<uint8_t> pixels; // RGBA
-
-		void init_window(const CochlearVisualizerConfig& cfg, int num_bands, float tick_rate_hz)
-		{
-			has_initialized = true;
-
-			if (SDL_Init(SDL_INIT_VIDEO) < 0)
-			{
-				ROBOTICK_FATAL_EXIT("SDL_Init failed: %s\n", SDL_GetError());
-				return;
-			}
-
-			window = SDL_CreateWindow("Cochlear Visualizer",
-				SDL_WINDOWPOS_CENTERED,
-				SDL_WINDOWPOS_CENTERED,
-				cfg.viewport_width,
-				cfg.viewport_height,
-				SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-
-			renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-			if (!renderer)
-			{
-				ROBOTICK_FATAL_EXIT("SDL_CreateRenderer failed: %s\n", SDL_GetError());
-				return;
-			}
-
-			const int cols_needed = std::max(1, (int)std::lround(tick_rate_hz * cfg.window_seconds));
-			tex_w = cols_needed;
-			tex_h = num_bands;
-
-			texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, tex_w, tex_h);
-			SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_NONE);
-
-			pixels.assign((size_t)tex_w * (size_t)tex_h * 4, 0);
-		}
-
-		void shutdown()
-		{
-			if (texture)
-				SDL_DestroyTexture(texture);
-			if (renderer)
-				SDL_DestroyRenderer(renderer);
-			if (window)
-				SDL_DestroyWindow(window);
-			texture = nullptr;
-			renderer = nullptr;
-			window = nullptr;
-			SDL_Quit();
-		}
+		Renderer renderer;
 	};
+
+	// ------------------------------------------------------------
+	// Workload
+	// ------------------------------------------------------------
 
 	struct CochlearVisualizerWorkload
 	{
 		CochlearVisualizerConfig config;
 		CochlearVisualizerInputs inputs;
+		CochlearVisualizerOutputs outputs;
 		State<CochlearVisualizerState> state;
 
-		inline float hz_to_band_y(const AudioBuffer128& band_center_hz, float hz)
+		// --- helpers ---
+
+		static inline float clampf(float v, float lo, float hi) { return (v < lo) ? lo : (v > hi) ? hi : v; }
+
+		// Return fractional band index for frequency (for vertical placement)
+		static float hz_to_band_idx(const AudioBuffer128& centers_hz, float hz)
 		{
-			const int n = (int)band_center_hz.size();
+			const int n = static_cast<int>(centers_hz.size());
 			if (n <= 1)
 				return -1.0f;
-
-			// Clamp frequency to band range
-			if (hz <= band_center_hz[0])
-				return -1.0f;
-			if (hz >= band_center_hz[n - 1])
+			if (hz <= centers_hz[0] || hz >= centers_hz[n - 1])
 				return -1.0f;
 
-			// Find the nearest two bands
 			for (int i = 0; i < n - 1; ++i)
 			{
-				const float f0 = band_center_hz[i];
-				const float f1 = band_center_hz[i + 1];
+				const float f0 = centers_hz[i];
+				const float f1 = centers_hz[i + 1];
 				if (hz >= f0 && hz <= f1)
 				{
 					const float t = (hz - f0) / (f1 - f0);
-					// Y = band index (bottom to top)
-					return (i + t);
+					return static_cast<float>(i) + t;
 				}
 			}
-
 			return -1.0f;
 		}
 
-		void tick(const TickInfo& tick_info)
+		void init_if_needed(const TickInfo& tick)
 		{
-			auto& state_ref = state.get();
-
-			if (!state_ref.has_initialized)
-			{
-				const int num_bands = (int)inputs.cochlear_frame.envelope.capacity();
-				state_ref.init_window(config, num_bands, tick_info.tick_rate_hz);
-			}
-
-			if (!state_ref.renderer || !state_ref.texture)
+			auto& s = state.get();
+			if (s.initialized)
 				return;
 
-			const int bands_size = (int)inputs.cochlear_frame.envelope.size();
+			// Derive rolling image size: one column per tick across window_seconds
+			const int bands = static_cast<int>(inputs.cochlear_frame.envelope.capacity());
+			const int cols = std::max(1, static_cast<int>(std::lround(tick.tick_rate_hz * config.window_seconds)));
+
+			s.tex_w = cols;
+			s.tex_h = bands;
+
+			s.rgba.assign(static_cast<size_t>(s.tex_w) * static_cast<size_t>(s.tex_h) * 4u, 0);
+
+			// Renderer is our single path for both live and offscreen
+			s.renderer.set_viewport(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
+			s.renderer.init(config.render_to_texture);
+
+			s.initialized = true;
+		}
+
+		void tick(const TickInfo& tick)
+		{
+			auto& s = state.get();
+			init_if_needed(tick);
+
+			if (s.tex_w <= 0 || s.tex_h <= 0)
+				return;
+			const int bands_size = static_cast<int>(inputs.cochlear_frame.envelope.size());
 			if (bands_size <= 0)
 				return;
 
-			const int draw_bands = std::min(bands_size, state_ref.tex_h);
-			const int tex_w = state_ref.tex_w;
-			const int tex_h = state_ref.tex_h;
-
-			// === Shift all pixels left by one column ===
-			std::memmove(state_ref.pixels.data(), state_ref.pixels.data() + 4, (size_t)(tex_w - 1) * tex_h * 4);
-
-			// === Write new column on far-right edge ===
-
-			for (int band_id = 0; band_id < draw_bands; ++band_id)
+			// 1) Scroll left by one column
+			if (s.tex_w > 1)
 			{
-				float amplitude = inputs.cochlear_frame.envelope[band_id] * config.cochlear_visual_gain;
+				std::memmove(s.rgba.data(), s.rgba.data() + 4, static_cast<size_t>((s.tex_w - 1) * s.tex_h * 4));
+			}
 
+			// 2) Write new rightmost column from cochlear envelope (greyscale)
+			const int draw_bands = std::min(bands_size, s.tex_h);
+			for (int band = 0; band < draw_bands; ++band)
+			{
+				float a = inputs.cochlear_frame.envelope[band] * config.cochlear_visual_gain;
 				if (config.log_scale)
 				{
-					amplitude = std::log1p(amplitude * 10.0f) / std::log1p(10.0f);
+					a = std::log1p(a * 10.0f) / std::log1p(10.0f);
 				}
+				a = clampf(a, 0.0f, 1.0f);
+				const uint8_t c = static_cast<uint8_t>(a * 255.0f);
 
-				amplitude = clamp(amplitude, 0.0f, 1.0f);
-				const Uint8 c = (Uint8)(amplitude * 255.0f);
-
-				const int tex_y = (tex_h - 1 - band_id);
-				const int idx = (tex_y * tex_w + (tex_w - 1)) * 4;
-				state_ref.pixels[idx + 0] = c;
-				state_ref.pixels[idx + 1] = c;
-				state_ref.pixels[idx + 2] = c;
-				state_ref.pixels[idx + 3] = 255;
+				const int row = (s.tex_h - 1 - band);				 // low freq at bottom
+				const int idx = (row * s.tex_w + (s.tex_w - 1)) * 4; // RGBA
+				uint8_t* px = &s.rgba[static_cast<size_t>(idx)];
+				px[0] = 255;
+				px[1] = c;
+				px[2] = c;
+				px[3] = c;
 			}
 
-			// === Overlay source candidates directly into pixel column ===
-			if (config.draw_pitch_info)
+			// 3) Overlay harmonic markers on the new column (green/yellow)
+			if (config.draw_pitch_info && inputs.pitch_info.h1_f0_hz > 0.0f)
 			{
-				const HarmonicPitchResult& pitch_info = inputs.pitch_info;
-				if (pitch_info.h1_f0_hz > 0.0f)
+				const auto& p = inputs.pitch_info;
+				for (size_t h = 1; h <= p.harmonic_amplitudes.size(); ++h)
 				{
-					for (size_t harmonic_id = 1; harmonic_id <= pitch_info.harmonic_amplitudes.size(); harmonic_id++)
+					float amp = p.harmonic_amplitudes[h - 1];
+					if (amp <= 0.0f)
+						continue;
+
+					float a = (amp - config.pitch_min_amplitude) * config.pitch_visual_gain;
+					if (config.log_scale)
+						a = std::log1p(a * 10.0f) / std::log1p(10.0f);
+					a = clampf(a, 0.0f, 1.0f);
+
+					const uint8_t r = static_cast<uint8_t>(a * 64.0f);
+					const uint8_t g = static_cast<uint8_t>(64.0f + a * (255.0f - 128.0f));
+
+					const float f = p.h1_f0_hz * static_cast<float>(h);
+					const float yf = hz_to_band_idx(inputs.cochlear_frame.band_center_hz, f);
+					if (yf < 0.0f)
+						continue;
+
+					const int y = std::max(0, std::min(s.tex_h - 1, static_cast<int>(std::lround(yf))));
+					const bool bold = (h == 1);
+					const int thickness = bold ? 3 : 1;
+
+					for (int t = 0; t < thickness; ++t)
 					{
-						const float amplitude = pitch_info.harmonic_amplitudes[harmonic_id - 1];
-						if (amplitude == 0.0f)
-						{
-							continue;
-						}
-
-						float amplitude_norm = (amplitude - config.pitch_min_amplitude) * config.pitch_visual_gain;
-						if (config.log_scale)
-						{
-							amplitude_norm = std::log1p(amplitude_norm * 10.0f) / std::log1p(10.0f);
-						}
-						amplitude_norm = clamp(amplitude_norm, 0.0f, 1.0f);
-
-						// -----------------------------------------------------------------------------
-						// Colour: Lerp from dark-green {0,32,0} to lime {64,255,0} based on amplitude
-						// -----------------------------------------------------------------------------
-						const Uint8 red = static_cast<Uint8>(0.0f + amplitude_norm * 64.0f);
-						const Uint8 green = static_cast<Uint8>(64.0f + amplitude_norm * (255.0f - 128.0f));
-						const SDL_Color colour_for_source = {red, green, 0, 255};
-
-						const float harmonic_frequency = pitch_info.h1_f0_hz * static_cast<float>(harmonic_id);
-						const float draw_y_float = hz_to_band_y(inputs.cochlear_frame.band_center_hz, harmonic_frequency);
-						if (draw_y_float < 0.0f)
-						{
-							continue;
-						}
-
-						const int draw_y = static_cast<int>(std::round(draw_y_float));
-
-						const bool draw_bold = (harmonic_id == 1);
-						const int thickness = draw_bold ? 3 : 1;
-
-						for (int thickness_id = 0; thickness_id < thickness; ++thickness_id)
-						{
-							const int tex_y = clamp(tex_h - 1 - (draw_y + thickness_id), 0, tex_h - 1);
-							const int idx = (tex_y * tex_w + (tex_w - 1)) * 4;
-
-							state_ref.pixels[idx + 0] = colour_for_source.r;
-							state_ref.pixels[idx + 1] = colour_for_source.g;
-							state_ref.pixels[idx + 2] = colour_for_source.b;
-							state_ref.pixels[idx + 3] = 255;
-						}
+						const int row = std::max(0, std::min(s.tex_h - 1, (s.tex_h - 1 - (y + t))));
+						const int idx = (row * s.tex_w + (s.tex_w - 1)) * 4;
+						uint8_t* px = &s.rgba[static_cast<size_t>(idx)];
+						px[0] = 255;
+						px[1] = r;
+						px[2] = g;
+						px[3] = 0;
 					}
 				}
 			}
 
-			// Update texture contents
-			SDL_UpdateTexture(state_ref.texture, nullptr, state_ref.pixels.data(), tex_w * 4);
+			// 4) Draw to renderer and either present (live) or capture PNG (offscreen)
+			s.renderer.clear(Colors::Black);
+			s.renderer.draw_image_rgba8888_fit(s.rgba.data(), s.tex_w, s.tex_h);
 
-			// === Stretch cochlear texture to viewport ===
-			int window_width, window_height;
-			SDL_GetWindowSize(state_ref.window, &window_width, &window_height);
-
-			SDL_Rect dest{0, 0, window_width, window_height};
-			SDL_RenderClear(state_ref.renderer);
-			SDL_RenderCopy(state_ref.renderer, state_ref.texture, nullptr, &dest);
-
-			if (!state_ref.is_rendering_paused)
+			if (config.render_to_texture)
 			{
-				SDL_RenderPresent(state_ref.renderer);
+				const auto png = s.renderer.capture_as_png();
+				if (!png.empty())
+				{
+					outputs.vis_png_data.set(png.data(), png.size());
+				}
 			}
-
-			// Handle events
-			SDL_Event e;
-			while (SDL_PollEvent(&e))
+			else
 			{
-				if (e.type == SDL_QUIT)
-				{
-					state->shutdown();
-					break;
-				}
-				else if (e.type == SDL_KEYDOWN)
-				{
-					if (e.key.keysym.sym == SDLK_SPACE)
-					{
-						state_ref.is_rendering_paused = !state_ref.is_rendering_paused;
-					}
-				}
+				s.renderer.present();
 			}
 		}
 
-		void stop() { state->shutdown(); }
+		void stop() { state->renderer.cleanup(); }
 	};
+
 } // namespace robotick

@@ -14,6 +14,10 @@ namespace robotick
 {
 	static SDL_Window* window = nullptr;
 	static SDL_Renderer* renderer = nullptr;
+	static SDL_Texture* blit_texture = nullptr; // cache for draw_image_rgba8888_fit
+	static int blit_tex_w = 0;
+	static int blit_tex_h = 0;
+
 	static TTF_Font* font = nullptr;
 	static int current_font_size = 0;
 
@@ -32,15 +36,11 @@ namespace robotick
 	{
 		if (texture_only)
 		{
-			// Pick an explicit face texture size (or read from config).
-			// Use the same numbers you used for the on-screen render.
-			// Example: 640x400 (16:10) or 800x480 (5:3) etc.
-			// If you already have desired logical_w/h members, use those.
-			physical_w = /* your width */ 640;
-			physical_h = /* your height */ 400;
+			physical_w = 640;
+			physical_h = 400;
 
 			SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest, no filtering
+			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest
 
 			if (SDL_Init(SDL_INIT_VIDEO) != 0)
 				ROBOTICK_FATAL_EXIT("SDL_Init failed: %s", SDL_GetError());
@@ -54,17 +54,15 @@ namespace robotick
 			if (!renderer)
 				ROBOTICK_FATAL_EXIT("SDL_CreateRenderer (offscreen) failed: %s", SDL_GetError());
 
-			// Lock a fixed logical render size so draw_* math matches pixels exactly.
 			SDL_RenderSetLogicalSize(renderer, physical_w, physical_h);
 			SDL_RenderSetIntegerScale(renderer, SDL_TRUE);
 
-			// In case SDL adjusted anything, re-query the actual window size.
 			int w = 0, h = 0;
 			SDL_GetWindowSize(window, &w, &h);
 			physical_w = w;
 			physical_h = h;
 
-			update_scale(); // keep your existing logical->pixel conversion in sync
+			update_scale();
 			return;
 		}
 
@@ -115,6 +113,14 @@ namespace robotick
 			current_font_size = 0;
 		}
 
+		if (blit_texture)
+		{
+			SDL_DestroyTexture(blit_texture);
+			blit_texture = nullptr;
+			blit_tex_w = 0;
+			blit_tex_h = 0;
+		}
+
 		TTF_Quit();
 
 		if (renderer)
@@ -141,12 +147,13 @@ namespace robotick
 	void Renderer::present()
 	{
 		SDL_Window* win = SDL_GetWindowFromID(1); // or cache your SDL_Window*
-		const Uint32 flags = SDL_GetWindowFlags(win);
+		const Uint32 flags = win ? SDL_GetWindowFlags(win) : 0;
 
-		const bool is_visible = (flags & SDL_WINDOW_SHOWN) && !(flags & SDL_WINDOW_MINIMIZED) && !(flags & SDL_WINDOW_HIDDEN);
+		const bool is_visible = win && (flags & SDL_WINDOW_SHOWN) && !(flags & SDL_WINDOW_MINIMIZED) && !(flags & SDL_WINDOW_HIDDEN);
 
-		int w, h;
-		SDL_GetWindowSize(window, &w, &h);
+		int w = 0, h = 0;
+		if (window)
+			SDL_GetWindowSize(window, &w, &h);
 
 		if (w > 0 && h > 0 && is_visible)
 		{
@@ -164,15 +171,12 @@ namespace robotick
 		if (!surface)
 			return png_data;
 
-		// Read exactly the logical-size buffer
 		SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ABGR8888, surface->pixels, surface->pitch);
 
-		// ABGR8888 -> RGBA for PNG
 		cv::Mat abgr(surface->h, surface->w, CV_8UC4, surface->pixels, surface->pitch);
 		cv::Mat rgba;
 		cv::cvtColor(abgr, rgba, cv::COLOR_BGRA2RGBA);
 
-		// Encode to PNG
 		cv::imencode(".png", rgba, png_data);
 
 		SDL_FreeSurface(surface);
@@ -217,7 +221,6 @@ namespace robotick
 				font = nullptr;
 			}
 
-			// Try default font path; make this configurable in future
 #if defined(__linux__)
 			const char* font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 #elif defined(_WIN32)
@@ -275,6 +278,61 @@ namespace robotick
 		SDL_FreeSurface(surface);
 	}
 
+	// === New: raw RGBA blit, stretched to current viewport ===
+	void Renderer::draw_image_rgba8888_fit(const uint8_t* pixels, int w, int h)
+	{
+		if (!pixels || w <= 0 || h <= 0 || !renderer)
+			return;
+
+		// (Re)create the cached texture if size changed
+		if (!blit_texture || blit_tex_w != w || blit_tex_h != h)
+		{
+			if (blit_texture)
+			{
+				SDL_DestroyTexture(blit_texture);
+				blit_texture = nullptr;
+			}
+			blit_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+			if (!blit_texture)
+			{
+				ROBOTICK_WARNING("draw_image_rgba8888_fit: failed to create texture: %s", SDL_GetError());
+				return;
+			}
+			blit_tex_w = w;
+			blit_tex_h = h;
+		}
+
+		// Upload pixels
+		void* tex_pixels = nullptr;
+		int pitch = 0;
+		if (SDL_LockTexture(blit_texture, nullptr, &tex_pixels, &pitch) == 0)
+		{
+			// incoming is tightly-packed RGBA8888
+			const uint8_t* src = pixels;
+			uint8_t* dst = static_cast<uint8_t*>(tex_pixels);
+
+			for (int y = 0; y < h; ++y)
+			{
+				std::memcpy(dst + y * pitch, src + y * (w * 4), static_cast<size_t>(w * 4));
+			}
+			SDL_UnlockTexture(blit_texture);
+		}
+		else
+		{
+			ROBOTICK_WARNING("draw_image_rgba8888_fit: SDL_LockTexture failed: %s", SDL_GetError());
+			return;
+		}
+
+		// Fit to the viewport region inside the window
+		const SDL_Rect dst{
+			offset_x,
+			offset_y,
+			static_cast<int>(logical_w * scale),
+			static_cast<int>(logical_h * scale),
+		};
+
+		SDL_RenderCopy(renderer, blit_texture, nullptr, &dst);
+	}
 } // namespace robotick
 
 #endif // ROBOTICK_PLATFORM_DESKTOP

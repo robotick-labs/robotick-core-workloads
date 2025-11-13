@@ -2,6 +2,7 @@
 
 #include "robotick/systems/Renderer.h"
 #include <M5Unified.h>
+#include <vector>
 
 namespace robotick
 {
@@ -70,8 +71,63 @@ namespace robotick
 		canvas->setTextSize(1);
 		canvas->setTextColor(canvas->color565(color.r, color.g, color.b));
 		canvas->setTextDatum(align == TextAlign::Center ? middle_center : top_left);
-
 		canvas->drawString(text, to_px_x(pos.x), to_px_y(pos.y));
+	}
+
+	// === New: raw RGBA blit, stretched to current viewport ===
+	void Renderer::draw_image_rgba8888_fit(const uint8_t* pixels, int w, int h)
+	{
+		if (!pixels || w <= 0 || h <= 0 || !canvas)
+			return;
+
+		// Convert RGBA8888 -> RGB565 and draw scaled to the viewport region
+		// NOTE: For now we simply scale to fill the logical viewport using M5 drawScaledSprite-like path.
+		// M5Canvas doesn't provide an RGBA path, so convert then push.
+		static std::vector<uint16_t> rgb565; // desktop-only STL is avoided in core; here it's an ESP-side UI path
+		rgb565.resize(static_cast<size_t>(w) * static_cast<size_t>(h));
+
+		const uint8_t* src = pixels;
+		for (int i = 0, n = w * h; i < n; ++i)
+		{
+			const uint8_t r = src[0];
+			const uint8_t g = src[1];
+			const uint8_t b = src[2];
+			// ignore alpha
+			src += 4;
+
+			const uint16_t r5 = static_cast<uint16_t>(r >> 3);
+			const uint16_t g6 = static_cast<uint16_t>(g >> 2);
+			const uint16_t b5 = static_cast<uint16_t>(b >> 3);
+			rgb565[static_cast<size_t>(i)] = (r5 << 11) | (g6 << 5) | (b5);
+		}
+
+		// Destination rect is the current logical viewport region in pixels
+		const int dst_x = offset_x;
+		const int dst_y = offset_y;
+		const int dst_w = static_cast<int>(logical_w * scale);
+		const int dst_h = static_cast<int>(logical_h * scale);
+
+		// Use pushImage with automatic scaling via startWrite/writePixels if available.
+		// As a simple compatible path, draw at 1:1 when sizes match; otherwise use M5's pushImage disable scaling (drawImage does not scale),
+		// so we manually scale via drawPixel sampling (nearest). Kept simple for now.
+		if (dst_w == w && dst_h == h)
+		{
+			canvas->pushImage(dst_x, dst_y, w, h, rgb565.data());
+		}
+		else
+		{
+			// Nearest-neighbour manual scale
+			for (int y = 0; y < dst_h; ++y)
+			{
+				const int sy = (y * h) / dst_h;
+				const uint16_t* row = &rgb565[static_cast<size_t>(sy) * static_cast<size_t>(w)];
+				for (int x = 0; x < dst_w; ++x)
+				{
+					const int sx = (x * w) / dst_w;
+					canvas->drawPixel(dst_x + x, dst_y + y, row[sx]);
+				}
+			}
+		}
 	}
 } // namespace robotick
 

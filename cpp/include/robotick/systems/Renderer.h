@@ -6,6 +6,7 @@
 #include "robotick/framework/math/Vec2.h"
 
 #include <stdint.h>
+#include <vector>
 
 namespace robotick
 {
@@ -56,12 +57,17 @@ namespace robotick
 		void draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color);
 		void draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color);
 
+		// New: blit an RGBA8888 image and scale to the current viewport
+		// pixels.size() must be == w*h*4
+		void draw_image_rgba8888_fit(const uint8_t* pixels, int w, int h);
+
 	  protected:
 		void update_scale()
 		{
 			const float scale_x = static_cast<float>(physical_w) / logical_w;
 			const float scale_y = static_cast<float>(physical_h) / logical_h;
-			scale = min(scale_x, scale_y);
+			const float s = (scale_x < scale_y) ? scale_x : scale_y;
+			scale = s;
 
 			offset_x = (physical_w - static_cast<int>(logical_w * scale)) / 2;
 			offset_y = (physical_h - static_cast<int>(logical_h * scale)) / 2;
