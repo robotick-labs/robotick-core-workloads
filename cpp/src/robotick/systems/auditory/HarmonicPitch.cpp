@@ -7,7 +7,7 @@
 
 namespace robotick
 {
-	ROBOTICK_REGISTER_PRIMITIVE(HarmonicAmplitudes);
+	ROBOTICK_REGISTER_FIXED_VECTOR(HarmonicAmplitudes, float);
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchSettings)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_amplitude)

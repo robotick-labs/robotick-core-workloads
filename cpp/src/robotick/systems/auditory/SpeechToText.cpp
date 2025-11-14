@@ -22,7 +22,7 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(TranscribedWord, float, end_time_sec)
 	ROBOTICK_REGISTER_STRUCT_END(TranscribedWord)
 
-	ROBOTICK_REGISTER_PRIMITIVE(TranscribedWords);
+	ROBOTICK_REGISTER_FIXED_VECTOR(TranscribedWords, TranscribedWord);
 
 	void whisper_log_handler(enum ggml_log_level level, const char* text, void* user_data)
 	{

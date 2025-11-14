@@ -161,21 +161,40 @@ namespace robotick
 
 			if (!audio_accumulator.samples.empty())
 			{
+				TranscribedWords transcribed_words_raw;
 				TranscribedWords transcribed_words;
 				FixedString512 transcript;
 
 				SpeechToText::transcribe(
-					state->internal_state, audio_accumulator.samples.data(), audio_accumulator.samples.size(), transcribed_words);
+					state->internal_state, audio_accumulator.samples.data(), audio_accumulator.samples.size(), transcribed_words_raw);
 
 				float mean_confidence = 0.0f;
 
-				for (TranscribedWord& word : transcribed_words)
+				for (TranscribedWord& word : transcribed_words_raw)
 				{
+					mean_confidence += word.confidence / (float)transcribed_words_raw.size();
+
+					if (word.text.contains('['))
+					{
+						continue; // skip tokens
+					}
+
 					word.start_time_sec += start_time_sec_engine;
 					word.end_time_sec += start_time_sec_engine;
 
-					mean_confidence += word.confidence / (float)transcribed_words.size();
+					// Remove any preceding space from first word (for tidiness):
+					if (transcribed_words.size() == 0)
+					{
+						const char* original_chars = word.text.c_str();
+						if (original_chars[0] == ' ')
+						{
+							const FixedString32 swap_string = &original_chars[1];
+							// ^- assumes every string will have a null-terminator - which is the case for FixedString
+							word.text = swap_string;
+						}
+					}
 
+					transcribed_words.add(word);
 					transcript.append(word.text.c_str());
 				}
 
