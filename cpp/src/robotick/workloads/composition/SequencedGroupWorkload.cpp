@@ -120,16 +120,16 @@ namespace robotick
 
 					// tick the child:
 					TickInfo child_tick_info(tick_info);
-					child_tick_info.workload_stats = &child_info.workload_info->mutable_stats;
+					child_tick_info.workload_stats = child_info.workload_info->workload_stats;
 
 					child_info.workload_info->workload_descriptor->tick_fn(child_info.workload_ptr, child_tick_info);
 
 					const auto now_post_tick = std::chrono::steady_clock::now();
-					child_info.workload_info->mutable_stats.last_tick_duration_ns =
+					child_info.workload_info->workload_stats->last_tick_duration_ns =
 						static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now_post_tick - now_pre_tick).count());
 
 					constexpr float NanosecondsPerSecond = 1e9f;
-					child_info.workload_info->mutable_stats.last_time_delta_ns =
+					child_info.workload_info->workload_stats->last_time_delta_ns =
 						static_cast<uint32_t>(child_tick_info.delta_time * NanosecondsPerSecond);
 				}
 			}
@@ -155,7 +155,7 @@ namespace robotick
 
 			for (const auto& child : children)
 			{
-				const auto ns = child.workload_info->mutable_stats.last_tick_duration_ns;
+				const auto ns = child.workload_info->workload_stats->last_tick_duration_ns;
 				const char* name = child.workload_info->seed->unique_name.c_str(); // More helpful than workload type
 
 				if (ns > top1.duration_ns)

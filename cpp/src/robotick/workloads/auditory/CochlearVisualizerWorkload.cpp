@@ -31,7 +31,7 @@ namespace robotick
 		float pitch_visual_gain = 1.0f;
 		float pitch_min_amplitude = 0.2f;
 
-		// If true: render offscreen and export PNG bytes to outputs.vis_png_data
+		// If true: render offscreen and export PNG bytes to outputs.visualization_png
 		// If false: present to the active display/window
 		bool render_to_texture = true;
 	};
@@ -44,7 +44,7 @@ namespace robotick
 
 	struct CochlearVisualizerOutputs
 	{
-		ImagePng64k vis_png_data;
+		ImagePng64k visualization_png;
 	};
 
 	// ------------------------------------------------------------
@@ -209,7 +209,7 @@ namespace robotick
 				const auto png = s.renderer.capture_as_png();
 				if (!png.empty())
 				{
-					outputs.vis_png_data.set(png.data(), png.size());
+					outputs.visualization_png.set(png.data(), png.size());
 				}
 			}
 			else

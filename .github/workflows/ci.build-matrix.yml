@@ -48,11 +48,11 @@ jobs:
           if git ls-remote --exit-code --heads "$ENGINE_URL" "$BRANCH" >/dev/null 2>&1; then
             git clone --depth=1 --branch "$BRANCH" "$ENGINE_URL" ../robotick-engine
           else
-            echo "⚠️  '$BRANCH' not found in robotick-engine — using 'main'"
+            echo "'$BRANCH' not found in robotick-engine — using 'main'"
             git clone --depth=1 --branch main "$ENGINE_URL" ../robotick-engine
           fi
 
-          echo "📦 Fetching submodules for robotick-engine..."
+          echo "Fetching submodules for robotick-engine..."
           cd ../robotick-engine
           git submodule update --init --recursive
 

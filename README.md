@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-> ⚠️ **Work In Progress**
+> **Work In Progress**
 >
 > This project is under active development and not yet production-ready.
 > The repo is public to support tools like [CodeRabbit](https://coderabbit.ai) and promote early collaboration and transparency.
@@ -40,6 +40,7 @@ Built for early learners and industry professionals alike, Robotick is simple en
 ### 🧩 Modular Workloads
 
 Each unit of logic is a workload - a small, testable module with clearly defined inputs, outputs, and config:
+
 ```cpp
 struct HelloWorkload {
     HelloConfig config;
@@ -49,6 +50,7 @@ struct HelloWorkload {
     void tick(const TickInfo& tick_info);
 };
 ```
+
 Reflection macros make every field visible and usable for config, scripting, or telemetry.
 
 ### 🔁 Real-Time Engine
@@ -59,7 +61,7 @@ Reflection macros make every field visible and usable for config, scripting, or 
 - Exceptionally consistent timing on MCUs
 - Excellent latency characteristics on general-purpose platforms
 
-### 📦 Composition System
+### Composition System
 
 Compose workloads into rich behaviours:
 
@@ -122,10 +124,10 @@ robotick/
 
 ## 🛠️ Platform Support
 
-- ✅ STM32 (e.g. B-G431B-ESC1)
-- ✅ Raspberry Pi (Pi 2 → Pi 5)
-- ✅ Desktop (Windows / Linux)
-- ✅ Jetson (Nano, Orin) via arm64
+- STM32 (e.g. B-G431B-ESC1)
+- Raspberry Pi (Pi 2 → Pi 5)
+- Desktop (Windows / Linux)
+- Jetson (Nano, Orin) via arm64
 
 Compiled and deployed executables are tested across an expanding range of targets.
 

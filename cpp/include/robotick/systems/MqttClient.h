@@ -25,7 +25,7 @@ namespace robotick
 	{
 	  public:
 		MqttClient(const std::string& broker_uri, const std::string& client_id);
-		~MqttClient() override; // ✅ declare
+		~MqttClient() override; // declare
 
 		void set_callback(std::function<void(const std::string&, const std::string&)>) override;
 		void connect() override;
@@ -33,8 +33,8 @@ namespace robotick
 		void publish(const std::string& topic, const std::string& payload, bool retained = true) override;
 
 		// Optional: drive mqtt-c from your engine tick
-		void poll();	   // ✅ declare
-		void disconnect(); // ✅ declare
+		void poll();	   // declare
+		void disconnect(); // declare
 
 	  private:
 		// exact mqtt-c types

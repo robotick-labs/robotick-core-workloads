@@ -165,7 +165,7 @@ namespace robotick
 			const auto tick_interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_interval_sec);
 
 			TickInfo tick_info;
-			tick_info.workload_stats = &child.mutable_stats;
+			tick_info.workload_stats = child.workload_stats;
 			tick_info.tick_rate_hz = child.seed->tick_rate_hz;
 
 			auto workload_tick_fn = child.workload_descriptor->tick_fn;
@@ -202,11 +202,11 @@ namespace robotick
 				next_tick_time += tick_interval;
 
 				const auto now_post = std::chrono::steady_clock::now();
-				child.mutable_stats.last_tick_duration_ns =
+				child.workload_stats->last_tick_duration_ns =
 					static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now_post - now).count());
 
 				constexpr float NanosecondsPerSecond = 1e9f;
-				child.mutable_stats.last_time_delta_ns = static_cast<uint32_t>(tick_info.delta_time * NanosecondsPerSecond);
+				child.workload_stats->last_time_delta_ns = static_cast<uint32_t>(tick_info.delta_time * NanosecondsPerSecond);
 
 				Thread::hybrid_sleep_until(std::chrono::time_point_cast<std::chrono::steady_clock::duration>(next_tick_time));
 			}

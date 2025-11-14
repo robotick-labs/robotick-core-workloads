@@ -10,32 +10,32 @@ if(ROBOTICK_PLATFORM_LINUX)
 endif()
 
 # ============================
-# ✅ Detect Platform Macros
+# Detect Platform Macros
 # ============================
 
 set(PLATFORM_DETECTED FALSE)
 
 if (DEFINED ROBOTICK_PLATFORM_LINUX)
-    message(STATUS "✅ Platform: ROBOTICK_PLATFORM_LINUX")
+    message(STATUS "Platform: ROBOTICK_PLATFORM_LINUX")
     set(PLATFORM_DETECTED TRUE)
 endif()
 
 if (DEFINED ROBOTICK_PLATFORM_ESP32)
-    message(STATUS "✅ Platform: ROBOTICK_PLATFORM_ESP32")
+    message(STATUS "Platform: ROBOTICK_PLATFORM_ESP32")
     set(PLATFORM_DETECTED TRUE)
 endif()
 
 if (DEFINED ROBOTICK_PLATFORM_DESKTOP)
-    message(STATUS "✅ Platform: ROBOTICK_PLATFORM_DESKTOP")
+    message(STATUS "Platform: ROBOTICK_PLATFORM_DESKTOP")
     set(PLATFORM_DETECTED TRUE)
 endif()
 
 if (NOT PLATFORM_DETECTED)
-    message(FATAL_ERROR "❌ No platform macro defined! Please define at least one of: ROBOTICK_PLATFORM_LINUX, ROBOTICK_PLATFORM_DESKTOP, ROBOTICK_PLATFORM_ESP32.")
+    message(FATAL_ERROR "No platform macro defined! Please define at least one of: ROBOTICK_PLATFORM_LINUX, ROBOTICK_PLATFORM_DESKTOP, ROBOTICK_PLATFORM_ESP32.")
 endif()
 
 # =========================
-# ✅ Project-wide Settings
+# Project-wide Settings
 # =========================
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -72,10 +72,10 @@ set(PYTHON_SOURCES ${PYTHON_SOURCES} PARENT_SCOPE)
 
 list(LENGTH CORE_SOURCES CORE_COUNT)
 list(LENGTH PYTHON_SOURCES PYTHON_COUNT)
-message(STATUS "📦 CORE_SOURCES: ${CORE_COUNT}  |  PYTHON_SOURCES: ${PYTHON_COUNT}")
+message(STATUS "CORE_SOURCES: ${CORE_COUNT}  |  PYTHON_SOURCES: ${PYTHON_COUNT}")
 
 # =========================
-# ✅ Include the engine
+# Include the engine
 # =========================
 
 option(ROBOTICK_ENGINE_SOURCE_DIR "Path to a local robotick-engine source tree" "")
@@ -95,7 +95,7 @@ if(NOT ROBOTICK_ENGINE_FOUND)
 endif()
 
 # =========================
-# ✅ Core Framework Library
+# Core Framework Library
 # =========================
 
 add_library(robotick-core-workloads SHARED ${CORE_SOURCES})
@@ -117,13 +117,13 @@ target_compile_options(robotick-core-workloads PRIVATE -fno-exceptions)
 target_link_libraries(robotick-core-workloads PRIVATE robotick-engine)
 
 # =========================
-# ✅ Optional Python Workloads
+# Optional Python Workloads
 # =========================
 
 include(FetchContent)
 
 if(ROBOTICK_ENABLE_PYTHON)
-    message(STATUS "✅ ROBOTICK_ENABLE_PYTHON - ON")
+    message(STATUS "ROBOTICK_ENABLE_PYTHON - ON")
     FetchContent_Declare(
         pybind11
         GIT_REPOSITORY https://github.com/pybind/pybind11.git
@@ -151,11 +151,11 @@ if(ROBOTICK_ENABLE_PYTHON)
         set_source_files_properties(${source_file} PROPERTIES COMPILE_FLAGS "-fexceptions -frtti")
     endforeach()
 else()
-    message(STATUS "❌ ROBOTICK_ENABLE_PYTHON - OFF")
+    message(STATUS "ROBOTICK_ENABLE_PYTHON - OFF")
 endif()
 
 # =========================
-# ✅ Mujoco
+# Mujoco
 # =========================
 
 if (ROBOTICK_PLATFORM_LINUX)
@@ -187,7 +187,7 @@ if (ROBOTICK_PLATFORM_LINUX)
 endif()
 
 # =========================
-# ✅ Additional libs
+# Additional libs
 # =========================
 
 target_link_libraries(robotick-core-workloads PUBLIC nlohmann_json::nlohmann_json)
@@ -206,7 +206,7 @@ if(ROBOTICK_PLATFORM_LINUX)
 endif()
 
 # =========================
-# ✅ Add mqtt-c (lightweight C MQTT client)
+# Add mqtt-c (lightweight C MQTT client)
 # =========================
 add_library(mqtt-c STATIC
     tests/external/mqtt-c/src/mqtt.c
@@ -223,7 +223,7 @@ target_compile_definitions(mqtt-c PUBLIC
 target_link_libraries(robotick-core-workloads PUBLIC mqtt-c)
 
 # ==================================================
-# ✅ Configure SpeechToText / Whisper.cpp
+# Configure SpeechToText / Whisper.cpp
 # ==================================================
 
 # Include Robotick’s Whisper integration module
@@ -233,7 +233,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/src/robotick/workloads/auditory/SpeechToText
 target_link_libraries(robotick-core-workloads PRIVATE whisper)
 
 # =========================
-# ✅ ESP32 libs (if needed)
+# ESP32 libs (if needed)
 # =========================
 
 if(ROBOTICK_PLATFORM_ESP32)
@@ -249,11 +249,11 @@ if(ROBOTICK_PLATFORM_ESP32)
 endif()
 
 # =========================
-# ✅ Unit Tests via Catch2
+# Unit Tests via Catch2
 # =========================
 
 if (ROBOTICK_BUILD_CORE_WORKLOAD_TESTS)
-    message(STATUS "✅ ROBOTICK_BUILD_CORE_WORKLOAD_TESTS - ON")
+    message(STATUS "ROBOTICK_BUILD_CORE_WORKLOAD_TESTS - ON")
     enable_testing()
     add_subdirectory(tests)
 
@@ -263,30 +263,30 @@ if (ROBOTICK_BUILD_CORE_WORKLOAD_TESTS)
             ${CMAKE_BINARY_DIR}/tests/$<CONFIG>
     )
 else()
-    message(STATUS "❌ ROBOTICK_BUILD_CORE_WORKLOAD_TESTS - OFF")
+    message(STATUS "ROBOTICK_BUILD_CORE_WORKLOAD_TESTS - OFF")
 endif()
 
 # =========================
-# ✅ Prebuilt OpenCV (Desktop Only)
+# Prebuilt OpenCV (Desktop Only)
 # =========================
 
 if(ROBOTICK_PLATFORM_DESKTOP)
     find_package(OpenCV REQUIRED)
 
     if(NOT OpenCV_FOUND)
-        message(FATAL_ERROR "❌ OpenCV not found — install with: sudo apt install libopencv-dev")
+        message(FATAL_ERROR "OpenCV not found — install with: sudo apt install libopencv-dev")
     else()
-        message(STATUS "✅ OpenCV found — version: ${OpenCV_VERSION}")
+        message(STATUS "OpenCV found — version: ${OpenCV_VERSION}")
     endif()
 
     target_include_directories(robotick-core-workloads PRIVATE ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(robotick-core-workloads PRIVATE ${OpenCV_LIBS})
 else()
-    message(STATUS "❌ OpenCV is not enabled on this platform")
+    message(STATUS "OpenCV is not enabled on this platform")
 endif()
 
 # =========================
-# ✅ Auto-add License Headers
+# Auto-add License Headers
 # =========================
 
 if(ROBOTICK_ENABLE_PYTHON)

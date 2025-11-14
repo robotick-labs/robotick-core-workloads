@@ -65,9 +65,9 @@ if (COMPILER_SUPPORTS_BMI2)
 endif()
 
 if (SIMD_FLAGS)
-    message(STATUS "[SpeechToText] ✅ Enabling SIMD flags: ${SIMD_FLAGS}")
+    message(STATUS "[SpeechToText] Enabling SIMD flags: ${SIMD_FLAGS}")
 else()
-    message(WARNING "[SpeechToText] ⚠️  No SIMD instruction set flags supported")
+    message(WARNING "[SpeechToText] No SIMD instruction set flags supported")
 endif()
 
 # --------------------------------------------------
@@ -75,10 +75,10 @@ endif()
 # --------------------------------------------------
 find_package(OpenMP)
 if (OpenMP_CXX_FOUND)
-    message(STATUS "[SpeechToText] ✅ OpenMP found — enabling multithreaded decoding")
+    message(STATUS "[SpeechToText] OpenMP found — enabling multithreaded decoding")
     add_compile_definitions(WHISPER_USE_OPENMP)
 else()
-    message(WARNING "[SpeechToText] ⚠️  OpenMP not found — single-threaded fallback")
+    message(WARNING "[SpeechToText] OpenMP not found — single-threaded fallback")
 endif()
 
 # --------------------------------------------------
@@ -108,4 +108,4 @@ foreach(tgt whisper ggml ggml-cpu)
     endif()
 endforeach()
 
-message(STATUS "[SpeechToText] ✅ Whisper.cpp integration ready (optimized build)")
+message(STATUS "[SpeechToText] Whisper.cpp integration ready (optimized build)")
