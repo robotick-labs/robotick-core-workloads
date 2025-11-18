@@ -33,9 +33,6 @@ namespace robotick
 		float left_trigger = 0.0f;
 		float right_trigger = 0.0f;
 
-		// JPEG passthrough
-		ImageJpeg128k jpeg_data;
-
 		// --- Added: Xbox 360 button booleans ---
 		bool a = false;
 		bool b = false;
@@ -93,7 +90,7 @@ namespace robotick
 		RemoteControlInputs inputs;
 		RemoteControlOutputs outputs;
 
-		StatePtr<RemoteControlState> state;
+		State<RemoteControlState> state;
 
 		void setup()
 		{
@@ -103,13 +100,13 @@ namespace robotick
 				config.web_root_folder.c_str(),
 				[&](const WebRequest& request, WebResponse& response)
 				{
-					if (request.method == "POST" && request.uri == "/api/joystick_input")
+					if (request.method == "POST" && request.uri == "/api/rc_state")
 					{
 						const auto json_opt = nlohmann::json::parse(request.body, nullptr, /*allow exceptions*/ false);
 						if (json_opt.is_discarded())
 						{
-							response.status_code = 400;
-							response.body.set_from_string("Invalid JSON format.");
+							response.set_status_code(WebResponseCode::BadRequest);
+							response.set_body_string("Invalid JSON format.");
 							return true; // handled
 						}
 
@@ -168,14 +165,7 @@ namespace robotick
 						try_set_bool("dpad_left", w.dpad_left);
 						try_set_bool("dpad_right", w.dpad_right);
 
-						response.status_code = 200;
-						return true; // handled
-					}
-					else if (request.method == "GET" && request.uri == "/api/jpeg_data")
-					{
-						response.body.set(inputs.jpeg_data.data(), inputs.jpeg_data.size());
-						response.content_type = "image/jpeg";
-						response.status_code = 200;
+						response.set_status_code(WebResponseCode::OK);
 						return true; // handled
 					}
 

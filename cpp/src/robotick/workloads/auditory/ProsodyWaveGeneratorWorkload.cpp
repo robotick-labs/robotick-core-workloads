@@ -56,6 +56,7 @@ namespace robotick
 
 	struct ProsodyWaveGeneratorInputs
 	{
+		bool enabled = true;
 		ProsodyState prosody_state;
 	};
 
@@ -219,6 +220,11 @@ namespace robotick
 
 		void tick(const TickInfo& tick_info)
 		{
+			if (!inputs.enabled)
+			{
+				return;
+			}
+
 			static constexpr double ns_to_sec = 1e-9;
 			outputs.mono.timestamp = ns_to_sec * static_cast<double>(tick_info.time_now_ns);
 
