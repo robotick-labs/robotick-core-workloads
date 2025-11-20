@@ -22,7 +22,7 @@ namespace robotick
 	struct CochlearVisualizerConfig
 	{
 		float window_seconds = 5.0f; // visible history in seconds (x axis)
-		int viewport_width = 250;	 // logical render width
+		int viewport_width = 512;	 // logical render width
 		int viewport_height = 128;	 // logical render height
 		bool log_scale = true;		 // log mapping of amplitudes
 		float cochlear_visual_gain = 1.0f;
