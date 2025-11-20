@@ -133,10 +133,16 @@ namespace robotick
 			if (bands_size <= 0)
 				return;
 
-			// 1) Scroll left by one column
+			// 1) Scroll left by one column (preserve each row separately).
 			if (s.tex_w > 1)
 			{
-				std::memmove(s.rgba.data(), s.rgba.data() + 4, static_cast<size_t>((s.tex_w - 1) * s.tex_h * 4));
+				const size_t row_pitch = static_cast<size_t>(s.tex_w) * 4;
+				const size_t shift_bytes = static_cast<size_t>(s.tex_w - 1) * 4;
+				for (int row = 0; row < s.tex_h; ++row)
+				{
+					uint8_t* row_start = s.rgba.data() + static_cast<size_t>(row) * row_pitch;
+					std::memmove(row_start, row_start + 4, shift_bytes);
+				}
 			}
 
 			// 2) Write new rightmost column from cochlear envelope (greyscale)
