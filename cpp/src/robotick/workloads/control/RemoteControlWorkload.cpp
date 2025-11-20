@@ -17,7 +17,7 @@ namespace robotick
 		FixedString128 web_root_folder = "engine-data/remote_control_interface_web";
 	};
 
-	struct RemoteControlInputs
+	struct RemoteControlOutputs
 	{
 		bool use_web_inputs = true;
 
@@ -51,43 +51,15 @@ namespace robotick
 		bool dpad_right = false;
 	};
 
-	struct RemoteControlOutputs
-	{
-		// Mirrored/processed controls
-		Vec2f left;
-		Vec2f right;
-
-		float left_trigger = 0.0f;
-		float right_trigger = 0.0f;
-
-		// --- Added: mirror button booleans to outputs ---
-		bool a = false;
-		bool b = false;
-		bool x = false;
-		bool y = false;
-		bool left_bumper = false;
-		bool right_bumper = false;
-		bool back = false;
-		bool start = false;
-		bool guide = false;
-		bool left_stick_button = false;
-		bool right_stick_button = false;
-		bool dpad_up = false;
-		bool dpad_down = false;
-		bool dpad_left = false;
-		bool dpad_right = false;
-	};
-
 	struct RemoteControlState
 	{
+		RemoteControlOutputs web_inputs;
 		WebServer server;
-		RemoteControlInputs web_inputs;
 	};
 
 	struct RemoteControlWorkload
 	{
 		RemoteControlConfig config;
-		RemoteControlInputs inputs;
 		RemoteControlOutputs outputs;
 
 		State<RemoteControlState> state;
@@ -111,7 +83,7 @@ namespace robotick
 						}
 
 						const nlohmann::json& json = json_opt;
-						auto& w = state->web_inputs;
+						auto& web_inputs = state->web_inputs;
 
 						// Helper setters
 						auto try_set_vec2_from_json = [&](const char* name, Vec2f& out_vec2)
@@ -141,29 +113,29 @@ namespace robotick
 						};
 
 						// Core fields
-						try_set_bool("use_web_inputs", w.use_web_inputs);
-						try_set_vec2_from_json("left", w.left);
-						try_set_vec2_from_json("right", w.right);
+						try_set_bool("use_web_inputs", web_inputs.use_web_inputs);
+						try_set_vec2_from_json("left", web_inputs.left);
+						try_set_vec2_from_json("right", web_inputs.right);
 
-						try_set_number("left_trigger", w.left_trigger);
-						try_set_number("right_trigger", w.right_trigger);
+						try_set_number("left_trigger", web_inputs.left_trigger);
+						try_set_number("right_trigger", web_inputs.right_trigger);
 
 						// --- Added: Xbox 360 button booleans ---
-						try_set_bool("a", w.a);
-						try_set_bool("b", w.b);
-						try_set_bool("x", w.x);
-						try_set_bool("y", w.y);
-						try_set_bool("left_bumper", w.left_bumper);
-						try_set_bool("right_bumper", w.right_bumper);
-						try_set_bool("back", w.back);
-						try_set_bool("start", w.start);
-						try_set_bool("guide", w.guide);
-						try_set_bool("left_stick_button", w.left_stick_button);
-						try_set_bool("right_stick_button", w.right_stick_button);
-						try_set_bool("dpad_up", w.dpad_up);
-						try_set_bool("dpad_down", w.dpad_down);
-						try_set_bool("dpad_left", w.dpad_left);
-						try_set_bool("dpad_right", w.dpad_right);
+						try_set_bool("a", web_inputs.a);
+						try_set_bool("b", web_inputs.b);
+						try_set_bool("x", web_inputs.x);
+						try_set_bool("y", web_inputs.y);
+						try_set_bool("left_bumper", web_inputs.left_bumper);
+						try_set_bool("right_bumper", web_inputs.right_bumper);
+						try_set_bool("back", web_inputs.back);
+						try_set_bool("start", web_inputs.start);
+						try_set_bool("guide", web_inputs.guide);
+						try_set_bool("left_stick_button", web_inputs.left_stick_button);
+						try_set_bool("right_stick_button", web_inputs.right_stick_button);
+						try_set_bool("dpad_up", web_inputs.dpad_up);
+						try_set_bool("dpad_down", web_inputs.dpad_down);
+						try_set_bool("dpad_left", web_inputs.dpad_left);
+						try_set_bool("dpad_right", web_inputs.dpad_right);
 
 						response.set_status_code(WebResponseCode::OK);
 						return true; // handled
@@ -176,48 +148,11 @@ namespace robotick
 
 		void tick(const TickInfo&)
 		{
-			// Honour web input takeover if either side requests it
-			const bool use_web_inputs_flag = inputs.use_web_inputs || state->web_inputs.use_web_inputs;
-			const RemoteControlInputs& in_ref = use_web_inputs_flag ? state->web_inputs : inputs;
-
-			// Sticks with scaling
-			outputs.left.x = in_ref.left.x * in_ref.scale_left.x;
-			outputs.left.y = in_ref.left.y * in_ref.scale_left.y;
-			outputs.right.x = in_ref.right.x * in_ref.scale_right.x;
-			outputs.right.y = in_ref.right.y * in_ref.scale_right.y;
-
-			// Triggers
-			outputs.left_trigger = in_ref.left_trigger;
-			outputs.right_trigger = in_ref.right_trigger;
-
-			// --- Mirror buttons to outputs ---
-			outputs.a = in_ref.a;
-			outputs.b = in_ref.b;
-			outputs.x = in_ref.x;
-			outputs.y = in_ref.y;
-			outputs.left_bumper = in_ref.left_bumper;
-			outputs.right_bumper = in_ref.right_bumper;
-			outputs.back = in_ref.back;
-			outputs.start = in_ref.start;
-			outputs.guide = in_ref.guide;
-			outputs.left_stick_button = in_ref.left_stick_button;
-			outputs.right_stick_button = in_ref.right_stick_button;
-			outputs.dpad_up = in_ref.dpad_up;
-			outputs.dpad_down = in_ref.dpad_down;
-			outputs.dpad_left = in_ref.dpad_left;
-			outputs.dpad_right = in_ref.dpad_right;
+			// simply copy web-requested inputs to outputs
+			outputs = state->web_inputs.use_web_inputs ? state->web_inputs : RemoteControlOutputs{};
 		}
 
 		void stop() { state->server.stop(); }
-
-		static float apply_dead_zone(float value, float dead_zone)
-		{
-			if (std::abs(value) < dead_zone)
-				return 0.0f;
-
-			const float sign = (value > 0.0f) ? 1.0f : -1.0f;
-			return ((std::abs(value) - dead_zone) / (1.0f - dead_zone)) * sign;
-		}
 	};
 
 } // namespace robotick
