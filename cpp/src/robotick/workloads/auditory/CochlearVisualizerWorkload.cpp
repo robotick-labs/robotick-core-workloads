@@ -44,7 +44,7 @@ namespace robotick
 
 	struct CochlearVisualizerOutputs
 	{
-		ImagePng64k visualization_png;
+		ImagePng128k visualization_png;
 	};
 
 	// ------------------------------------------------------------
@@ -215,7 +215,16 @@ namespace robotick
 				const auto png = s.renderer.capture_as_png();
 				if (!png.empty())
 				{
-					outputs.visualization_png.set(png.data(), png.size());
+					if (outputs.visualization_png.capacity() >= png.size())
+					{
+						outputs.visualization_png.set(png.data(), png.size());
+					}
+					else
+					{
+						ROBOTICK_WARNING("Captured PNG (%zu bytes) exceeds visualization buffer capacity (%zu bytes)",
+							png.size(),
+							outputs.visualization_png.capacity());
+					}
 				}
 			}
 			else
