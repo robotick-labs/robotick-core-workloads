@@ -4,13 +4,9 @@
 #include "robotick/api.h"
 #include "robotick/framework/WorkloadInstanceInfo.h"
 #include "robotick/framework/data/DataConnection.h"
+#include "robotick/platform/Clock.h"
 
-#include <chrono>
-#include <cstdio>
-#include <thread>
-#include <unordered_map>
-#include <vector>
-
+#include <string>
 namespace robotick
 {
 	struct SequencedGroupWorkloadImpl
@@ -26,9 +22,9 @@ namespace robotick
 		const Engine* engine = nullptr;
 		HeapVector<ChildWorkloadInfo> children;
 
-		float delta_time_budget = 0.0f;
-
 		void set_engine(const Engine& engine_in) { engine = &engine_in; }
+
+                void start(float tick_rate_hz) { (void)tick_rate_hz; }
 
 		ChildWorkloadInfo* find_child_workload(const WorkloadInstanceInfo& query_child)
 		{
@@ -98,90 +94,41 @@ namespace robotick
 			}
 		}
 
-		void start(float tick_rate_hz) { delta_time_budget = tick_rate_hz > 0.0f ? 1.0f / tick_rate_hz : 0.0f; }
-
 		void tick(const TickInfo& tick_info)
 		{
 			ROBOTICK_ASSERT(engine != nullptr && "Engine should have been set by now");
 
-			auto start_time = std::chrono::steady_clock::now();
+            for (auto& child_info : children)
+            {
+                if (child_info.workload_info != nullptr && child_info.workload_info->workload_descriptor->tick_fn != nullptr)
+                {
+                    // process any incoming data-connections:
+                    for (auto connection_in : child_info.connections_in)
+                    {
+                        connection_in->do_data_copy();
+                    }
 
-			for (auto& child_info : children)
-			{
-				if (child_info.workload_info != nullptr && child_info.workload_info->workload_descriptor->tick_fn != nullptr)
-				{
-					const auto now_pre_tick = std::chrono::steady_clock::now();
+                    TickInfo child_tick_info(tick_info);
+                    child_tick_info.workload_stats = child_info.workload_info->workload_stats;
 
-					// process any incoming data-connections:
-					for (auto connection_in : child_info.connections_in)
-					{
-						connection_in->do_data_copy();
-					}
+                    const auto budget_duration = Clock::from_seconds(1.0f / child_info.workload_info->seed->tick_rate_hz);
+                    const uint32_t budget_ns =
+                        detail::clamp_to_uint32(Clock::to_nanoseconds(budget_duration).count());
 
-					// tick the child:
-					TickInfo child_tick_info(tick_info);
-					child_tick_info.workload_stats = child_info.workload_info->workload_stats;
+                    const auto now_pre_tick = Clock::now();
+                    child_info.workload_info->workload_descriptor->tick_fn(child_info.workload_ptr, child_tick_info);
+                    const auto now_post_tick = Clock::now();
 
-					child_info.workload_info->workload_descriptor->tick_fn(child_info.workload_ptr, child_tick_info);
+                    const uint32_t duration_ns =
+                        detail::clamp_to_uint32(Clock::to_nanoseconds(now_post_tick - now_pre_tick).count());
 
-					const auto now_post_tick = std::chrono::steady_clock::now();
-					child_info.workload_info->workload_stats->last_tick_duration_ns =
-						static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now_post_tick - now_pre_tick).count());
+                    child_info.workload_info->workload_stats->last_time_delta_ns =
+                        static_cast<uint32_t>(child_tick_info.delta_time * 1e9f);
+                    child_info.workload_info->workload_stats->record_tick_duration_ns(duration_ns, budget_ns);
+                }
+            }
+        }
 
-					constexpr float NanosecondsPerSecond = 1e9f;
-					child_info.workload_info->workload_stats->last_time_delta_ns =
-						static_cast<uint32_t>(child_tick_info.delta_time * NanosecondsPerSecond);
-				}
-			}
-
-			const auto elapsed = std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::steady_clock::now() - start_time).count();
-
-			const float overrun_fraction_allowed = 1.02f;
-			if (elapsed > (delta_time_budget * overrun_fraction_allowed))
-			{
-				print_overrun_debug_message(elapsed, delta_time_budget, children);
-			}
-		}
-
-		static void print_overrun_debug_message(float elapsed_seconds, float delta_time_budget, const HeapVector<ChildWorkloadInfo>& children)
-		{
-			struct Entry
-			{
-				const char* name;
-				uint32_t duration_ns;
-			};
-			Entry top1 = {nullptr, 0}, top2 = {nullptr, 0};
-			uint32_t other_ns = 0;
-
-			for (const auto& child : children)
-			{
-				const auto ns = child.workload_info->workload_stats->last_tick_duration_ns;
-				const char* name = child.workload_info->seed->unique_name.c_str(); // More helpful than workload type
-
-				if (ns > top1.duration_ns)
-				{
-					top2 = top1;
-					top1 = {name, ns};
-				}
-				else if (ns > top2.duration_ns)
-				{
-					top2 = {name, ns};
-				}
-				else
-				{
-					other_ns += ns;
-				}
-			}
-
-			ROBOTICK_WARNING("[Sequenced] Overrun: tick took %.3fms (budget %.3fms) [%s=%.2fms, %s=%.2fms, other=%.2fms]\n",
-				elapsed_seconds * 1000.0f,
-				delta_time_budget * 1000.0f,
-				top1.name ? top1.name : "N/A",
-				top1.duration_ns / 1e6f,
-				top2.name ? top2.name : "N/A",
-				top2.duration_ns / 1e6f,
-				other_ns / 1e6f);
-		}
 	};
 
 	struct SequencedGroupWorkload
