@@ -5,11 +5,14 @@
 
 #include <SDL2/SDL.h>
 #include <cstring>
-#include <mutex>
-#include <vector>
+
+#include "robotick/framework/concurrency/Sync.h"
+#include "robotick/framework/containers/HeapVector.h"
 
 namespace robotick
 {
+	static constexpr size_t kScratchChunkFrames = 2048;
+
 	class AudioSystemImpl
 	{
 	  public:
@@ -18,6 +21,9 @@ namespace robotick
 		SDL_AudioDeviceID input_device = 0;
 		SDL_AudioSpec obtained_output_spec{};
 		SDL_AudioSpec obtained_input_spec{};
+
+		HeapVector<float> stereo_scratch;
+		HeapVector<float> mono_scratch;
 
 		bool init()
 		{
@@ -55,6 +61,12 @@ namespace robotick
 
 			SDL_PauseAudioDevice(input_device, 0);
 
+			const size_t stereo_samples = kScratchChunkFrames * 2;
+			if (stereo_scratch.size() == 0)
+				stereo_scratch.initialize(stereo_samples);
+			if (mono_scratch.size() == 0)
+				mono_scratch.initialize(kScratchChunkFrames);
+
 			initialized = true;
 			return true;
 		}
@@ -83,15 +95,22 @@ namespace robotick
 				return;
 			}
 
-			// Interleave mono -> stereo (L=R=mono)
-			std::vector<float> tmp;
-			tmp.resize(frames * 2);
-			for (size_t i = 0; i < frames; ++i)
+			size_t remaining = frames;
+			const size_t chunk_limit = kScratchChunkFrames;
+			float* scratch = stereo_scratch.data();
+			while (remaining > 0)
 			{
-				tmp[2 * i + 0] = mono[i];
-				tmp[2 * i + 1] = mono[i];
+				const size_t chunk = (remaining > chunk_limit) ? chunk_limit : remaining;
+				for (size_t i = 0; i < chunk; ++i)
+				{
+					const float v = mono[i];
+					scratch[2 * i + 0] = v;
+					scratch[2 * i + 1] = v;
+				}
+				SDL_QueueAudio(output_device, scratch, chunk * 2 * sizeof(float));
+				mono += chunk;
+				remaining -= chunk;
 			}
-			SDL_QueueAudio(output_device, tmp.data(), tmp.size() * sizeof(float));
 		}
 
 		// Queue mono into a specific channel (0=left, 1=right). Other channel is zero.
@@ -108,14 +127,22 @@ namespace robotick
 			}
 
 			const int ch = (channel <= 0) ? 0 : 1; // clamp to 0/1
-			std::vector<float> tmp;
-			tmp.resize(frames * 2);
-			for (size_t i = 0; i < frames; ++i)
+			float* scratch = stereo_scratch.data();
+			size_t remaining = frames;
+			const size_t chunk_limit = kScratchChunkFrames;
+
+			while (remaining > 0)
 			{
-				tmp[2 * i + 0] = (ch == 0) ? mono[i] : 0.0f;
-				tmp[2 * i + 1] = (ch == 1) ? mono[i] : 0.0f;
+				const size_t chunk = (remaining > chunk_limit) ? chunk_limit : remaining;
+				for (size_t i = 0; i < chunk; ++i)
+				{
+					scratch[2 * i + 0] = (ch == 0) ? mono[i] : 0.0f;
+					scratch[2 * i + 1] = (ch == 1) ? mono[i] : 0.0f;
+				}
+				SDL_QueueAudio(output_device, scratch, chunk * 2 * sizeof(float));
+				mono += chunk;
+				remaining -= chunk;
 			}
-			SDL_QueueAudio(output_device, tmp.data(), tmp.size() * sizeof(float));
 		}
 
 		// Queue separate left/right mono buffers
@@ -127,27 +154,48 @@ namespace robotick
 			if (obtained_output_spec.channels == 1)
 			{
 				// Mix down to mono (simple average)
-				std::vector<float> mixed(frames);
-				for (size_t i = 0; i < frames; ++i)
+				float* mixed = mono_scratch.data();
+				size_t remaining = frames;
+				const size_t chunk_limit = kScratchChunkFrames;
+				while (remaining > 0)
 				{
-					const float l = left ? left[i] : 0.0f;
-					const float r = right ? right[i] : 0.0f;
-					mixed[i] = 0.5f * (l + r);
+					const size_t chunk = (remaining > chunk_limit) ? chunk_limit : remaining;
+					for (size_t i = 0; i < chunk; ++i)
+					{
+						const float l = left ? left[i] : 0.0f;
+						const float r = right ? right[i] : 0.0f;
+						mixed[i] = 0.5f * (l + r);
+					}
+					SDL_QueueAudio(output_device, mixed, chunk * sizeof(float));
+					if (left)
+						left += chunk;
+					if (right)
+						right += chunk;
+					remaining -= chunk;
 				}
-				SDL_QueueAudio(output_device, mixed.data(), mixed.size() * sizeof(float));
 				return;
 			}
 
-			std::vector<float> tmp;
-			tmp.resize(frames * 2);
-			for (size_t i = 0; i < frames; ++i)
+			float* scratch = stereo_scratch.data();
+			size_t remaining = frames;
+			const size_t chunk_limit = kScratchChunkFrames;
+			while (remaining > 0)
 			{
-				const float l = left ? left[i] : 0.0f;
-				const float r = right ? right[i] : 0.0f;
-				tmp[2 * i + 0] = l;
-				tmp[2 * i + 1] = r;
+				const size_t chunk = (remaining > chunk_limit) ? chunk_limit : remaining;
+				for (size_t i = 0; i < chunk; ++i)
+				{
+					const float l = left ? left[i] : 0.0f;
+					const float r = right ? right[i] : 0.0f;
+					scratch[2 * i + 0] = l;
+					scratch[2 * i + 1] = r;
+				}
+				SDL_QueueAudio(output_device, scratch, chunk * 2 * sizeof(float));
+				if (left)
+					left += chunk;
+				if (right)
+					right += chunk;
+				remaining -= chunk;
 			}
-			SDL_QueueAudio(output_device, tmp.data(), tmp.size() * sizeof(float));
 		}
 
 		size_t read(float* buffer, size_t max_count)
@@ -161,15 +209,13 @@ namespace robotick
 	};
 
 	static AudioSystemImpl g_audio_impl;
-	static std::once_flag g_audio_init_flag;
+	static Mutex g_audio_mutex;
 
 	bool AudioSystem::init()
 	{
-		std::call_once(g_audio_init_flag,
-			[]()
-			{
-				g_audio_impl.init();
-			});
+		LockGuard lock(g_audio_mutex);
+		if (!g_audio_impl.initialized)
+			g_audio_impl.init();
 		return g_audio_impl.initialized;
 	}
 

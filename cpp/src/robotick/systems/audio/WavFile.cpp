@@ -3,52 +3,45 @@
 
 #include "robotick/systems/audio/WavFile.h"
 #include "robotick/api.h"
+#include "robotick/framework/math/MathUtils.h"
 
-#include <cmath>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 
 namespace robotick
 {
-	// ------------------------------------------------------------------------
-	// === Helpers ===
-	// ------------------------------------------------------------------------
-
-	static bool read_u32le(std::ifstream& f, uint32_t& out)
+	namespace
 	{
-		unsigned char b[4];
-		f.read(reinterpret_cast<char*>(b), 4);
-		if (!f.good() || f.gcount() != 4)
-			return false;
-		out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
-		return true;
-	}
+		bool read_u32le(FILE* f, uint32_t& out)
+		{
+			unsigned char b[4];
+			if (::fread(b, 1, 4, f) != 4)
+				return false;
+			out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+			return true;
+		}
 
-	static bool read_u16le(std::ifstream& f, uint16_t& out)
-	{
-		unsigned char b[2];
-		f.read(reinterpret_cast<char*>(b), 2);
-		if (!f.good() || f.gcount() != 2)
-			return false;
-		out = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
-		return true;
-	}
+		bool read_u16le(FILE* f, uint16_t& out)
+		{
+			unsigned char b[2];
+			if (::fread(b, 1, 2, f) != 2)
+				return false;
+			out = (uint16_t)b[0] | ((uint16_t)b[1] << 8);
+			return true;
+		}
+	} // namespace
 
-	// ------------------------------------------------------------------------
 	bool WavFile::exists(const char* path)
 	{
-		std::ifstream f(path, std::ios::binary);
-		return (bool)f;
+		FILE* f = ::fopen(path, "rb");
+		if (!f)
+			return false;
+		::fclose(f);
+		return true;
 	}
-
-	// ------------------------------------------------------------------------
-	// === Load (read-only) ===
-	// ------------------------------------------------------------------------
 
 	bool WavFile::load(const char* path)
 	{
-		std::ifstream f(path, std::ios::binary);
+		FILE* f = ::fopen(path, "rb");
 		if (!f)
 		{
 			ROBOTICK_WARNING("Failed to open WAV file: %s", path);
@@ -56,120 +49,130 @@ namespace robotick
 		}
 
 		char riff_id[4];
-		uint32_t riff_size;
+		uint32_t riff_size = 0;
 		char wave_id[4];
 
-		f.read(riff_id, 4);
-		if (f.gcount() != 4 || !read_u32le(f, riff_size) || !f.read(wave_id, 4) || f.gcount() != 4)
+		if (::fread(riff_id, 1, 4, f) != 4 || !read_u32le(f, riff_size) || ::fread(wave_id, 1, 4, f) != 4)
 		{
 			ROBOTICK_WARNING("Truncated or invalid WAV header in %s", path);
+			::fclose(f);
 			return false;
 		}
 
-		if (std::strncmp(riff_id, "RIFF", 4) != 0 || std::strncmp(wave_id, "WAVE", 4) != 0)
+		if (::strncmp(riff_id, "RIFF", 4) != 0 || ::strncmp(wave_id, "WAVE", 4) != 0)
 		{
 			ROBOTICK_WARNING("Not a RIFF/WAVE file: %s", path);
+			::fclose(f);
 			return false;
 		}
 
-		bool have_fmt = false, have_data = false;
-		uint16_t audio_format = 0, bits_per_sample = 0;
+		bool have_fmt = false;
+		bool have_data = false;
+		uint16_t audio_format = 0;
+		uint16_t bits_per_sample = 0;
 		uint32_t data_size = 0;
-		std::streampos data_pos;
+		long data_pos = 0;
 
-		while (f && (!have_fmt || !have_data))
+		while (!::feof(f) && (!have_fmt || !have_data))
 		{
 			char chunk_id[4];
 			uint32_t chunk_size = 0;
 
-			f.read(chunk_id, 4);
-			if (f.gcount() != 4 || !read_u32le(f, chunk_size))
+			if (::fread(chunk_id, 1, 4, f) != 4 || !read_u32le(f, chunk_size))
 			{
 				ROBOTICK_WARNING("Unexpected EOF or corrupt chunk header in %s", path);
+				::fclose(f);
 				return false;
 			}
 
-			if (std::strncmp(chunk_id, "fmt ", 4) == 0)
+			if (::strncmp(chunk_id, "fmt ", 4) == 0)
 			{
 				if (!read_u16le(f, audio_format) || !read_u16le(f, num_channels) || !read_u32le(f, sample_rate))
 				{
 					ROBOTICK_WARNING("Corrupt fmt chunk in %s", path);
+					::fclose(f);
 					return false;
 				}
+
 				uint32_t byte_rate;
 				uint16_t block_align;
 				if (!read_u32le(f, byte_rate) || !read_u16le(f, block_align) || !read_u16le(f, bits_per_sample))
 				{
 					ROBOTICK_WARNING("Corrupt fmt chunk in %s", path);
+					::fclose(f);
 					return false;
 				}
+
 				if (chunk_size > 16)
 				{
-					f.seekg(chunk_size - 16, std::ios::cur);
-					if (!f.good())
+					if (::fseek(f, static_cast<long>(chunk_size - 16), SEEK_CUR) != 0)
 					{
 						ROBOTICK_WARNING("Failed to skip extra fmt bytes in %s", path);
+						::fclose(f);
 						return false;
 					}
 				}
+
 				have_fmt = true;
 			}
-			else if (std::strncmp(chunk_id, "data", 4) == 0)
+			else if (::strncmp(chunk_id, "data", 4) == 0)
 			{
-				data_pos = f.tellg();
+				data_pos = ::ftell(f);
 				data_size = chunk_size;
 				have_data = true;
 			}
 			else
 			{
-				f.seekg(chunk_size, std::ios::cur);
-				if (!f.good())
+				if (::fseek(f, static_cast<long>(chunk_size), SEEK_CUR) != 0)
 				{
 					ROBOTICK_WARNING("Failed to skip unknown chunk in %s", path);
+					::fclose(f);
 					return false;
 				}
 			}
 
 			if (chunk_size & 1)
 			{
-				f.seekg(1, std::ios::cur);
-				if (!f.good())
+				if (::fseek(f, 1, SEEK_CUR) != 0)
 				{
 					ROBOTICK_WARNING("Failed to skip padding byte in %s", path);
+					::fclose(f);
 					return false;
 				}
 			}
 		}
 
-		if (!have_fmt || !have_data || audio_format != 1 || (bits_per_sample != 16) || (num_channels != 1 && num_channels != 2))
+		if (!have_fmt || !have_data || audio_format != 1 || bits_per_sample != 16 || (num_channels != 1 && num_channels != 2))
 		{
 			ROBOTICK_WARNING("Unsupported WAV format in %s", path);
+			::fclose(f);
 			return false;
 		}
 
-		f.seekg(data_pos);
+		::fseek(f, data_pos, SEEK_SET);
 		size_t bytes_per_sample = bits_per_sample / 8;
-		this->frame_count = data_size / (num_channels * bytes_per_sample);
+		frame_count = data_size / (num_channels * bytes_per_sample);
 
 		left_samples.initialize(frame_count);
 		right_samples.initialize(frame_count);
 
 		for (size_t i = 0; i < frame_count; ++i)
 		{
-			int16_t l = 0, r = 0;
-			f.read(reinterpret_cast<char*>(&l), 2);
-			if (!f.good() || f.gcount() != 2)
+			int16_t l = 0;
+			int16_t r = 0;
+			if (::fread(&l, sizeof(int16_t), 1, f) != 1)
 			{
-				ROBOTICK_WARNING("Truncated left sample at frame %zu in %s", i, path);
+				ROBOTICK_WARNING("Unexpected EOF while reading samples in %s", path);
+				::fclose(f);
 				return false;
 			}
 
 			if (num_channels == 2)
 			{
-				f.read(reinterpret_cast<char*>(&r), 2);
-				if (!f.good() || f.gcount() != 2)
+				if (::fread(&r, sizeof(int16_t), 1, f) != 1)
 				{
-					ROBOTICK_WARNING("Truncated right sample at frame %zu in %s", i, path);
+					ROBOTICK_WARNING("Unexpected EOF while reading samples in %s", path);
+					::fclose(f);
 					return false;
 				}
 			}
@@ -182,119 +185,95 @@ namespace robotick
 			right_samples[i] = static_cast<float>(r) / 32768.0f;
 		}
 
-		ROBOTICK_INFO("WAV loaded: %s (%zu frames, %u Hz, %u-bit, %u ch)", path, frame_count, sample_rate, bits_per_sample, num_channels);
+		::fclose(f);
 		return true;
 	}
 
 	float WavFile::get_duration_seconds() const
 	{
-		return sample_rate > 0 ? static_cast<float>(get_frame_count()) / sample_rate : 0.0f;
+		if (sample_rate == 0)
+			return 0.0f;
+		return static_cast<float>(frame_count) / static_cast<float>(sample_rate);
 	}
 
-	// ------------------------------------------------------------------------
-	// === Write (recording) ===
-	// ------------------------------------------------------------------------
-
-	void WavFileWriter::write_header_placeholder(uint32_t sr, uint16_t ch)
+	bool WavFileWriter::open(const char* path, uint32_t sr, uint16_t channels)
 	{
-		const uint16_t bits_per_sample = 16;
-		const uint32_t byte_rate = sr * ch * bits_per_sample / 8;
-		const uint16_t block_align = ch * bits_per_sample / 8;
-
-		std::fwrite("RIFF", 1, 4, fp);
-		uint32_t riff_size_placeholder = 0;
-		std::fwrite(&riff_size_placeholder, 4, 1, fp);
-		std::fwrite("WAVE", 1, 4, fp);
-
-		std::fwrite("fmt ", 1, 4, fp);
-		uint32_t fmt_size = 16;
-		std::fwrite(&fmt_size, 4, 1, fp);
-		uint16_t format_tag = 1;
-		std::fwrite(&format_tag, 2, 1, fp);
-		std::fwrite(&ch, 2, 1, fp);
-		std::fwrite(&sr, 4, 1, fp);
-		std::fwrite(&byte_rate, 4, 1, fp);
-		std::fwrite(&block_align, 2, 1, fp);
-		std::fwrite(&bits_per_sample, 2, 1, fp);
-
-		std::fwrite("data", 1, 4, fp);
-		uint32_t data_size_placeholder = 0;
-		std::fwrite(&data_size_placeholder, 4, 1, fp);
-	}
-
-	bool WavFileWriter::open(const char* path, uint32_t sr, uint16_t ch)
-	{
-		fp = std::fopen(path, "wb");
+		close();
+		write_channels = channels;
+		sample_rate = sr;
+		fp = ::fopen(path, "wb+ ");
 		if (!fp)
 		{
-			ROBOTICK_WARNING("Failed to open WAV for writing: %s", path);
+			ROBOTICK_WARNING("WavFileWriter: failed to open %s", path);
 			return false;
 		}
-		sample_rate = sr;
-		write_channels = ch;
-		data_bytes_written = 0;
-		write_header_placeholder(sr, ch);
+
+		write_header_placeholder(sr, channels);
 		return true;
 	}
 
-	void WavFileWriter::patch_header()
+	void WavFileWriter::write_header_placeholder(uint32_t sr, uint16_t ch)
 	{
-		if (!fp)
-			return;
+		const uint32_t fmt_size = 16;
+		const uint16_t format_tag = 1;
+		const uint32_t byte_rate = sr * ch * sizeof(int16_t);
+		const uint16_t block_align = ch * sizeof(int16_t);
+		const uint16_t bits_per_sample = 16;
+		const uint32_t riff_size_placeholder = 0;
+		const uint32_t data_size_placeholder = 0;
 
-		// Save current position
-		long pos = std::ftell(fp);
+		::fwrite("RIFF", 1, 4, fp);
+		::fwrite(&riff_size_placeholder, 4, 1, fp);
+		::fwrite("WAVE", 1, 4, fp);
 
-		const uint32_t riff_size = data_bytes_written + 36;
-		const uint32_t data_size = data_bytes_written;
+		::fwrite("fmt ", 1, 4, fp);
+		::fwrite(&fmt_size, 4, 1, fp);
+		::fwrite(&format_tag, 2, 1, fp);
+		::fwrite(&ch, 2, 1, fp);
+		::fwrite(&sr, 4, 1, fp);
+		::fwrite(&byte_rate, 4, 1, fp);
+		::fwrite(&block_align, 2, 1, fp);
+		::fwrite(&bits_per_sample, 2, 1, fp);
 
-		std::fflush(fp);
-		std::fseek(fp, 4, SEEK_SET);
-		std::fwrite(&riff_size, 4, 1, fp);
-		std::fseek(fp, 40, SEEK_SET);
-		std::fwrite(&data_size, 4, 1, fp);
-		std::fflush(fp);
-
-		// Restore original position
-		if (pos >= 0)
-		{
-			std::fseek(fp, pos, SEEK_SET);
-		}
+		::fwrite("data", 1, 4, fp);
+		::fwrite(&data_size_placeholder, 4, 1, fp);
 	}
 
 	void WavFileWriter::append_mono(const float* samples, size_t count)
 	{
-		if (!fp || write_channels != 1 || count == 0)
+		if (!fp || write_channels == 0 || !samples)
 			return;
 
 		for (size_t i = 0; i < count; ++i)
 		{
-			float v = std::clamp(samples[i], -1.0f, 1.0f);
-			int16_t s16 = static_cast<int16_t>(std::round(v * 32767.0f));
-			std::fwrite(&s16, sizeof(int16_t), 1, fp);
-			data_bytes_written += 2;
+			float v = samples[i];
+			v = robotick::clamp(v, -1.0f, 1.0f);
+			int16_t s16 = static_cast<int16_t>(::roundf(v * 32767.0f));
+			::fwrite(&s16, sizeof(int16_t), 1, fp);
 		}
-
-		patch_header(); // keep file valid even on crash
+		data_bytes_written += static_cast<uint32_t>(count * sizeof(int16_t));
 	}
 
 	void WavFileWriter::append_stereo(const float* left, const float* right, size_t count)
 	{
-		if (!fp || write_channels != 2 || count == 0)
+		if (!fp || write_channels < 2)
+		{
+			append_mono(left, count);
 			return;
+		}
 
 		for (size_t i = 0; i < count; ++i)
 		{
-			float l = std::clamp(left[i], -1.0f, 1.0f);
-			float r = std::clamp(right[i], -1.0f, 1.0f);
-			int16_t sL = static_cast<int16_t>(std::round(l * 32767.0f));
-			int16_t sR = static_cast<int16_t>(std::round(r * 32767.0f));
-			std::fwrite(&sL, sizeof(int16_t), 1, fp);
-			std::fwrite(&sR, sizeof(int16_t), 1, fp);
-			data_bytes_written += 4;
+			float l = left ? left[i] : 0.0f;
+			float r = right ? right[i] : 0.0f;
+			l = robotick::clamp(l, -1.0f, 1.0f);
+			r = robotick::clamp(r, -1.0f, 1.0f);
+			int16_t sL = static_cast<int16_t>(::roundf(l * 32767.0f));
+			int16_t sR = static_cast<int16_t>(::roundf(r * 32767.0f));
+			::fwrite(&sL, sizeof(int16_t), 1, fp);
+			::fwrite(&sR, sizeof(int16_t), 1, fp);
 		}
-
-		patch_header(); // always keep header current
+		data_bytes_written += static_cast<uint32_t>(count * sizeof(int16_t) * 2);
 	}
 
 	void WavFileWriter::close()
@@ -302,10 +281,25 @@ namespace robotick
 		if (!fp)
 			return;
 		patch_header();
-		std::fclose(fp);
+		::fclose(fp);
 		fp = nullptr;
 		write_channels = 0;
 		data_bytes_written = 0;
+	}
+
+	void WavFileWriter::patch_header()
+	{
+		if (!fp)
+			return;
+
+		const uint32_t riff_size = data_bytes_written + 36;
+		::fflush(fp);
+		::fseek(fp, 4, SEEK_SET);
+		::fwrite(&riff_size, 4, 1, fp);
+		::fseek(fp, 40, SEEK_SET);
+		::fwrite(&data_bytes_written, 4, 1, fp);
+		::fflush(fp);
+		::fseek(fp, 0, SEEK_END);
 	}
 
 } // namespace robotick
