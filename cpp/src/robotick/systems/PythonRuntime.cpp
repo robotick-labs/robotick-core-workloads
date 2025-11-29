@@ -1,5 +1,4 @@
-// Copyright 2025 Robotick Labs
-//
+// Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
 #include <pybind11/embed.h>

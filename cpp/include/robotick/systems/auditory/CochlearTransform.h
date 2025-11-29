@@ -1,4 +1,4 @@
-// Copyright Robotick
+// Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 //
 // CochlearTransform.h  (lean header: declarations only)
