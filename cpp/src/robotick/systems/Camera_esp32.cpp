@@ -1,3 +1,6 @@
+// Copyright Robotick Labs
+// SPDX-License-Identifier: Apache-2.0
+
 #if defined(ROBOTICK_PLATFORM_ESP32)
 
 #if defined(ENABLE_ESP32_CAMERA_CODE)
@@ -150,7 +153,9 @@ namespace robotick
 
 		const int64_t end_us = esp_timer_get_time();
 
-		ROBOTICK_INFO("TIMING (ms): total=%.2f, capture=%.2f, encode=%.2f", (end_us - start_us) / 1000.0, (got_frame_us - start_us) / 1000.0,
+		ROBOTICK_INFO("TIMING (ms): total=%.2f, capture=%.2f, encode=%.2f",
+			(end_us - start_us) / 1000.0,
+			(got_frame_us - start_us) / 1000.0,
 			(encode_end_us - encode_start_us) / 1000.0);
 
 		ROBOTICK_INFO("JPEG frame ready (%d bytes)", (int)jpeg_len);

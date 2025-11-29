@@ -21,7 +21,7 @@ namespace robotick
 
 using namespace robotick;
 
-#namespace
+namespace
 {
 	static void trim_to_parent(FixedString1024& path)
 	{

@@ -4,6 +4,7 @@
 #include "robotick/systems/MqttClient.h"
 
 #include "robotick/api.h"
+#include "robotick/framework/memory/Memory.h"
 
 #include <arpa/inet.h>
 #include <cstring>
@@ -154,7 +155,7 @@ namespace robotick
 
 	void MqttClient::set_callback(Function<void(const char*, const char*)> cb)
 	{
-		message_callback = std::move(cb);
+		message_callback = robotick::move(cb);
 	}
 
 	void MqttClient::connect()

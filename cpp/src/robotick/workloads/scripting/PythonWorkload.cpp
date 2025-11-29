@@ -84,17 +84,15 @@ namespace robotick
 		PythonInputs inputs;
 		PythonOutputs outputs;
 
-		std::unique_ptr<PythonInternalState> internal_state;
+		StatePtr<PythonInternalState, false> internal_state;
+		// ^- EnforceLargeState=false: allow small state while benefitting from ability to explictly destroy it
 
-		PythonWorkload()
-			: internal_state(std::make_unique<PythonInternalState>())
-		{
-		}
+		PythonWorkload() {}
 
 		~PythonWorkload()
 		{
 			py::gil_scoped_acquire gil;
-			internal_state.reset();
+			internal_state.destroy(); // explicitly destroy to ensure Python objects are cleaned up while GIL is held
 		}
 
 		PythonWorkload(const PythonWorkload&) = delete;

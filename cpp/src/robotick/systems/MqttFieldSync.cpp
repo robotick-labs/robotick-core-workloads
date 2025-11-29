@@ -5,6 +5,8 @@
 
 #include "robotick/systems/MqttFieldSync.h"
 #include "robotick/api.h"
+#include "robotick/framework/memory/Memory.h"
+#include "robotick/framework/memory/StdApproved.h"
 
 namespace robotick
 {
@@ -37,7 +39,7 @@ namespace robotick
 	} // namespace
 
 	MqttFieldSync::MqttFieldSync(const char* root_ns, PublisherFn in_publisher)
-		: publisher(std::move(in_publisher))
+		: publisher(robotick::move(in_publisher))
 		, mqtt_ptr(nullptr)
 		, engine_ptr(nullptr)
 	{
@@ -177,7 +179,7 @@ namespace robotick
 					return;
 				}
 
-				const std::string value_str = json_value.dump();
+				const std_approved::string value_str = json_value.dump();
 				if (!type_desc->from_string(value_str.c_str(), info.ptr))
 				{
 					ROBOTICK_WARNING(
@@ -267,7 +269,7 @@ namespace robotick
 					store_topic(last_published, state_topic.c_str(), value);
 
 					FixedString1024 payload;
-					const std::string dumped = value.dump();
+					const std_approved::string dumped = value.dump();
 					payload.assign(dumped.c_str(), dumped.size());
 
 					try

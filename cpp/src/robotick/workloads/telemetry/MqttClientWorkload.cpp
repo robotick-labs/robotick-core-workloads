@@ -4,12 +4,12 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/Engine.h"
-#include "robotick/framework/strings/FixedString.h"
-#include "robotick/systems/MqttFieldSync.h"
 #include "robotick/framework/data/WorkloadsBuffer.h"
+#include "robotick/framework/memory/Memory.h"
+#include "robotick/framework/memory/StdApproved.h"
+#include "robotick/framework/strings/FixedString.h"
 #include "robotick/systems/MqttClient.h"
-
-#include <memory>
+#include "robotick/systems/MqttFieldSync.h"
 
 namespace robotick
 {
@@ -31,8 +31,8 @@ namespace robotick
 	class MqttClientWorkloadState
 	{
 	  public:
-		std::unique_ptr<MqttClient> mqtt;
-		std::unique_ptr<MqttFieldSync> field_sync;
+		std_approved::unique_ptr<MqttClient> mqtt;
+		std_approved::unique_ptr<MqttFieldSync> field_sync;
 		const Engine* engine = nullptr;
 	};
 
@@ -69,15 +69,15 @@ namespace robotick
 			broker.format("%s:%u", broker_url.c_str(), config.broker_mqtt_port);
 
 			FixedString64 client_id("robotick::MqttClientWorkload");
-			auto mqtt_client = std::make_unique<MqttClient>(broker.c_str(), client_id.c_str());
+			auto mqtt_client = std_approved::make_unique<MqttClient>(broker.c_str(), client_id.c_str());
 			mqtt_client->connect();
 
 			// 2. Create MqttFieldSync
 			FixedString64 root_ns(config.root_topic_namespace.c_str());
-			auto field_sync = std::make_unique<MqttFieldSync>(*const_cast<Engine*>(state->engine), root_ns.c_str(), *mqtt_client);
+			auto field_sync = std_approved::make_unique<MqttFieldSync>(*const_cast<Engine*>(state->engine), root_ns.c_str(), *mqtt_client);
 
-			state->mqtt = std::move(mqtt_client);
-			state->field_sync = std::move(field_sync);
+			state->mqtt = robotick::move(mqtt_client);
+			state->field_sync = robotick::move(field_sync);
 		}
 
 		void start(float)

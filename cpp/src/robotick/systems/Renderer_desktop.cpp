@@ -1,3 +1,6 @@
+// Copyright Robotick Labs
+// SPDX-License-Identifier: Apache-2.0
+
 #if defined(ROBOTICK_PLATFORM_DESKTOP)
 
 #include "robotick/api.h"
@@ -177,7 +180,7 @@ namespace robotick
 		cv::Mat rgba;
 		cv::cvtColor(abgr, rgba, cv::COLOR_BGRA2RGBA);
 
-		// OpenCV only exposes std::vector-based encoders (no fixed buffer hook), so keep STL here and copy out afterward.
+		// OpenCV only exposes STL vector-based encoders (no fixed buffer hook), so keep STL here and copy out afterward.
 		std_approved::vector<uint8_t> png_data;
 		cv::imencode(".png", rgba, png_data);
 

@@ -1,4 +1,5 @@
-// MqttClient.h (only the relevant part)
+// Copyright Robotick Labs
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 

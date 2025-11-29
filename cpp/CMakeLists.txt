@@ -135,6 +135,8 @@ if(ROBOTICK_ENABLE_PYTHON)
 
     target_compile_definitions(robotick-engine PUBLIC ROBOTICK_ENABLE_PYTHON=1)
     target_link_libraries(robotick-engine PUBLIC pybind11::embed ${Python3_LIBRARIES})
+    target_include_directories(robotick-engine PUBLIC ${Python3_INCLUDE_DIRS})
+    target_include_directories(robotick-core-workloads PRIVATE ${Python3_INCLUDE_DIRS})
 
     set(EXCEPTION_ENABLED_SOURCES ${PYTHON_SOURCES})
     list(APPEND EXCEPTION_ENABLED_SOURCES
