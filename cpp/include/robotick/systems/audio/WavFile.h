@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "robotick/framework/common/HeapVector.h"
+#include "robotick/framework/containers/HeapVector.h"
 
 #include <cstdint>
 #include <cstdio>

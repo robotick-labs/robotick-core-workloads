@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "robotick/framework/common/FixedVector.h"
+#include "robotick/framework/containers/FixedVector.h"
 
 namespace robotick
 {

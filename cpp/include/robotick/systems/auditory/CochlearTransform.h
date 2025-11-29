@@ -6,7 +6,7 @@
 #pragma once
 
 #include "robotick/api.h"
-#include "robotick/framework/common/FixedVector.h"
+#include "robotick/framework/containers/FixedVector.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 

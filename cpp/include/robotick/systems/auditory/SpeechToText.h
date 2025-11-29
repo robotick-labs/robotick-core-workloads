@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "robotick/framework/common/FixedString.h"
-#include "robotick/framework/common/FixedVector.h"
+#include "robotick/framework/strings/FixedString.h"
+#include "robotick/framework/containers/FixedVector.h"
 
 #include "whisper.h"
 
