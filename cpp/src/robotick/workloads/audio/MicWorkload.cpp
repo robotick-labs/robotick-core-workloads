@@ -6,9 +6,9 @@
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <math.h>
 
 namespace robotick
 {
@@ -50,9 +50,9 @@ namespace robotick
 			outputs.mono.samples.set_size(num_samples_read);
 
 			const float gain_db = config.amplitude_gain_db;
-			if (std::fabs(gain_db) > 1e-6f)
+			if (fabsf(gain_db) > 1e-6f)
 			{
-				const float gain = std::pow(10.0f, gain_db / 20.0f);
+				const float gain = powf(10.0f, gain_db / 20.0f);
 				for (size_t i = 0; i < num_samples_read; ++i)
 				{
 					outputs.mono.samples[i] *= gain;

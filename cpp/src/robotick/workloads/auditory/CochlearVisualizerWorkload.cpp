@@ -3,6 +3,7 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/containers/HeapVector.h"
+#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
 #include "robotick/systems/audio/AudioFrame.h"
@@ -10,8 +11,8 @@
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
-#include <cmath>
 #include <cstring>
+#include <math.h>
 
 namespace robotick
 {
@@ -107,7 +108,7 @@ namespace robotick
 
 			// Derive rolling image size: one column per tick across window_seconds
 			const int bands = static_cast<int>(inputs.cochlear_frame.envelope.capacity());
-			const int cols = std::max(1, static_cast<int>(std::lround(tick.tick_rate_hz * config.window_seconds)));
+			const int cols = robotick::max(1, static_cast<int>(lroundf(tick.tick_rate_hz * config.window_seconds)));
 
 			s.tex_w = cols;
 			s.tex_h = bands;
@@ -151,13 +152,13 @@ namespace robotick
 			}
 
 			// 2) Write new rightmost column from cochlear envelope (greyscale)
-			const int draw_bands = std::min(bands_size, s.tex_h);
+			const int draw_bands = robotick::min(bands_size, s.tex_h);
 			for (int band = 0; band < draw_bands; ++band)
 			{
 				float a = inputs.cochlear_frame.envelope[band] * config.cochlear_visual_gain;
 				if (config.log_scale)
 				{
-					a = std::log1p(a * 10.0f) / std::log1p(10.0f);
+					a = log1pf(a * 10.0f) / log1pf(10.0f);
 				}
 				a = clampf(a, 0.0f, 1.0f);
 				const uint8_t c = static_cast<uint8_t>(a * 255.0f);
@@ -183,7 +184,7 @@ namespace robotick
 
 					float a = (amp - config.pitch_min_amplitude) * config.pitch_visual_gain;
 					if (config.log_scale)
-						a = std::log1p(a * 10.0f) / std::log1p(10.0f);
+						a = log1pf(a * 10.0f) / log1pf(10.0f);
 					a = clampf(a, 0.0f, 1.0f);
 
 					const uint8_t r = static_cast<uint8_t>(a * 64.0f);
@@ -194,13 +195,13 @@ namespace robotick
 					if (yf < 0.0f)
 						continue;
 
-					const int y = std::max(0, std::min(s.tex_h - 1, static_cast<int>(std::lround(yf))));
+					const int y = robotick::max(0, robotick::min(s.tex_h - 1, static_cast<int>(lroundf(yf))));
 					const bool bold = (h == 1);
 					const int thickness = bold ? 3 : 1;
 
 					for (int t = 0; t < thickness; ++t)
 					{
-						const int row = std::max(0, std::min(s.tex_h - 1, (s.tex_h - 1 - (y + t))));
+						const int row = robotick::max(0, robotick::min(s.tex_h - 1, (s.tex_h - 1 - (y + t))));
 						const int idx = (row * s.tex_w + (s.tex_w - 1)) * 4;
 						uint8_t* px = &s.rgba[static_cast<size_t>(idx)];
 						px[0] = 255;

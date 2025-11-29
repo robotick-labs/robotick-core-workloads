@@ -4,13 +4,13 @@
 // ProsodyWaveGeneratorWorkload.cpp (harmonic-driven version)
 
 #include "robotick/api.h"
+#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/ProsodyState.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
+#include <math.h>
 
 namespace robotick
 {
@@ -115,7 +115,10 @@ namespace robotick
 		void load()
 		{
 			AudioSystem::init();
-			std::fill(std::begin(state->phase), std::end(state->phase), 0.0);
+			for (double& p : state->phase)
+			{
+				p = 0.0;
+			}
 			state->noise_filter_state = 0.0f;
 			state->previous_amplitude_linear = 0.0f;
 			state->tone_gain_smooth = state->partial_gain_smooth = state->noise_gain_smooth = 0.0f;
@@ -134,27 +137,26 @@ namespace robotick
 
 			out.samples.set_size(capacity);
 
-			const double current_value =
-				std::sin(s.phase[0]) * static_cast<double>(s.tone_gain_smooth) * static_cast<double>(s.previous_amplitude_linear);
-			const double slope = std::cos(s.phase[0]) * s.last_step_fundamental * static_cast<double>(s.tone_gain_smooth) *
+			const double current_value = sin(s.phase[0]) * static_cast<double>(s.tone_gain_smooth) * static_cast<double>(s.previous_amplitude_linear);
+			const double slope = cos(s.phase[0]) * s.last_step_fundamental * static_cast<double>(s.tone_gain_smooth) *
 								 static_cast<double>(s.previous_amplitude_linear);
 
-			const int upper = std::min(max_tail_samples, capacity);
+			const int upper = robotick::min(max_tail_samples, capacity);
 			if (upper <= 0)
 			{
 				return 0;
 			}
 
 			int num_samples = 0;
-			if (std::fabs(slope) > 1e-9)
+			if (fabs(slope) > 1e-9)
 			{
-				num_samples = static_cast<int>(std::ceil(std::fabs(current_value / slope)));
+				num_samples = static_cast<int>(ceil(fabs(current_value / slope)));
 			}
 
-			num_samples = std::clamp(num_samples, 0, upper);
+			num_samples = robotick::clamp(num_samples, 0, upper);
 			if (upper >= 4)
 			{
-				num_samples = std::max(num_samples, 4);
+				num_samples = robotick::max(num_samples, 4);
 			}
 			else
 			{
@@ -180,42 +182,42 @@ namespace robotick
 		double compute_partial_weight(const ProsodyState& prosody, int harmonic_index_zero_based, int max_harmonics)
 		{
 			const int h = harmonic_index_zero_based + 1; // 1..N
-			const double N = static_cast<double>(std::max(1, max_harmonics));
+			const double N = static_cast<double>(robotick::max(1, max_harmonics));
 
 			// Tilt (convert dB/har to linear)
 			const double tilt_db_per_h = prosody.harmonic_tilt_db_per_h;
-			const double tilt_linear = std::pow(10.0, (tilt_db_per_h * (h - 1)) / 20.0);
+			const double tilt_linear = pow(10.0, (tilt_db_per_h * (h - 1)) / 20.0);
 
 			// Even/odd emphasis
 			const float even_odd_ratio = (prosody.even_odd_ratio > 0.0f) ? prosody.even_odd_ratio : 1.0f;
 			const bool is_even = ((h % 2) == 0);
-			const double clamped_eo = std::clamp(static_cast<double>(even_odd_ratio), 0.25, 4.0);
+			const double clamped_eo = robotick::clamp(static_cast<double>(even_odd_ratio), 0.25, 4.0);
 			const double eo = is_even ? clamped_eo : (1.0 / clamped_eo);
 
 			// Centroid pull
-			const double centroid_ratio = std::clamp(static_cast<double>(prosody.centroid_ratio), 0.0, 1.0);
+			const double centroid_ratio = robotick::clamp(static_cast<double>(prosody.centroid_ratio), 0.0, 1.0);
 			const double center = 1.0 + centroid_ratio * (N - 1.0); // 1..N
-			const double dist = std::abs(static_cast<double>(h) - center);
+			const double dist = fabs(static_cast<double>(h) - center);
 			const double centroid_weight = 1.0 / (1.0 + 0.15 * dist);
 
 			// Formant bumps
 			auto gaussian = [](double x, double m, double s)
 			{
-				const double d = (x - m) / std::max(1e-6, s);
-				return std::exp(-0.5 * d * d);
+				const double d = (x - m) / robotick::max(1e-6, s);
+				return exp(-0.5 * d * d);
 			};
 
-			const double f1 = 1.0 + std::clamp(static_cast<double>(prosody.formant1_ratio), 0.0, 1.0) * (N - 1.0);
-			const double f2 = 1.0 + std::clamp(static_cast<double>(prosody.formant2_ratio), 0.0, 1.0) * (N - 1.0);
+			const double f1 = 1.0 + robotick::clamp(static_cast<double>(prosody.formant1_ratio), 0.0, 1.0) * (N - 1.0);
+			const double f2 = 1.0 + robotick::clamp(static_cast<double>(prosody.formant2_ratio), 0.0, 1.0) * (N - 1.0);
 			const double formant_emphasis = 0.6 * gaussian(h, f1, 1.2) + 0.4 * gaussian(h, f2, 1.8) + 0.3; // floor
 
 			// Support gating
-			const double support_ratio = std::clamp(static_cast<double>(prosody.harmonic_support_ratio), 0.0, 1.0);
+			const double support_ratio = robotick::clamp(static_cast<double>(prosody.harmonic_support_ratio), 0.0, 1.0);
 			const double support_falloff = 1.0 / (1.0 + (1.0 - support_ratio) * 0.5 * (h - 1));
 
 			// Final weight
 			double w = tilt_linear * eo * centroid_weight * formant_emphasis * support_falloff;
-			return std::clamp(w, 0.0, 4.0);
+			return robotick::clamp(w, 0.0, 4.0);
 		}
 
 		void tick(const TickInfo& tick_info)
@@ -242,15 +244,15 @@ namespace robotick
 			const double two_pi = 6.28318530717958647692;
 
 			// --- Global amplitude ---
-			float amplitude_linear = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			float amplitude_linear = powf(10.0f, config.amplitude_gain_db / 20.0f);
 			if (config.use_rms_for_amplitude)
 			{
-				amplitude_linear *= std::max(0.0f, prosody.rms);
+				amplitude_linear *= robotick::max(0.0f, prosody.rms);
 			}
 
 			// --- Fundamental frequency ---
 			const double f0 = (prosody.pitch_hz > 0.0f) ? prosody.pitch_hz : 0.0;
-			const double step_fundamental = (f0 > 0.0) ? (two_pi * std::min(f0, frequency_guard) / static_cast<double>(sample_rate)) : 0.0;
+			const double step_fundamental = (f0 > 0.0) ? (two_pi * robotick::min(f0, frequency_guard) / static_cast<double>(sample_rate)) : 0.0;
 
 			if (step_fundamental > 0.0)
 			{
@@ -273,21 +275,21 @@ namespace robotick
 			if (config.enable_noise)
 			{
 				noise_gain *= (1.0f + config.brightness_to_noise_scale * brightness01);
-				noise_gain *= (1.0f - config.harmonicity_to_noise_scale * std::max(0.0f, harmonicity));
+				noise_gain *= (1.0f - config.harmonicity_to_noise_scale * robotick::max(0.0f, harmonicity));
 				noise_gain *= (0.7f + 0.6f * (1.0f - support_ratio));
 			}
 
 			if (config.enable_partials)
 			{
 				partials_gain *= (1.0f + config.brightness_to_partial_scale * brightness01);
-				partials_gain *= (1.0f + config.harmonicity_to_partial_scale * std::max(0.0f, harmonicity));
+				partials_gain *= (1.0f + config.harmonicity_to_partial_scale * robotick::max(0.0f, harmonicity));
 				partials_gain *= (0.5f + 0.5f * support_ratio);
 			}
 
 			// Clamp
-			tone_gain = std::clamp(tone_gain, config.min_component_gain, config.max_component_gain);
-			partials_gain = std::clamp(partials_gain, config.min_component_gain, config.max_component_gain);
-			noise_gain = std::clamp(noise_gain, config.min_component_gain, config.max_component_gain);
+			tone_gain = robotick::clamp(tone_gain, config.min_component_gain, config.max_component_gain);
+			partials_gain = robotick::clamp(partials_gain, config.min_component_gain, config.max_component_gain);
+			noise_gain = robotick::clamp(noise_gain, config.min_component_gain, config.max_component_gain);
 
 			// Smooth gains
 			const float mix_alpha = clamp01(config.mix_smooth_alpha);
@@ -305,9 +307,9 @@ namespace robotick
 			{
 				cutoff_hz = 400.0f + brightness01 * 3000.0f;
 			}
-			cutoff_hz = std::clamp(cutoff_hz, 80.0f, static_cast<float>(nyquist_hz - 1.0));
+			cutoff_hz = robotick::clamp(cutoff_hz, 80.0f, static_cast<float>(nyquist_hz - 1.0));
 			const float alpha =
-				std::clamp(1.0f - std::exp(-2.0f * static_cast<float>(two_pi) * (cutoff_hz / static_cast<float>(sample_rate))), 1e-5f, 0.9999f);
+				robotick::clamp(1.0f - expf(-2.0f * static_cast<float>(two_pi) * (cutoff_hz / static_cast<float>(sample_rate))), 1e-5f, 0.9999f);
 
 			// --- Determine how many samples to produce ---
 			state->sample_accum += static_cast<double>(sample_rate) * static_cast<double>(tick_info.delta_time);
@@ -320,7 +322,7 @@ namespace robotick
 				return;
 			}
 
-			num_samples = std::min(num_samples, static_cast<int>(outputs.mono.samples.capacity()));
+			num_samples = robotick::min(num_samples, static_cast<int>(outputs.mono.samples.capacity()));
 			outputs.mono.samples.set_size(num_samples);
 
 			double phase_local[ProsodyWaveGeneratorState::MaxOsc];
@@ -344,7 +346,7 @@ namespace robotick
 				// --- Tone ---
 				if (tone_gain > 0.0f && step_fundamental > 0.0)
 				{
-					signal_tone = std::sin(phase_local[0]);
+					signal_tone = sin(phase_local[0]);
 					phase_local[0] += step_fundamental;
 				}
 
@@ -356,7 +358,7 @@ namespace robotick
 					FixedString<512> harmonic_log = "partials: ";
 #endif // #if ENABLE_PARTIALS_LOG
 
-					const int num_partials = std::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1);
+					const int num_partials = robotick::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1);
 					for (int harmonic_index = 0; harmonic_index < num_partials; ++harmonic_index)
 					{
 						const double harmonic_frequency = (harmonic_index + 2) * f0;
@@ -369,9 +371,9 @@ namespace robotick
 
 						const double baseRolloff = 1.0 / (1.0 + harmonic_index); // keep your gentle rolloff
 						const double w = compute_partial_weight(
-							prosody, harmonic_index, std::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1));
+							prosody, harmonic_index, robotick::clamp(config.max_num_partials, 0, ProsodyWaveGeneratorState::MaxOsc - 1));
 						const double harmonic_amplitude = w * baseRolloff;
-						signal_partials += harmonic_amplitude * std::sin(phase_local[phase_index]);
+						signal_partials += harmonic_amplitude * sin(phase_local[phase_index]);
 
 						const double harmonic_step = two_pi * harmonic_frequency / static_cast<double>(sample_rate);
 						phase_local[phase_index] += harmonic_step;
@@ -408,7 +410,8 @@ namespace robotick
 
 				// Wrap phases for tone + partials
 				const int max_phase_index = 1 + config.max_num_partials;
-				for (int phase_index = 0; phase_index < std::min(max_phase_index, ProsodyWaveGeneratorState::MaxOsc); ++phase_index)
+				const int phase_limit = robotick::min(max_phase_index, ProsodyWaveGeneratorState::MaxOsc);
+				for (int phase_index = 0; phase_index < phase_limit; ++phase_index)
 				{
 					if (phase_local[phase_index] >= two_pi)
 					{

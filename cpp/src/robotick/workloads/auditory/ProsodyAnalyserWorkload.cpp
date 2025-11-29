@@ -4,12 +4,12 @@
 // ProsodyAnalyserWorkload.cpp (harmonic-driven version with temporal smoothing)
 
 #include "robotick/api.h"
+#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 #include "robotick/systems/auditory/ProsodyState.h"
 
-#include <algorithm>
-#include <cmath>
+#include <math.h>
 
 namespace robotick
 {
@@ -60,14 +60,14 @@ namespace robotick
 
 		static inline float safe_div(float numerator, float denominator, float fallback = 0.0f)
 		{
-			if (std::fabs(denominator) > 1e-12f)
+			if (fabsf(denominator) > 1e-12f)
 			{
 				return numerator / denominator;
 			}
 			return fallback;
 		}
 
-		static inline float db(float x) { return 20.0f * std::log10(std::max(1e-12f, x)); }
+		static inline float db(float x) { return 20.0f * log10f(robotick::max(1e-12f, x)); }
 
 		void compute_harmonic_descriptors(const HarmonicPitchResult& hp, ProsodyState& prosody)
 		{
@@ -96,13 +96,13 @@ namespace robotick
 			int support_count = 0;
 
 			// Relative threshold vs H1 (e.g., 12 dB down)
-			const float rel_thresh = std::max(1e-6f, h1 * std::pow(10.0f, -12.0f / 20.0f));
+			const float rel_thresh = robotick::max(1e-6f, h1 * powf(10.0f, -12.0f / 20.0f));
 
 			for (size_t i = 0; i < H; ++i)
 			{
 				const double idx = static_cast<double>(i + 1); // harmonic number
-				const double a = static_cast<double>(std::max(1e-12f, hp.harmonic_amplitudes[i]));
-				const double adb = 20.0 * std::log10(a);
+				const double a = static_cast<double>(robotick::max(1e-12f, hp.harmonic_amplitudes[i]));
+				const double adb = 20.0 * log10(a);
 
 				sx += idx;
 				sy += adb;
@@ -128,7 +128,7 @@ namespace robotick
 			}
 
 			const double n = static_cast<double>(H);
-			const double denom = std::max(1e-9, (n * sx2 - sx * sx));
+			const double denom = robotick::max(1e-9, (n * sx2 - sx * sx));
 			const double slope_db_per_h = (n * sxy - sx * sy) / denom; // dB per harmonic increase
 			prosody.harmonic_tilt_db_per_h = static_cast<float>(slope_db_per_h);
 
@@ -139,14 +139,14 @@ namespace robotick
 			// Very rough “formant” peaks over the harmonic envelope: smooth + local maxima over dB
 			// Simple 3-point check after a tiny moving average in index domain
 			float smoothed_db[64]; // enough for your current MaxHarmonics
-			const size_t N = std::min(H, static_cast<size_t>(64));
+			const size_t N = robotick::min(H, static_cast<size_t>(64));
 
 			// 3-tap moving average on dB amplitude
 			for (size_t i = 0; i < N; ++i)
 			{
-				const double a0 = 20.0 * std::log10(std::max(1e-12f, hp.harmonic_amplitudes[i]));
-				const double aL = 20.0 * std::log10(std::max(1e-12f, hp.harmonic_amplitudes[(i > 0) ? i - 1 : i]));
-				const double aR = 20.0 * std::log10(std::max(1e-12f, hp.harmonic_amplitudes[(i + 1 < N) ? i + 1 : i]));
+				const double a0 = 20.0 * log10(robotick::max(1e-12f, hp.harmonic_amplitudes[i]));
+				const double aL = 20.0 * log10(robotick::max(1e-12f, hp.harmonic_amplitudes[(i > 0) ? i - 1 : i]));
+				const double aR = 20.0 * log10(robotick::max(1e-12f, hp.harmonic_amplitudes[(i + 1 < N) ? i + 1 : i]));
 				smoothed_db[i] = static_cast<float>((aL + a0 + aR) / 3.0);
 			}
 
@@ -187,7 +187,7 @@ namespace robotick
 			auto& prosody = outputs.prosody_state;
 			const auto& pitch_info = inputs.pitch_info;
 			const auto& samples = inputs.mono.samples;
-			const float delta_time = std::max(1e-6f, info.delta_time);
+			const float delta_time = robotick::max(1e-6f, info.delta_time);
 
 			// --- Compute RMS from incoming samples ---
 			double energy_sum = 0.0;
@@ -196,7 +196,7 @@ namespace robotick
 				energy_sum += static_cast<double>(sample) * static_cast<double>(sample);
 			}
 
-			const float rms = (samples.empty()) ? 0.0f : static_cast<float>(std::sqrt(energy_sum / static_cast<double>(samples.size())));
+			const float rms = (samples.empty()) ? 0.0f : static_cast<float>(sqrt(energy_sum / static_cast<double>(samples.size())));
 
 			// --- Smoothed RMS ---
 			state->smoothed_rms = (1.0f - config.rms_smooth_alpha) * state->smoothed_rms + config.rms_smooth_alpha * rms;
@@ -231,7 +231,7 @@ namespace robotick
 			else
 			{
 				const float decay = delta_time * config.voiced_falloff_rate_hz;
-				prosody.voiced_confidence = std::max(0.0f, prosody.voiced_confidence - decay);
+				prosody.voiced_confidence = robotick::max(0.0f, prosody.voiced_confidence - decay);
 			}
 
 			// --- Pitch smoothing ---
@@ -260,9 +260,9 @@ namespace robotick
 				harmonic_energy += amplitude * amplitude;
 			}
 
-			const float total_energy = std::max(harmonic_energy, 1e-12f);
-			const float noise_energy = std::max(1e-12f, total_energy - harmonic_energy);
-			float harmonicity_db = 10.0f * std::log10(harmonic_energy / noise_energy);
+			const float total_energy = robotick::max(harmonic_energy, 1e-12f);
+			const float noise_energy = robotick::max(1e-12f, total_energy - harmonic_energy);
+			float harmonicity_db = 10.0f * log10f(harmonic_energy / noise_energy);
 			if (harmonicity_db < config.harmonic_floor_db)
 			{
 				harmonicity_db = config.harmonic_floor_db;
@@ -281,9 +281,9 @@ namespace robotick
 				for (size_t harmonic_id = 0; harmonic_id < num_harmonics; ++harmonic_id)
 				{
 					const double frequency = (harmonic_id + 1) * pitch_info.h1_f0_hz;
-					const double amplitude = std::max(1e-12, static_cast<double>(pitch_info.harmonic_amplitudes[harmonic_id]));
-					const double log_frequency = std::log10(frequency);
-					const double log_amplitude = std::log10(amplitude);
+					const double amplitude = robotick::max(1e-12, static_cast<double>(pitch_info.harmonic_amplitudes[harmonic_id]));
+					const double log_frequency = log10(frequency);
+					const double log_amplitude = log10(amplitude);
 
 					sum_x += log_frequency;
 					sum_y += log_amplitude;
@@ -308,10 +308,10 @@ namespace robotick
 			compute_harmonic_descriptors(pitch_info, prosody);
 
 			// --- Jitter & shimmer (rough proxies) ---
-			const float pitch_delta = std::fabs(current_pitch - previous_pitch);
+			const float pitch_delta = fabsf(current_pitch - previous_pitch);
 			prosody.jitter = (previous_pitch > 0.0f) ? (pitch_delta / previous_pitch) : 0.0f;
 
-			const float rms_delta = std::fabs(state->smoothed_rms - state->previous_rms);
+			const float rms_delta = fabsf(state->smoothed_rms - state->previous_rms);
 			prosody.shimmer = (state->previous_rms > 0.0f) ? (rms_delta / state->previous_rms) : 0.0f;
 
 			state->previous_rms = state->smoothed_rms;
