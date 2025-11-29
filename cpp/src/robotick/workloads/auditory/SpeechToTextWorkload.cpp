@@ -9,7 +9,6 @@
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/SpeechToText.h"
 
-#include <cmath>
 #include <cstring>
 
 namespace robotick

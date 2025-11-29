@@ -4,12 +4,10 @@
 // ProsodyAnalyserWorkload.cpp (harmonic-driven version with temporal smoothing)
 
 #include "robotick/api.h"
-#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 #include "robotick/systems/auditory/ProsodyState.h"
 
-#include <math.h>
 
 namespace robotick
 {

@@ -4,7 +4,6 @@
 #include "robotick/api.h"
 
 #include <chrono>
-#include <cmath>
 #include <iostream>
 
 namespace robotick

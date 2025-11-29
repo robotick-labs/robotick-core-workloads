@@ -7,12 +7,10 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/containers/FixedVector.h"
-#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 
 #include <cstdint>
-#include <math.h>
 #include <kissfft/kiss_fftr.h>
 
 namespace robotick

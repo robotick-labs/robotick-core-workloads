@@ -8,7 +8,6 @@
 #include <yaml-cpp/yaml.h>
 
 #define _USE_MATH_DEFINES
-#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>

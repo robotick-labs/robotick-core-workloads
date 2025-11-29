@@ -8,7 +8,6 @@
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
-#include <cmath>
 #include <cstring>
 #include <fstream>
 

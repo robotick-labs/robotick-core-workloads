@@ -6,7 +6,6 @@
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
 namespace robotick

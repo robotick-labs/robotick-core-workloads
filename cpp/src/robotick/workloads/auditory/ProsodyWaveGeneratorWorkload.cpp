@@ -4,13 +4,11 @@
 // ProsodyWaveGeneratorWorkload.cpp (harmonic-driven version)
 
 #include "robotick/api.h"
-#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/ProsodyState.h"
 
 #include <cstring>
-#include <math.h>
 
 namespace robotick
 {

@@ -1,5 +1,4 @@
 #include "robotick/api.h"
-#include <cmath> // expf
 
 namespace robotick
 {

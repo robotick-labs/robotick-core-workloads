@@ -3,7 +3,6 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/containers/HeapVector.h"
-#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
 #include "robotick/systems/audio/AudioFrame.h"
@@ -12,7 +11,6 @@
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include <cstring>
-#include <math.h>
 
 namespace robotick
 {

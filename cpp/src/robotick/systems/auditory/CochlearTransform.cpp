@@ -4,9 +4,9 @@
 // CochlearTransform.cpp
 
 #include "robotick/systems/auditory/CochlearTransform.h"
+#include "robotick/framework/math/MathUtils.h"
 
 #include <cstring>
-#include <math.h>
 
 namespace robotick
 {

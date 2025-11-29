@@ -4,7 +4,6 @@
 // CochlearTransformWorkload.cpp  (thin wrapper around robotick::CochlearTransform)
 
 #include "robotick/api.h"
-#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearTransform.h"
 

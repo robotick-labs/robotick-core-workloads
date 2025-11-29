@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <math.h>
 
 namespace robotick
 {

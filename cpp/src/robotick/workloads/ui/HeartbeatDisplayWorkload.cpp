@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/Renderer.h"
 
-#include <math.h>
 
 namespace
 {
