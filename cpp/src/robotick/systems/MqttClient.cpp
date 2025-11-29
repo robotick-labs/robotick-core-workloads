@@ -1,94 +1,189 @@
-// MqttClient.cpp
+// Copyright Robotick Labs
+// SPDX-License-Identifier: Apache-2.0
+
 #include "robotick/systems/MqttClient.h"
 
+#include "robotick/api.h"
+
+#include <arpa/inet.h>
 #include <cstring>
 #include <netdb.h>
-#include <netinet/in.h>
-#include <stdexcept>
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace robotick
 {
+	namespace
+	{
+		bool starts_with(const char* text, const char* prefix)
+		{
+			if (!text || !prefix)
+				return false;
 
-	// ---- static (has access to private members) ----
+			while (*prefix)
+			{
+				if (*text == '\0' || *text != *prefix)
+					return false;
+				++text;
+				++prefix;
+			}
+			return true;
+		}
+
+		bool parse_port(const char* str, uint16_t& out_port)
+		{
+			if (!str || *str == '\0')
+				return false;
+			int value = 0;
+			while (*str)
+			{
+				if (*str < '0' || *str > '9')
+					return false;
+				value = (value * 10) + (*str - '0');
+				if (value > 65535)
+					return false;
+				++str;
+			}
+			out_port = static_cast<uint16_t>(value);
+			return true;
+		}
+
+		bool parse_broker_uri(const char* uri, BrokerAddress& out)
+		{
+			if (!uri || uri[0] == '\0')
+				return false;
+
+			const char* cursor = uri;
+			if (starts_with(uri, "mqtt://"))
+			{
+				cursor += 7; // strlen("mqtt://")
+			}
+
+			const char* colon = std::strchr(cursor, ':');
+			if (colon)
+			{
+				out.host.assign(cursor, static_cast<size_t>(colon - cursor));
+				if (!parse_port(colon + 1, out.port))
+					return false;
+			}
+			else
+			{
+				out.host.assign(cursor, fixed_strlen(cursor));
+			}
+
+			return !out.host.empty();
+		}
+
+		bool copy_into(FixedString256& destination, const void* src, size_t size)
+		{
+			destination.assign(static_cast<const char*>(src), size);
+			return destination.length() == size;
+		}
+
+		bool copy_into(FixedString1024& destination, const void* src, size_t size)
+		{
+			destination.assign(static_cast<const char*>(src), size);
+			return destination.length() == size;
+		}
+	} // namespace
+
 	void MqttClient::on_publish(void** state, struct mqtt_response_publish* published)
 	{
 		if (!state || !*state || !published)
 			return;
+
 		auto* self = static_cast<MqttClient*>(*state);
+		if (!self->message_callback)
+			return;
 
-		// mqtt-c uses void* + size
-		std::string topic(static_cast<const char*>(published->topic_name), static_cast<size_t>(published->topic_name_size));
-		std::string payload(static_cast<const char*>(published->application_message), static_cast<size_t>(published->application_message_size));
+		if (!self->assign_topic_payload(*published, self->inbound_topic, self->inbound_payload))
+			return;
 
-		if (self->message_callback)
-		{
-			self->message_callback(topic, payload);
-		}
+		self->message_callback(self->inbound_topic.c_str(), self->inbound_payload.c_str());
 	}
 
-	MqttClient::MqttClient(const std::string& broker_uri, const std::string& client_id_in)
-		: broker_host("localhost")
-		, broker_port(1883)
-		, client_id(client_id_in)
-		, sendbuf(2048)
-		, recvbuf(2048)
+	MqttClient::MqttClient(const char* broker_uri, const char* client_id_in)
+		: broker_port(1883)
 	{
-		// Parse mqtt://host:port | host:port | host
-		std::string s = broker_uri;
-		const std::string prefix = "mqtt://";
-		if (s.rfind(prefix, 0) == 0)
-			s = s.substr(prefix.size());
+		BrokerAddress parsed;
+		if (!parse_broker_uri(broker_uri, parsed))
+		{
+			ROBOTICK_FATAL_EXIT("MQTT: Invalid broker URI '%s'", broker_uri ? broker_uri : "(null)");
+		}
 
-		auto pos = s.find(':');
-		if (pos != std::string::npos)
-		{
-			broker_host = s.substr(0, pos);
-			broker_port = std::stoi(s.substr(pos + 1));
-		}
-		else
-		{
-			broker_host = s;
-		}
+		broker_host = parsed.host;
+		broker_port = parsed.port;
+		client_id.assign(client_id_in, client_id_in ? fixed_strlen(client_id_in) : 0);
+
+		initialize_buffers();
 	}
 
 	MqttClient::~MqttClient()
 	{
-		try
+		disconnect();
+	}
+
+	void MqttClient::initialize_buffers()
+	{
+		if (sendbuf.size() == 0)
 		{
-			disconnect();
+			sendbuf.initialize(2048);
 		}
-		catch (...)
+		if (recvbuf.size() == 0)
 		{
+			recvbuf.initialize(2048);
 		}
+	}
+
+	bool MqttClient::assign_topic_payload(const mqtt_response_publish& published, FixedString256& topic_out, FixedString1024& payload_out)
+	{
+		const bool topic_ok = copy_into(topic_out, published.topic_name, static_cast<size_t>(published.topic_name_size));
+		const bool payload_ok =
+			copy_into(payload_out, published.application_message, static_cast<size_t>(published.application_message_size));
+
+		if (!topic_ok)
+		{
+			ROBOTICK_WARNING("MQTT: incoming topic truncated to %zu bytes", topic_out.length());
+		}
+		if (!payload_ok)
+		{
+			ROBOTICK_WARNING("MQTT: incoming payload truncated to %zu bytes", payload_out.length());
+		}
+
+		return topic_ok && payload_ok;
+	}
+
+	void MqttClient::set_callback(Function<void(const char*, const char*)> cb)
+	{
+		message_callback = std::move(cb);
 	}
 
 	void MqttClient::connect()
 	{
-		// resolve
 		hostent* he = gethostbyname(broker_host.c_str());
 		if (!he)
-			throw std::runtime_error("MQTT: DNS resolve failed for '" + broker_host + "'");
+		{
+			ROBOTICK_FATAL_EXIT("MQTT: DNS resolve failed for '%s'", broker_host.c_str());
+		}
 
-		// socket
 		sockfd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sockfd < 0)
-			throw std::runtime_error("MQTT: socket() failed");
+		{
+			ROBOTICK_FATAL_EXIT("MQTT: socket() failed");
+		}
 
 		sockaddr_in addr{};
 		addr.sin_family = AF_INET;
-		addr.sin_port = htons(static_cast<uint16_t>(broker_port));
+		addr.sin_port = htons(broker_port);
 		std::memcpy(&addr.sin_addr.s_addr, he->h_addr, static_cast<size_t>(he->h_length));
 
 		if (::connect(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
 		{
 			::close(sockfd);
 			sockfd = -1;
-			throw std::runtime_error("MQTT: connect() to broker failed");
+			ROBOTICK_FATAL_EXIT("MQTT: connect() to broker failed");
 		}
 
-		// init with callback
 		mqtt_init(&mqtt,
 			static_cast<mqtt_pal_socket_handle>(sockfd),
 			sendbuf.data(),
@@ -97,17 +192,12 @@ namespace robotick
 			recvbuf.size(),
 			&MqttClient::on_publish);
 
-		// pass 'this' back via callback state
 		mqtt.publish_response_callback_state = this;
 
-		// mqtt_connect(mqtt_client*, client_id, will_topic, will_msg, will_msg_size,
-		//              username, password, connect_flags, keep_alive)
-		const uint8_t connect_flags = 0; // no username/password, no will
+		const uint8_t connect_flags = 0;
 		const uint16_t keep_alive = 400;
 
 		mqtt_connect(&mqtt, client_id.c_str(), nullptr, nullptr, 0, nullptr, nullptr, connect_flags, keep_alive);
-
-		// send CONNECT + read CONNACK
 		mqtt_sync(&mqtt);
 	}
 
@@ -122,26 +212,21 @@ namespace robotick
 		}
 	}
 
-	void MqttClient::subscribe(const std::string& topic, int qos)
+	void MqttClient::subscribe(const char* topic, int qos)
 	{
-		mqtt_subscribe(&mqtt, topic.c_str(), static_cast<uint8_t>(qos));
+		mqtt_subscribe(&mqtt, topic, static_cast<uint8_t>(qos));
 		mqtt_sync(&mqtt);
 	}
 
-	void MqttClient::publish(const std::string& topic, const std::string& payload, bool /*retained*/)
+	void MqttClient::publish(const char* topic, const char* payload, bool /*retained*/)
 	{
-		mqtt_publish(&mqtt, topic.c_str(), const_cast<char*>(payload.data()), payload.size(), MQTT_PUBLISH_QOS_0);
+		const size_t payload_size = payload ? fixed_strlen(payload) : 0;
+		mqtt_publish(&mqtt, topic, const_cast<char*>(payload), payload_size, MQTT_PUBLISH_QOS_0);
 		mqtt_sync(&mqtt);
-	}
-
-	void MqttClient::set_callback(std::function<void(const std::string&, const std::string&)> cb)
-	{
-		message_callback = std::move(cb);
 	}
 
 	void MqttClient::poll()
 	{
-		// call from your engine tick (or a timer) to process IO
 		mqtt_sync(&mqtt);
 	}
 

@@ -61,15 +61,15 @@ namespace robotick::test
 			std::unordered_map<std::string, std::string> retained;
 
 			void connect() override {}
-			void subscribe(const std::string& /*topic*/, int /*qos*/ = 1) override {}
+			void subscribe(const char* /*topic*/, int /*qos*/ = 1) override {}
 
-			void publish(const std::string& topic, const std::string& payload, bool retain = true) override
+			void publish(const char* topic, const char* payload, bool retain = true) override
 			{
 				if (retain)
-					retained[topic] = payload;
+					retained[topic ? topic : ""] = payload ? payload : "";
 			}
 
-			void set_callback(std::function<void(const std::string&, const std::string&)>) override {}
+			void set_callback(Function<void(const char*, const char*)>) override {}
 		};
 	} // namespace
 
@@ -96,7 +96,7 @@ namespace robotick::test
 
 			DummyMqttClient dummy_client;
 			std::string root_topic_name = "robotick";
-			MqttFieldSync sync(engine, root_topic_name, dummy_client);
+			MqttFieldSync sync(engine, root_topic_name.c_str(), dummy_client);
 
 			sync.subscribe_and_sync_startup();
 
@@ -132,12 +132,12 @@ namespace robotick::test
 
 			DummyMqttClient dummy_client;
 			std::string root_topic_name = "robotick";
-			MqttFieldSync sync(engine, root_topic_name, dummy_client);
+			MqttFieldSync sync(engine, root_topic_name.c_str(), dummy_client);
 
 			nlohmann::json json_val = 99;
 			nlohmann::json json_subint = 5;
-			sync.get_updated_topics()["robotick/control/W2/inputs/value"] = json_val;
-			sync.get_updated_topics()["robotick/control/W2/inputs/blackboard/flag"] = json_subint;
+			sync.queue_control_topic("robotick/control/W2/inputs/value", json_val);
+			sync.queue_control_topic("robotick/control/W2/inputs/blackboard/flag", json_subint);
 
 			sync.apply_control_updates();
 
