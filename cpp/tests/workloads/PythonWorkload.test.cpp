@@ -7,7 +7,6 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 
 #include <catch2/catch_all.hpp>
 
@@ -21,6 +20,35 @@ namespace robotick
 } // namespace robotick
 
 using namespace robotick;
+
+#namespace
+{
+	static void trim_to_parent(FixedString1024& path)
+	{
+		char* data = path.str();
+		size_t len = path.length();
+		while (len > 0)
+		{
+			--len;
+			if (data[len] == '/' || data[len] == '\\')
+			{
+				data[len] = '\0';
+				return;
+			}
+			data[len] = '\0';
+		}
+	}
+
+	static FixedString1024 compute_python_path()
+	{
+		FixedString1024 result(__FILE__);
+		trim_to_parent(result); // remove filename
+		for (int i = 0; i < 3; ++i)
+			trim_to_parent(result);
+		result.append("/python");
+		return result;
+	}
+} // namespace
 
 #ifndef ROBOTICK_ENABLE_PYTHON
 #error "ROBOTICK_ENABLE_PYTHON must be defined (expected value: 1)"
@@ -39,12 +67,9 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 
 	// ensure we can access our hello_workload.py as a Python module:
 	{
-		std::filesystem::path source_file_path = __FILE__;
-		std::filesystem::path abs_python_path = source_file_path.parent_path() / "../../../python";
-		abs_python_path = std::filesystem::absolute(abs_python_path);
-		setenv("PYTHONPATH", abs_python_path.string().c_str(), 1);
-
-		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", abs_python_path.string().c_str());
+		const FixedString1024 python_path = compute_python_path();
+		setenv("PYTHONPATH", python_path.c_str(), 1);
+		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", python_path.c_str());
 	}
 
 	// ============================

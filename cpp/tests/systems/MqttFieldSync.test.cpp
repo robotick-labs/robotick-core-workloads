@@ -3,6 +3,7 @@
 
 #include "robotick/systems/MqttFieldSync.h"
 #include "robotick/framework/Engine.h"
+#include "robotick/framework/containers/Map.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/data/WorkloadsBuffer.h"
 #include "robotick/framework/utils/TypeId.h"
@@ -10,8 +11,6 @@
 
 #include <catch2/catch_all.hpp>
 #include <nlohmann/json.hpp>
-#include <string>
-#include <unordered_map>
 
 namespace robotick::test
 {
@@ -58,16 +57,27 @@ namespace robotick::test
 
 		struct DummyMqttClient : public IMqttClient
 		{
-			std::unordered_map<std::string, std::string> retained;
+			Map<FixedString256, FixedString256, 128> retained;
 
 			void connect() override {}
 			void subscribe(const char* /*topic*/, int /*qos*/ = 1) override {}
 
 			void publish(const char* topic, const char* payload, bool retain = true) override
 			{
-				if (retain)
-					retained[topic ? topic : ""] = payload ? payload : "";
+				if (!retain)
+					return;
+				const FixedString256 key = topic ? FixedString256(topic) : FixedString256("");
+				const FixedString256 value = payload ? FixedString256(payload) : FixedString256("");
+				retained.insert(key, value);
 			}
+
+			bool has_retained(const char* topic) const
+			{
+				const FixedString256 key = topic ? FixedString256(topic) : FixedString256("");
+				return retained.find(key) != nullptr;
+			}
+
+			void clear_retained() { retained.clear(); }
 
 			void set_callback(Function<void(const char*, const char*)>) override {}
 		};
@@ -95,27 +105,27 @@ namespace robotick::test
 			mirror_buf.create_mirror_from(engine.get_workloads_buffer());
 
 			DummyMqttClient dummy_client;
-			std::string root_topic_name = "robotick";
+			FixedString64 root_topic_name = "robotick";
 			MqttFieldSync sync(engine, root_topic_name.c_str(), dummy_client);
 
 			sync.subscribe_and_sync_startup();
 
 			// Check retained messages contain both state and control for inputs
-			CHECK(dummy_client.retained.count("robotick/state/W1/inputs/value"));
-			CHECK(dummy_client.retained.count("robotick/state/W1/inputs/text"));
-			CHECK(dummy_client.retained.count("robotick/state/W1/inputs/blackboard/flag"));
-			CHECK(dummy_client.retained.count("robotick/state/W1/inputs/blackboard/ratio"));
+			CHECK(dummy_client.has_retained("robotick/state/W1/inputs/value"));
+			CHECK(dummy_client.has_retained("robotick/state/W1/inputs/text"));
+			CHECK(dummy_client.has_retained("robotick/state/W1/inputs/blackboard/flag"));
+			CHECK(dummy_client.has_retained("robotick/state/W1/inputs/blackboard/ratio"));
 
-			CHECK(dummy_client.retained.count("robotick/control/W1/inputs/value"));
-			CHECK(dummy_client.retained.count("robotick/control/W1/inputs/text"));
-			CHECK(dummy_client.retained.count("robotick/control/W1/inputs/blackboard/flag"));
-			CHECK(dummy_client.retained.count("robotick/control/W1/inputs/blackboard/ratio"));
+			CHECK(dummy_client.has_retained("robotick/control/W1/inputs/value"));
+			CHECK(dummy_client.has_retained("robotick/control/W1/inputs/text"));
+			CHECK(dummy_client.has_retained("robotick/control/W1/inputs/blackboard/flag"));
+			CHECK(dummy_client.has_retained("robotick/control/W1/inputs/blackboard/ratio"));
 
 			// Clear retained and test publish_state_fields only
-			dummy_client.retained.clear();
+			dummy_client.clear_retained();
 			sync.publish_state_fields();
-			CHECK(dummy_client.retained.count("robotick/state/W1/inputs/value"));
-			CHECK_FALSE(dummy_client.retained.count("robotick/control/W1/inputs/value"));
+			CHECK(dummy_client.has_retained("robotick/state/W1/inputs/value"));
+			CHECK_FALSE(dummy_client.has_retained("robotick/control/W1/inputs/value"));
 		}
 
 		SECTION("MqttFieldSync can apply control updates")
@@ -131,7 +141,7 @@ namespace robotick::test
 			auto* test_workload_ptr = static_cast<TestWorkload*>((void*)info.get_ptr(engine));
 
 			DummyMqttClient dummy_client;
-			std::string root_topic_name = "robotick";
+			FixedString64 root_topic_name = "robotick";
 			MqttFieldSync sync(engine, root_topic_name.c_str(), dummy_client);
 
 			nlohmann::json json_val = 99;
