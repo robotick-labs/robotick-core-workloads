@@ -1,4 +1,5 @@
 #include "robotick/api.h"
+#include "robotick/framework/math/LogExp.h"
 
 namespace robotick
 {
@@ -48,7 +49,7 @@ namespace robotick
 			{
 				const float u = -dt / tau;
 				// For very small |u|, expf(u) ~ 1 + u; alpha stays well-behaved.
-				alpha = 1.0f - std::exp(u);
+				alpha = 1.0f - robotick::exp(u);
 				if (alpha < 0.0f)
 				{
 					alpha = 0.0f;

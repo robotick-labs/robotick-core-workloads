@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Sqrt.h"
 
 #include <chrono>
 #include <iostream>
@@ -76,7 +77,7 @@ namespace robotick
 				float mean_dt = internal_state.sum_dt / (float)internal_state.count;
 				float mean_dt2 = internal_state.sum_dt2 / (float)internal_state.count;
 				const float variance = max(0.0f, mean_dt2 - mean_dt * mean_dt);
-				const float stddev = std::sqrt(variance);
+				const float stddev = robotick::sqrt(variance);
 
 				outputs.avg_tick_rate = 1.0f / mean_dt;
 				outputs.tick_stddev = stddev;

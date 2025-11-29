@@ -5,6 +5,9 @@
 
 #include "robotick/systems/auditory/CochlearTransform.h"
 
+#include "robotick/framework/math/Abs.h"
+#include "robotick/framework/math/Trig.h"
+
 #include <catch2/catch_all.hpp>
 
 #include <cmath>
@@ -15,7 +18,7 @@ namespace robotick::test
 	static float generate_sine_sample(float frequency_hz, float sample_rate, size_t sample_index)
 	{
 		const float two_pi = 2.0f * static_cast<float>(M_PI);
-		return std::sin(two_pi * frequency_hz * (static_cast<float>(sample_index) / sample_rate));
+		return robotick::sin(two_pi * frequency_hz * (static_cast<float>(sample_index) / sample_rate));
 	}
 
 	static size_t index_of_max_value(const AudioBuffer128& buffer)
@@ -236,7 +239,7 @@ namespace robotick::test
 
 			const float detected_center_hz = frame_b.band_center_hz[max_band_index];
 
-			CHECK(std::fabs(detected_center_hz - target_tone_hz) < 100.0f);
+			CHECK(robotick::abs(detected_center_hz - target_tone_hz) < 100.0f);
 			CHECK(frame_b.envelope[max_band_index] > 0.05f);
 		}
 	}

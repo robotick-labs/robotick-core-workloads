@@ -3,6 +3,7 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/math/Pow.h"
+#include "robotick/framework/math/Trig.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
@@ -104,7 +105,7 @@ namespace robotick
 			if (emit_samples == 1)
 			{
 				const double step = two_pi * (double)f1 / (double)fs;
-				outputs.mono.samples[0] = (float)(scaled_a1 * std::sin(phase));
+				outputs.mono.samples[0] = (float)(scaled_a1 * robotick::sin(phase));
 				phase += step;
 				if (phase >= two_pi)
 					phase -= two_pi;
@@ -118,7 +119,7 @@ namespace robotick
 					const double freq = (double)f0 + (double)(f1 - f0) * t;
 					const double step = two_pi * freq / (double)fs;
 
-					outputs.mono.samples[i] = (float)(amp * std::sin(phase));
+					outputs.mono.samples[i] = (float)(amp * robotick::sin(phase));
 					phase += step;
 
 					if (phase >= two_pi)

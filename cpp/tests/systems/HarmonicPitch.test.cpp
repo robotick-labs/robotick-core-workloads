@@ -3,6 +3,10 @@
 
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
+#include "robotick/framework/math/Abs.h"
+#include "robotick/framework/math/LogExp.h"
+#include "robotick/framework/math/Trig.h"
+
 #include "robotick/framework/math/Pow.h"
 
 #include <catch2/catch_all.hpp>
@@ -22,7 +26,7 @@ namespace robotick::test
 		float bd = 1e30f;
 		for (size_t i = 0; i < centers.size(); ++i)
 		{
-			float d = std::fabs(centers[i] - query_freq_hz);
+			float d = robotick::abs(centers[i] - query_freq_hz);
 			if (d < bd)
 			{
 				bd = d;
@@ -93,9 +97,9 @@ namespace robotick::test
 			{
 				AudioBuffer128 envelope(num_bands);
 
-				const float t_norm = float(t) / (steps - 1);									  // 0 → 1
-				float current_freq = base_freq + freq_mod_depth * std::sin(t_norm * 2.0f * M_PI); // sine LFO
-				float current_amp = 1.0f + amp_mod_depth * std::sin(t_norm * 2.0f * M_PI);		  // amplitude LFO
+				const float t_norm = float(t) / (steps - 1);															   // 0 → 1
+				float current_freq = base_freq + freq_mod_depth * robotick::sin(t_norm * 2.0f * static_cast<float>(M_PI)); // sine LFO
+				float current_amp = 1.0f + amp_mod_depth * robotick::sin(t_norm * 2.0f * static_cast<float>(M_PI));		   // amplitude LFO
 
 				// Add silence at start and end
 				if (t < 4 || t > steps - 5)
@@ -107,9 +111,9 @@ namespace robotick::test
 				for (int i = 0; i < num_bands; ++i)
 				{
 					const float band_hz = centers[i];
-					const float cents = 1200.0f * std::log2(band_hz / current_freq);
+					const float cents = 1200.0f * robotick::log2(band_hz / current_freq);
 					const float sigma = 50.0f;
-					const float gauss = std::exp(-0.5f * (cents * cents) / (sigma * sigma));
+					const float gauss = robotick::exp(-0.5f * (cents * cents) / (sigma * sigma));
 					envelope[i] = current_amp * gauss;
 				}
 
@@ -157,7 +161,8 @@ namespace robotick::test
 				AudioBuffer128 envelope(num_bands);
 
 				const float t_norm = float(t) / (steps - 1);
-				const float f0 = base_f0 * robotick::pow(2.0f, (freq_wobble_cents / 1200.0f) * std::sin(t_norm * 2.0f * M_PI));
+				const float f0 =
+					base_f0 * robotick::pow(2.0f, (freq_wobble_cents / 1200.0f) * robotick::sin(t_norm * 2.0f * static_cast<float>(M_PI)));
 				const float global_amp = (t < 4 || t > steps - 5) ? 0.0f : 0.7f;
 
 				for (int harmonic_id = 1; harmonic_id <= num_harmonics; ++harmonic_id)
@@ -167,9 +172,9 @@ namespace robotick::test
 
 					for (int i = 0; i < num_bands; ++i)
 					{
-						const float cents = 1200.0f * std::log2(centers[i] / partial_hz);
+						const float cents = 1200.0f * robotick::log2(centers[i] / partial_hz);
 						const float sigma = 40.0f;
-						const float gauss = std::exp(-0.5f * (cents * cents) / (sigma * sigma));
+						const float gauss = robotick::exp(-0.5f * (cents * cents) / (sigma * sigma));
 						envelope[i] += amplitude * gauss;
 					}
 				}

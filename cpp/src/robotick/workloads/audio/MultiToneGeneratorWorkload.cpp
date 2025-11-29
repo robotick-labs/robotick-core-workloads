@@ -3,11 +3,11 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/math/Pow.h"
+#include "robotick/framework/math/Trig.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
 namespace robotick
@@ -131,14 +131,14 @@ namespace robotick
 					double mod_multiplier = 1.0;
 					if (mod_freq > 0.0 && mod_depth_cents != 0.0)
 					{
-						const double mod_sin = std::sin(mod_phase);
+						const double mod_sin = robotick::sin(mod_phase);
 						mod_multiplier = robotick::pow(2.0, (mod_sin * mod_depth_cents) / 1200.0);
 					}
 
 					const double freq = base_freq * mod_multiplier;
 					const double step = two_pi * freq / fs;
 
-					outputs.mono.samples[i] += (float)(amp * std::sin(phase));
+					outputs.mono.samples[i] += (float)(amp * robotick::sin(phase));
 
 					phase += step;
 					mod_phase += two_pi * mod_freq / fs;

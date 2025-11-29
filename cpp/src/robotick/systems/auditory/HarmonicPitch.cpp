@@ -4,6 +4,8 @@
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Abs.h"
+#include "robotick/framework/math/LogExp.h"
 #include "robotick/framework/math/Pow.h"
 
 namespace robotick
@@ -231,7 +233,7 @@ namespace robotick
 						continue;
 
 					// Convert ratio to musical 'cents' error (1 semitone = 100 cents)
-					const float cents_error = 1200.0f * std::abs(std::log2(ratio));
+					const float cents_error = 1200.0f * robotick::abs(robotick::log2(ratio));
 
 					// Keep the closest (in cents) peak within tolerance
 					if (cents_error < best_cents_error)
@@ -303,7 +305,7 @@ namespace robotick
 
 			for (size_t band_id = 0; band_id < centers.size(); ++band_id)
 			{
-				const float dist = std::abs(centers[band_id] - harmonic_freq);
+				const float dist = robotick::abs(centers[band_id] - harmonic_freq);
 				if (dist < closest_distance)
 				{
 					closest_distance = dist;
@@ -336,7 +338,7 @@ namespace robotick
 
 		for (size_t i = 0; i < num_bands; ++i)
 		{
-			const float dist = std::abs(centers[i] - prev_result.h1_f0_hz);
+			const float dist = robotick::abs(centers[i] - prev_result.h1_f0_hz);
 			if (dist < min_dist)
 			{
 				min_dist = dist;
@@ -390,7 +392,7 @@ namespace robotick
 			float min_distance = 1e9f;
 			for (size_t i = 0; i < num_bands; ++i)
 			{
-				const float dist = std::abs(centers[i] - harmonic_freq);
+				const float dist = robotick::abs(centers[i] - harmonic_freq);
 				if (dist < min_distance)
 				{
 					min_distance = dist;
@@ -451,7 +453,7 @@ namespace robotick
 		else
 		{
 			// Both succeeded — check if their f0 values are similar (within cents threshold)
-			const float cents_diff = 1200.0f * std::fabs(std::log2(fresh.h1_f0_hz / continued.h1_f0_hz));
+			const float cents_diff = 1200.0f * robotick::abs(robotick::log2(fresh.h1_f0_hz / continued.h1_f0_hz));
 
 			if (cents_diff < settings.harmonic_tolerance_cents)
 			{
