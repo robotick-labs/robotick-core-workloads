@@ -4,6 +4,7 @@
 // CochlearTransformWorkload.cpp  (thin wrapper around robotick::CochlearTransform)
 
 #include "robotick/api.h"
+#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearTransform.h"
 
@@ -35,7 +36,7 @@ namespace robotick
 			state->frame_rate_hz = static_cast<double>(state->sample_rate) / static_cast<double>(CochlearTransformState::hop_size);
 
 			// Respect AudioBuffer128 capacity.
-			config.num_bands = std::min(config.num_bands, static_cast<uint16_t>(AudioBuffer128::capacity()));
+			config.num_bands = robotick::min(config.num_bands, static_cast<uint16_t>(AudioBuffer128::capacity()));
 
 			// Prepare outputs to the configured band count.
 			outputs.cochlear_frame.envelope.set_size(config.num_bands);

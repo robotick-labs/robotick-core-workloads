@@ -5,9 +5,8 @@
 
 #include "robotick/systems/auditory/CochlearTransform.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
+#include <math.h>
 
 namespace robotick
 {
@@ -15,12 +14,12 @@ namespace robotick
 
 	float CochlearTransform::erb_rate(float frequency_hz)
 	{
-		return 21.4f * std::log10(4.37e-3f * frequency_hz + 1.0f);
+		return 21.4f * log10f(4.37e-3f * frequency_hz + 1.0f);
 	}
 
 	float CochlearTransform::inv_erb_rate(float erb_value)
 	{
-		return (std::pow(10.0f, erb_value / 21.4f) - 1.0f) / 4.37e-3f;
+		return (powf(10.0f, erb_value / 21.4f) - 1.0f) / 4.37e-3f;
 	}
 
 	int CochlearTransform::clamp_fft_bin_index(int bin_index)
@@ -43,7 +42,7 @@ namespace robotick
 	int CochlearTransform::hz_to_fft_bin(float frequency_hz, uint32_t sample_rate_hz)
 	{
 		const float bin_width_hz = static_cast<float>(sample_rate_hz) / static_cast<float>(CochlearTransformState::fft_size);
-		const int raw_index = static_cast<int>(std::round(frequency_hz / bin_width_hz));
+		const int raw_index = static_cast<int>(roundf(frequency_hz / bin_width_hz));
 		return clamp_fft_bin_index(raw_index);
 	}
 
@@ -60,14 +59,14 @@ namespace robotick
 		{
 			// Hann window: w[n] = 0.5 * (1 - cos(2*pi*n/(N-1))).
 			const float window_value =
-				0.5f * (1.0f - std::cos(2.0f * static_cast<float>(M_PI) * static_cast<float>(sample_index) / (num_window_samples - 1.0f)));
+				0.5f * (1.0f - cosf(2.0f * static_cast<float>(M_PI) * static_cast<float>(sample_index) / (num_window_samples - 1.0f)));
 
 			state.stft_window[sample_index] = window_value;
 			energy_accumulator += static_cast<double>(window_value) * static_cast<double>(window_value);
 		}
 
 		state.window_rms = (energy_accumulator > 0.0)
-							   ? static_cast<float>(std::sqrt(energy_accumulator / static_cast<double>(CochlearTransformState::frame_size)))
+							   ? static_cast<float>(sqrt(energy_accumulator / static_cast<double>(CochlearTransformState::frame_size)))
 							   : 1.0f;
 	}
 
@@ -112,8 +111,8 @@ namespace robotick
 			// Glasberg & Moore ERB formula scaled by config.erb_bandwidth_scale.
 			const float erb_bandwidth_hz = config.erb_bandwidth_scale * 24.7f * (4.37e-3f * center_frequency_hz + 1.0f);
 
-			const float left_frequency_hz = std::max(config.fmin_hz, center_frequency_hz - erb_bandwidth_hz);
-			const float right_frequency_hz = std::min(config.fmax_hz, center_frequency_hz + erb_bandwidth_hz);
+			const float left_frequency_hz = robotick::max(config.fmin_hz, center_frequency_hz - erb_bandwidth_hz);
+			const float right_frequency_hz = robotick::min(config.fmax_hz, center_frequency_hz + erb_bandwidth_hz);
 
 			band_info.left_bin = hz_to_fft_bin(left_frequency_hz, state.sample_rate);
 			band_info.center_bin = hz_to_fft_bin(center_frequency_hz, state.sample_rate);
@@ -123,14 +122,14 @@ namespace robotick
 			if (band_info.right_bin <= band_info.left_bin)
 			{
 				const int min_exclusive_right = band_info.left_bin + 1;
-				band_info.right_bin = std::min(static_cast<int>(CochlearTransformState::fft_bins), min_exclusive_right);
+				band_info.right_bin = robotick::min(static_cast<int>(CochlearTransformState::fft_bins), min_exclusive_right);
 			}
 
 			if (band_info.center_bin < band_info.left_bin || band_info.center_bin >= band_info.right_bin)
 			{
-				const int span = std::max(1, band_info.right_bin - band_info.left_bin);
+				const int span = robotick::max(1, band_info.right_bin - band_info.left_bin);
 				const int proposed_center = band_info.left_bin + span / 2;
-				band_info.center_bin = std::clamp(proposed_center, band_info.left_bin, band_info.right_bin - 1);
+				band_info.center_bin = robotick::clamp(proposed_center, band_info.left_bin, band_info.right_bin - 1);
 			}
 		}
 	}
@@ -142,19 +141,19 @@ namespace robotick
 		const double frame_period_seconds = 1.0 / state.frame_rate_hz;
 
 		// Envelope low-pass.
-		const double envelope_cutoff_hz = std::clamp(static_cast<double>(config.envelope_lp_hz), 0.5, 60.0);
+		const double envelope_cutoff_hz = robotick::clamp(static_cast<double>(config.envelope_lp_hz), 0.5, 60.0);
 		const double envelope_tau_seconds = 1.0 / (2.0 * M_PI * envelope_cutoff_hz);
-		state.envelope_alpha = static_cast<float>(1.0 - std::exp(-frame_period_seconds / envelope_tau_seconds));
+		state.envelope_alpha = static_cast<float>(1.0 - exp(-frame_period_seconds / envelope_tau_seconds));
 
 		// Secondary slow smoothing.
-		const double slow_cutoff_hz = std::clamp(static_cast<double>(config.envelope_temporal_smooth_hz), 0.1, 30.0);
+		const double slow_cutoff_hz = robotick::clamp(static_cast<double>(config.envelope_temporal_smooth_hz), 0.1, 30.0);
 		const double slow_tau_seconds = 1.0 / (2.0 * M_PI * slow_cutoff_hz);
-		state.envelope_slow_alpha = static_cast<float>(1.0 - std::exp(-frame_period_seconds / slow_tau_seconds));
+		state.envelope_slow_alpha = static_cast<float>(1.0 - exp(-frame_period_seconds / slow_tau_seconds));
 
 		// Modulation high-pass (on envelope).
 		{
-			const double hp_cutoff_hz = std::max(0.1, static_cast<double>(config.mod_low_hz));
-			const double exp_term = std::exp(-2.0 * M_PI * hp_cutoff_hz / state.frame_rate_hz);
+			const double hp_cutoff_hz = robotick::max(0.1, static_cast<double>(config.mod_low_hz));
+			const double exp_term = exp(-2.0 * M_PI * hp_cutoff_hz / state.frame_rate_hz);
 
 			state.mod_hp_a0 = static_cast<float>((1.0 + exp_term) * 0.5);
 			state.mod_hp_b1 = static_cast<float>(exp_term);
@@ -163,8 +162,8 @@ namespace robotick
 
 		// Modulation low-pass (after HP).
 		{
-			const double lp_cutoff_hz = std::max(0.1, static_cast<double>(config.mod_high_hz));
-			const double exp_term = std::exp(-2.0 * M_PI * lp_cutoff_hz / state.frame_rate_hz);
+			const double lp_cutoff_hz = robotick::max(0.1, static_cast<double>(config.mod_high_hz));
+			const double exp_term = exp(-2.0 * M_PI * lp_cutoff_hz / state.frame_rate_hz);
 
 			state.mod_lp_a0 = static_cast<float>(1.0 - exp_term);
 			state.mod_lp_b1 = static_cast<float>(exp_term);
@@ -259,9 +258,9 @@ namespace robotick
 			const float real_part = state.fft_output_freq_domain[bin_index].r;
 			const float imag_part = state.fft_output_freq_domain[bin_index].i;
 
-			const float magnitude = std::sqrt(real_part * real_part + imag_part * imag_part);
+			const float magnitude = sqrt(real_part * real_part + imag_part * imag_part);
 			state.fft_magnitude[bin_index] = magnitude + 1e-12f;
-			state.fft_phase[bin_index] = std::atan2(imag_part, real_part);
+			state.fft_phase[bin_index] = atan2f(imag_part, real_part);
 		}
 
 		// Light 3-tap blur along frequency.
@@ -298,7 +297,7 @@ namespace robotick
 				const float bin_frequency_hz = bin_width_hz * static_cast<float>(bin_index);
 				const float gaussian_argument = (bin_frequency_hz - center_frequency_hz) / (0.5f * erb_bandwidth_hz);
 
-				const float bin_weight = std::exp(-0.5f * gaussian_argument * gaussian_argument);
+				const float bin_weight = expf(-0.5f * gaussian_argument * gaussian_argument);
 				const float magnitude = state.fft_magnitude[bin_index];
 
 				weighted_energy_accumulator += bin_weight * (magnitude * magnitude);
@@ -310,7 +309,7 @@ namespace robotick
 				weighted_energy_accumulator /= weight_sum;
 			}
 
-			const float band_amplitude = std::sqrt(weighted_energy_accumulator);
+			const float band_amplitude = sqrt(weighted_energy_accumulator);
 
 			// First-stage envelope smoothing (single pole).
 			const float previous_envelope = state.previous_envelope_per_band[band_index];
@@ -318,7 +317,7 @@ namespace robotick
 			state.previous_envelope_per_band[band_index] = smoothed_envelope;
 
 			// Static compression.
-			const float compressed_envelope = std::pow(std::max(smoothed_envelope, 0.0f) + 1e-9f, config.compression_gamma);
+			const float compressed_envelope = powf(robotick::max(smoothed_envelope, 0.0f) + 1e-9f, config.compression_gamma);
 
 			// Envelope modulation band-pass.
 			float high_pass_output = state.mod_hp_a0 * compressed_envelope + state.mod_hp_b1 * state.mod_hp_state_z1[band_index];
