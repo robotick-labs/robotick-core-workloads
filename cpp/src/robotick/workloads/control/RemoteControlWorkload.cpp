@@ -3,6 +3,7 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/services/WebServer.h"
+#include "robotick/framework/strings/FixedString.h"
 #include "robotick/systems/Image.h"
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP)
@@ -78,7 +79,8 @@ namespace robotick
 						if (json_opt.is_discarded())
 						{
 							response.set_status_code(WebResponseCode::BadRequest);
-							response.set_body_string("Invalid JSON format.");
+							const FixedString128 invalid_json_body("Invalid JSON format.");
+							response.set_body_string(invalid_json_body.c_str());
 							return true; // handled
 						}
 

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/math/MathUtils.h"
 
-#include <algorithm>
-#include <cmath>
+#include <math.h>
 
 namespace robotick
 {
@@ -34,7 +34,7 @@ namespace robotick
 		QuatToEulerInputs inputs;
 		QuatToEulerOutputs outputs;
 
-		static inline int clamp_index(int index) { return clamp(index, 0, 2); }
+		static inline int clamp_index(int index) { return robotick::clamp(index, 0, 2); }
 
 		void tick(const TickInfo& info)
 		{
@@ -50,15 +50,15 @@ namespace robotick
 			// Standard aerospace convention (ZYX extrinsic / XYZ intrinsic)
 			const float sinr_cosp = 2.0f * (w * x + y * z);
 			const float cosr_cosp = 1.0f - 2.0f * (x * x + y * y);
-			const float roll = std::atan2(sinr_cosp, cosr_cosp);
+			const float roll = atan2f(sinr_cosp, cosr_cosp);
 
 			float sinp = 2.0f * (w * y - z * x);
-			sinp = clamp(sinp, -1.0f, 1.0f); // Clamp to handle gimbal lock at pitch = ±90°
-			const float pitch = std::asin(sinp);
+			sinp = robotick::clamp(sinp, -1.0f, 1.0f); // Clamp to handle gimbal lock at pitch = ±90°
+			const float pitch = asinf(sinp);
 
 			const float siny_cosp = 2.0f * (w * z + x * y);
 			const float cosy_cosp = 1.0f - 2.0f * (y * y + z * z);
-			const float yaw = std::atan2(siny_cosp, cosy_cosp);
+			const float yaw = atan2f(siny_cosp, cosy_cosp);
 
 			// Remap outputs according to config
 			const float euler_angles[3] = {roll, pitch, yaw};

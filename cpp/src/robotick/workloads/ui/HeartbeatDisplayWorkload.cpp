@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/math/MathUtils.h"
 #include "robotick/systems/Renderer.h"
+
+#include <math.h>
+
+namespace
+{
+	inline float cosine_deg(float degrees) { return cosf(robotick::deg_to_rad(degrees)); }
+	inline float sine_deg(float degrees) { return sinf(robotick::deg_to_rad(degrees)); }
+
+	inline int round_to_int(float value)
+	{
+		return static_cast<int>(value >= 0.0f ? value + 0.5f : value - 0.5f);
+	}
+} // namespace
 
 namespace robotick
 {
@@ -85,10 +99,7 @@ namespace robotick
 			const float min_activation_hi = 0.7f;
 			const float min_activation_lo = 0.5f;
 
-			auto ramp = [](float f)
-			{
-				return 0.5f * (1.0f - cosf(f * M_PI));
-			};
+			auto ramp = [](float f) { return 0.5f * (1.0f - cosf(f * robotick::kPi)); };
 
 			outputs.activation_amount = min_activation_lo;
 
@@ -105,7 +116,8 @@ namespace robotick
 			else
 			{
 				const float settle = (beat_phase - (dub_start + dub_up + dub_down)) / (1.0f - (dub_start + dub_up + dub_down));
-				outputs.activation_amount = min_activation_lo + (min_activation_hi - min_activation_lo) * (1.0f - clamp(settle, 0.0f, 1.0f));
+				outputs.activation_amount =
+					min_activation_lo + (min_activation_hi - min_activation_lo) * (1.0f - robotick::clamp(settle, 0.0f, 1.0f));
 			}
 		}
 
@@ -167,14 +179,15 @@ namespace robotick
 
 				const int r0 = BASE_RADIUS + BASE_OFFSET + index * (BAR_THICKNESS + BAR_SPACING);
 				const int r1 = r0 + BAR_THICKNESS;
-				const int fill_steps = static_cast<int>(std::round(clamp(b.frac, 0.0f, 1.0f) * ANGLE_STEPS));
+				const float clamped_frac = robotick::clamp(b.frac, 0.0f, 1.0f);
+				const int fill_steps = round_to_int(clamped_frac * static_cast<float>(ANGLE_STEPS));
 
 				float cos_table[ANGLE_STEPS + 1], sin_table[ANGLE_STEPS + 1];
 				for (int i = 0; i <= ANGLE_STEPS; ++i)
 				{
-					float angle = (base_deg + (deg_span * i) / ANGLE_STEPS) * M_PI / 180.0f;
-					cos_table[i] = cosf(angle);
-					sin_table[i] = sinf(angle);
+					const float angle_deg = base_deg + (deg_span * i) / ANGLE_STEPS;
+					cos_table[i] = cosine_deg(angle_deg);
+					sin_table[i] = sine_deg(angle_deg);
 				}
 
 				for (int i = 0; i < ANGLE_STEPS; ++i)
@@ -200,10 +213,10 @@ namespace robotick
 				// Label
 				if (b.label && b.label[0] != '\0')
 				{
-					const float label_deg = LABEL_ANGLE * M_PI / 180.0f;
+					const float label_deg = static_cast<float>(LABEL_ANGLE);
 					const float mid_r = 0.5f * (r0 + r1);
-					const float label_x = cx + (mid_r * cosf(label_deg)) * (left ? -1.0f : 1.0f);
-					const float label_y = cy - (mid_r * sinf(label_deg));
+					const float label_x = cx + (mid_r * cosine_deg(label_deg)) * (left ? -1.0f : 1.0f);
+					const float label_y = cy - (mid_r * sine_deg(label_deg));
 					r.draw_text(b.label, {label_x, label_y}, 12, TextAlign::Center, Colors::White);
 				}
 			};

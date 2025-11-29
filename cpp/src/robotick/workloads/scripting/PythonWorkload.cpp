@@ -3,14 +3,17 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
+#include "robotick/framework/strings/FixedString.h"
 #include "robotick/systems/PythonRuntime.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <mutex>
+#include <pybind11/buffer_info.h>
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
@@ -18,6 +21,35 @@ namespace py = pybind11;
 
 namespace robotick
 {
+namespace
+{
+	template <typename FixedStringType>
+	FixedStringType py_to_fixed_string(const py::handle& source)
+	{
+		FixedStringType result;
+		const py::bytes encoded = py::bytes(py::str(source).attr("encode")("utf-8"));
+		py::buffer_info info = py::buffer(encoded).request();
+
+		const size_t max_copy = result.capacity() - 1;
+		const size_t copy_len = robotick::min_val(static_cast<size_t>(info.size), max_copy);
+		if (copy_len > 0)
+		{
+			memcpy(result.data, info.ptr, copy_len);
+		}
+		result.data[copy_len] = '\0';
+		return result;
+	}
+
+	template <typename FixedStringType>
+	void to_lower(FixedStringType& target)
+	{
+		const size_t len = target.length();
+		for (size_t i = 0; i < len; ++i)
+		{
+			target.data[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(target.data[i])));
+		}
+	}
+}
 
 	struct PythonConfig
 	{
@@ -83,14 +115,12 @@ namespace robotick
 				FieldDescriptor& field_desc = fields[field_index];
 
 				// Extract field name
-				const std::string name_str = py::str(item.first).cast<std::string>();
-				field_desc.name = string_storage.push_back(name_str.c_str()).c_str(); // safe: copied into FixedString
+				const FixedString64 name_str = py_to_fixed_string<FixedString64>(item.first);
+				field_desc.name = string_storage.push_back(name_str).c_str(); // safe: copied into FixedString
 
 				// Extract and parse type string
-				std::string type_str_raw = py::str(item.second).cast<std::string>();
-				std::transform(type_str_raw.begin(), type_str_raw.end(), type_str_raw.begin(), ::tolower);
-
-				const FixedString64 type_str = type_str_raw.c_str();
+				FixedString64 type_str = py_to_fixed_string<FixedString64>(item.second);
+				to_lower(type_str);
 
 				// Set type_id based on known strings
 				if (type_str == "int")
@@ -232,10 +262,10 @@ namespace robotick
 				e.restore(); // Restores the Python error indicator
 
 				// Try to extract richer info manually
-				std::string error_summary = e.what();
+				const FixedString256 error_summary(e.what());
 
 				// Get traceback string (if available)
-				std::string traceback_str;
+				FixedString1024 traceback_str;
 				try
 				{
 					py::gil_scoped_acquire gil; // Already held here, but safe
@@ -243,7 +273,7 @@ namespace robotick
 					py::object traceback = py::module_::import("traceback");
 					py::object tb_list = traceback.attr("format_exception")(e.type(), e.value(), e.trace());
 
-					traceback_str = py::str("").attr("join")(tb_list).cast<std::string>();
+					traceback_str = py_to_fixed_string<FixedString1024>(py::str("").attr("join")(tb_list));
 				}
 				catch (...)
 				{
@@ -315,7 +345,7 @@ namespace robotick
 
 			for (auto item : py_out)
 			{
-				std::string key_str = py::str(item.first); // temporary, for .c_str()
+				const FixedString64 key_str = py_to_fixed_string<FixedString64>(item.first); // temporary, for .c_str()
 				const char* key = key_str.c_str();
 				auto val = item.second;
 
@@ -334,21 +364,21 @@ namespace robotick
 				else if (found_field->type_id == GET_TYPE_ID(bool))
 					outputs.script.set<bool>(key, val.cast<bool>());
 				else if (found_field->type_id == GET_TYPE_ID(FixedString8))
-					outputs.script.set<FixedString8>(key, FixedString8(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString8>(key, py_to_fixed_string<FixedString8>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString16))
-					outputs.script.set<FixedString16>(key, FixedString16(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString16>(key, py_to_fixed_string<FixedString16>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString32))
-					outputs.script.set<FixedString32>(key, FixedString32(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString32>(key, py_to_fixed_string<FixedString32>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString64))
-					outputs.script.set<FixedString64>(key, FixedString64(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString64>(key, py_to_fixed_string<FixedString64>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString128))
-					outputs.script.set<FixedString128>(key, FixedString128(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString128>(key, py_to_fixed_string<FixedString128>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString256))
-					outputs.script.set<FixedString256>(key, FixedString256(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString256>(key, py_to_fixed_string<FixedString256>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString512))
-					outputs.script.set<FixedString512>(key, FixedString512(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString512>(key, py_to_fixed_string<FixedString512>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString1024))
-					outputs.script.set<FixedString1024>(key, FixedString1024(py::str(val).cast<std::string>().c_str()));
+					outputs.script.set<FixedString1024>(key, py_to_fixed_string<FixedString1024>(val));
 			}
 		}
 	};
