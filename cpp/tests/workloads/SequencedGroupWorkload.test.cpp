@@ -3,12 +3,11 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/Engine.h"
+#include "robotick/framework/concurrency/Thread.h"
 #include "robotick/framework/utils/TypeId.h"
 
 #include <atomic>
 #include <catch2/catch_all.hpp>
-#include <chrono>
-#include <thread>
 
 using namespace robotick;
 
@@ -29,7 +28,7 @@ namespace
 
 	struct SlowTickWorkload
 	{
-		void tick(const TickInfo&) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); }
+		void tick(const TickInfo&) { Thread::sleep_ms(20); }
 	};
 
 	ROBOTICK_REGISTER_WORKLOAD(SlowTickWorkload);

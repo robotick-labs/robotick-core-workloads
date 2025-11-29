@@ -3,12 +3,10 @@
 
 #include "robotick/framework/Engine.h"
 #include "robotick/framework/concurrency/Atomic.h"
-#include "robotick/framework/time/Clock.h"
 #include "robotick/framework/concurrency/Thread.h"
+#include "robotick/framework/time/Clock.h"
 
 #include <catch2/catch_all.hpp>
-#include <chrono>
-#include <thread>
 
 namespace robotick::test
 {
@@ -66,15 +64,23 @@ namespace robotick::test
 
 			AtomicFlag stop_after_next_tick_flag{false};
 
-			std::thread runner(
-				[&]
+			struct RunnerContext
+			{
+				Engine* engine = nullptr;
+				AtomicFlag* stop_flag = nullptr;
+				static void entry(void* arg)
 				{
-					engine.run(stop_after_next_tick_flag);
-				});
+					auto* ctx = static_cast<RunnerContext*>(arg);
+					ctx->engine->run(*ctx->stop_flag);
+				}
+			};
 
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			RunnerContext runner_ctx{&engine, &stop_after_next_tick_flag};
+			Thread runner(RunnerContext::entry, &runner_ctx, "synced-group-test");
+
+			Thread::sleep_ms(1000);
 			stop_after_next_tick_flag.set(true);
-			runner.join();
+			// runner ~Thread() joins automatically
 
 			const auto& receiver_info = *engine.find_instance_info(receiver.unique_name);
 			auto* receiver_workload = static_cast<ReceiverWorkload*>((void*)receiver_info.get_ptr(engine));

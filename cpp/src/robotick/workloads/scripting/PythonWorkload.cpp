@@ -21,35 +21,33 @@ namespace py = pybind11;
 
 namespace robotick
 {
-namespace
-{
-	template <typename FixedStringType>
-	FixedStringType py_to_fixed_string(const py::handle& source)
+	namespace
 	{
-		FixedStringType result;
-		const py::bytes encoded = py::bytes(py::str(source).attr("encode")("utf-8"));
-		py::buffer_info info = py::buffer(encoded).request();
-
-		const size_t max_copy = result.capacity() - 1;
-		const size_t copy_len = robotick::min_val(static_cast<size_t>(info.size), max_copy);
-		if (copy_len > 0)
+		template <typename FixedStringType> FixedStringType py_to_fixed_string(const py::handle& source)
 		{
-			memcpy(result.data, info.ptr, copy_len);
-		}
-		result.data[copy_len] = '\0';
-		return result;
-	}
+			FixedStringType result;
+			const py::bytes encoded = py::bytes(py::str(source).attr("encode")("utf-8"));
+			py::buffer_info info = py::buffer(encoded).request();
 
-	template <typename FixedStringType>
-	void to_lower(FixedStringType& target)
-	{
-		const size_t len = target.length();
-		for (size_t i = 0; i < len; ++i)
-		{
-			target.data[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(target.data[i])));
+			const size_t max_copy = result.capacity() - 1;
+			const size_t copy_len = robotick::min_val(static_cast<size_t>(info.size), max_copy);
+			if (copy_len > 0)
+			{
+				memcpy(result.data, info.ptr, copy_len);
+			}
+			result.data[copy_len] = '\0';
+			return result;
 		}
-	}
-}
+
+		template <typename FixedStringType> void to_lower(FixedStringType& target)
+		{
+			const size_t len = target.length();
+			for (size_t i = 0; i < len; ++i)
+			{
+				target.data[i] = static_cast<char>(::tolower(static_cast<unsigned char>(target.data[i])));
+			}
+		}
+	} // namespace
 
 	struct PythonConfig
 	{

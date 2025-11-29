@@ -3,10 +3,6 @@
 
 #include "robotick/api.h"
 
-#include <cstdio>
-#include <iomanip>
-#include <sstream>
-
 namespace robotick
 {
 
@@ -55,9 +51,7 @@ namespace robotick
 			}
 			else
 			{
-				std::ostringstream oss;
-				oss << "Sum = " << std::fixed << std::setprecision(2) << outputs.sum;
-				outputs.message = oss.str().c_str();
+				outputs.message.format("Sum = %.2f", outputs.sum);
 				outputs.status = HelloStatus::NORMAL;
 			}
 		}
