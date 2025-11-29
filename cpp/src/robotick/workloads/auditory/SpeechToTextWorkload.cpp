@@ -3,16 +3,14 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/concurrency/Atomic.h"
-#include "robotick/framework/time/Clock.h"
+#include "robotick/framework/concurrency/Sync.h"
 #include "robotick/framework/concurrency/Thread.h"
+#include "robotick/framework/time/Clock.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/SpeechToText.h"
 
-#include <atomic>
 #include <cmath>
-#include <condition_variable>
 #include <cstring>
-#include <mutex>
 
 namespace robotick
 {
@@ -63,7 +61,7 @@ namespace robotick
 			}
 
 			const size_t keep_count = samples.size() - samples_to_drop;
-			std::memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
+			memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
 			samples.set_size(keep_count);
 		}
 	};
@@ -85,8 +83,8 @@ namespace robotick
 		AtomicFlag has_new_transcript{false};
 
 		Thread bg_thread;
-		std::mutex mutex;
-		std::condition_variable cv;
+		Mutex mutex;
+		ConditionVariable cv;
 		bool thread_should_exit = false;
 		bool thread_has_work = false;
 
@@ -139,7 +137,7 @@ namespace robotick
 
 		while (true)
 		{
-			std::unique_lock<std::mutex> lock(state->mutex);
+			UniqueLock lock(state->mutex);
 			state->cv.wait(lock,
 				[&]()
 				{
@@ -255,7 +253,7 @@ namespace robotick
 
 				ROBOTICK_ASSERT(old_size + add_count <= foreground_accumulator.samples.capacity());
 
-				std::memcpy(foreground_accumulator.samples.data() + old_size, downsampled.data(), add_count * sizeof(float));
+				memcpy(foreground_accumulator.samples.data() + old_size, downsampled.data(), add_count * sizeof(float));
 
 				foreground_accumulator.samples.set_size(old_size + add_count);
 
@@ -286,7 +284,7 @@ namespace robotick
 
 					state->transcribe_start_time_sec = tick_info.time_now;
 
-					std::lock_guard<std::mutex> lock(state->mutex);
+					LockGuard lock(state->mutex);
 
 					AudioAccumulator& background_accumulator = state->get_background_accumulator();
 
@@ -309,7 +307,7 @@ namespace robotick
 			{
 				state->has_new_transcript.unset();
 
-				std::lock_guard<std::mutex> lock(state->mutex);
+				LockGuard lock(state->mutex);
 				outputs.words = state->last_result;
 				outputs.transcript = state->last_transcript;
 				outputs.transcribe_duration_sec = tick_info.time_now - state->transcribe_start_time_sec;
@@ -324,7 +322,7 @@ namespace robotick
 		void stop()
 		{
 			{
-				std::lock_guard<std::mutex> lock(state->mutex);
+				LockGuard lock(state->mutex);
 				state->thread_should_exit = true;
 				state->cv.notify_one();
 			}

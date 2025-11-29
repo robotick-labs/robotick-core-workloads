@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/auditory/SpeechToText.h"
+
 #include "robotick/api.h"
+#include "robotick/framework/concurrency/Thread.h"
 
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <thread>
 
 namespace robotick
 {
@@ -58,7 +59,7 @@ namespace robotick
 		// --- Full params: mirror CLI defaults (beam=5, best_of=5 seen in your log) ---
 		whisper_full_params& wparams = state.whisper_params;
 		wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-		wparams.n_threads = clamp<int>(settings.num_threads, 1, std::thread::hardware_concurrency());
+		wparams.n_threads = clamp<int>(settings.num_threads, 1, Thread::get_hardware_concurrency());
 		wparams.offset_ms = 0;
 		wparams.duration_ms = 0;
 		wparams.translate = false;
@@ -94,7 +95,7 @@ namespace robotick
 
 		ROBOTICK_INFO(" Initializing Speech to Text - System Info: n_threads = %d / %d | %s\n",
 			wparams.n_threads,
-			(int)std::thread::hardware_concurrency(),
+			(int)Thread::get_hardware_concurrency(),
 			whisper_print_system_info());
 	}
 
