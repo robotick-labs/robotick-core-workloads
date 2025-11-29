@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/framework/Engine.h"
-#include "robotick/platform/Atomic.h"
-#include "robotick/platform/Clock.h"
-#include "robotick/platform/Thread.h"
+#include "robotick/framework/concurrency/Atomic.h"
+#include "robotick/framework/time/Clock.h"
+#include "robotick/framework/concurrency/Thread.h"
 
 #include <catch2/catch_all.hpp>
 #include <chrono>

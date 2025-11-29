@@ -4,7 +4,7 @@
 #include "robotick/api.h"
 #include "robotick/framework/WorkloadInstanceInfo.h"
 #include "robotick/framework/data/DataConnection.h"
-#include "robotick/platform/Clock.h"
+#include "robotick/framework/time/Clock.h"
 
 #include <string>
 namespace robotick

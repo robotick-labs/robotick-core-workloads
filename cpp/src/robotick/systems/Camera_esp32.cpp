@@ -167,7 +167,7 @@ namespace robotick
 #else // #if defined(ENABLE_ESP32_CAMERA_CODE)
 
 #include "robotick/api.h"
-#include "robotick/platform/Camera.h"
+#include "robotick/systems/Camera.h"
 
 namespace robotick
 {

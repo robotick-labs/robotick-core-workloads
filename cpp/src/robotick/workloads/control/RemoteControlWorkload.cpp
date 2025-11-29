@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-#include "robotick/platform/WebServer.h"
+#include "robotick/framework/services/WebServer.h"
 #include "robotick/systems/Image.h"
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP)

@@ -1,7 +1,7 @@
 #if defined(ROBOTICK_PLATFORM_DESKTOP)
 
 #include "robotick/api.h"
-#include "robotick/platform/PlatformEvents.h"
+#include "robotick/framework/system/PlatformEvents.h"
 #include "robotick/systems/Renderer.h"
 
 #include <SDL2/SDL.h>
