@@ -59,7 +59,7 @@ namespace robotick
 				cursor += 7; // strlen("mqtt://")
 			}
 
-			const char* colon = std::strchr(cursor, ':');
+			const char* colon = ::strchr(cursor, ':');
 			if (colon)
 			{
 				out.host.assign(cursor, static_cast<size_t>(colon - cursor));
@@ -138,8 +138,7 @@ namespace robotick
 	bool MqttClient::assign_topic_payload(const mqtt_response_publish& published, FixedString256& topic_out, FixedString1024& payload_out)
 	{
 		const bool topic_ok = copy_into(topic_out, published.topic_name, static_cast<size_t>(published.topic_name_size));
-		const bool payload_ok =
-			copy_into(payload_out, published.application_message, static_cast<size_t>(published.application_message_size));
+		const bool payload_ok = copy_into(payload_out, published.application_message, static_cast<size_t>(published.application_message_size));
 
 		if (!topic_ok)
 		{
@@ -175,7 +174,7 @@ namespace robotick
 		sockaddr_in addr{};
 		addr.sin_family = AF_INET;
 		addr.sin_port = htons(broker_port);
-		std::memcpy(&addr.sin_addr.s_addr, he->h_addr, static_cast<size_t>(he->h_length));
+		::memcpy(&addr.sin_addr.s_addr, he->h_addr, static_cast<size_t>(he->h_length));
 
 		if (::connect(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
 		{

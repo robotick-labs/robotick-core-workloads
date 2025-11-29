@@ -72,7 +72,7 @@ namespace robotick
 
 			if (config.stereo)
 			{
-				const size_t nr = std::min(n, inputs.right.samples.size());
+				const size_t nr = robotick::min(n, inputs.right.samples.size());
 				state->wav_file.append_stereo(inputs.left.samples.data(), inputs.right.samples.data(), nr);
 				outputs.total_written += nr;
 			}

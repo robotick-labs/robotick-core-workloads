@@ -324,7 +324,7 @@ namespace robotick
 			outputs.mono.samples.set_size(num_samples);
 
 			double phase_local[ProsodyWaveGeneratorState::MaxOsc];
-			std::memcpy(phase_local, state->phase, sizeof(phase_local));
+			::memcpy(phase_local, state->phase, sizeof(phase_local));
 			float noise_state = state->noise_filter_state;
 
 			const float amplitude_start = state->previous_amplitude_linear;
@@ -423,7 +423,7 @@ namespace robotick
 			}
 
 			// --- Persist state ---
-			std::memcpy(state->phase, phase_local, sizeof(phase_local));
+			::memcpy(state->phase, phase_local, sizeof(phase_local));
 			state->noise_filter_state = noise_state;
 			state->previous_amplitude_linear = amplitude_linear;
 		}

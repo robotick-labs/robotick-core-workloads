@@ -4,6 +4,7 @@
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Pow.h"
 
 namespace robotick
 {
@@ -195,7 +196,7 @@ namespace robotick
 
 		const int min_stack_matches = 3; // we can't declare a clear harmonic pattern without at least 3 matches
 		const float cents_tolerance = settings.harmonic_tolerance_cents;
-		const float ratio_tolerance = std::pow(2.0f, cents_tolerance / 1200.0f);
+		const float ratio_tolerance = robotick::pow(2.0f, cents_tolerance / 1200.0f);
 
 		float best_score = -1.0f;
 		float best_f0 = 0.0f;

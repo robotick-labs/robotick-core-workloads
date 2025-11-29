@@ -54,14 +54,15 @@ namespace robotick
 		if (!impl->video_capture.retrieve(frame))
 			return false;
 
-		std::vector<uchar> jpeg_data;
+		// OpenCV only exposes std::vector-based encoders (no fixed buffer hook), so keep STL here and copy out afterward.
+		std_approved::vector<uchar> jpeg_data;
 		if (!cv::imencode(".jpg", frame, jpeg_data))
 			return false;
 
 		if (jpeg_data.size() > dst_capacity)
 			return false;
 
-		std::memcpy(dst_buffer, jpeg_data.data(), jpeg_data.size());
+		::memcpy(dst_buffer, jpeg_data.data(), jpeg_data.size());
 		out_size_used = jpeg_data.size();
 		return true;
 	}

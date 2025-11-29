@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Pow.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
@@ -66,7 +67,7 @@ namespace robotick
 			const float target_freq = clamp(inputs.frequency_hz, 0.0f, (float)(nyquist - 1.0));
 
 			// Apply global gain factor from config
-			const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			const float gain = robotick::pow(10.0f, config.amplitude_gain_db / 20.0f);
 			const float scaled_a0 = state->prev_amplitude * gain;
 			const float scaled_a1 = target_amp * gain;
 

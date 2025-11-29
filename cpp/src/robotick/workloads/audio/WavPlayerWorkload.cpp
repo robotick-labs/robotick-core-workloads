@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Pow.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/audio/WavFile.h"
@@ -83,14 +84,14 @@ namespace robotick
 			const int samples_per_tick = target_rate / static_cast<int>(tick_info.tick_rate_hz);
 
 			int remaining = frame_count - static_cast<int>(state->current_frame);
-			int emit_samples = std::min(samples_per_tick, remaining);
+			int emit_samples = robotick::min(samples_per_tick, remaining);
 
 			if (emit_samples > 0)
 			{
 				const float* left_ptr = &wav_file.get_left_samples()[state->current_frame];
 				const float* right_ptr = &wav_file.get_right_samples()[state->current_frame];
 
-				const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+				const float gain = robotick::pow(10.0f, config.amplitude_gain_db / 20.0f);
 
 				if (gain == 1.0f)
 				{

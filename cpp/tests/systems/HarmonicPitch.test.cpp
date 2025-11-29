@@ -3,6 +3,8 @@
 
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
+#include "robotick/framework/math/Pow.h"
+
 #include <catch2/catch_all.hpp>
 
 #include <cmath>
@@ -143,7 +145,7 @@ namespace robotick::test
 			AudioBuffer128 centers(num_bands);
 			for (int i = 0; i < num_bands; ++i)
 			{
-				centers[i] = fmin * std::pow(fmax / fmin, float(i) / (num_bands - 1));
+				centers[i] = fmin * robotick::pow(fmax / fmin, float(i) / (num_bands - 1));
 			}
 
 			const float base_f0 = 220.0f;
@@ -155,7 +157,7 @@ namespace robotick::test
 				AudioBuffer128 envelope(num_bands);
 
 				const float t_norm = float(t) / (steps - 1);
-				const float f0 = base_f0 * std::pow(2.0f, (freq_wobble_cents / 1200.0f) * std::sin(t_norm * 2.0f * M_PI));
+				const float f0 = base_f0 * robotick::pow(2.0f, (freq_wobble_cents / 1200.0f) * std::sin(t_norm * 2.0f * M_PI));
 				const float global_amp = (t < 4 || t > steps - 5) ? 0.0f : 0.7f;
 
 				for (int harmonic_id = 1; harmonic_id <= num_harmonics; ++harmonic_id)
@@ -174,7 +176,7 @@ namespace robotick::test
 
 				// Cap envelope to 1.0f
 				for (int i = 0; i < num_bands; ++i)
-					envelope[i] = std::min(envelope[i], 1.0f);
+					envelope[i] = robotick::min(envelope[i], 1.0f);
 
 				HarmonicPitchResult result{};
 
