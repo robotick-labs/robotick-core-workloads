@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/auditory/SpeechToText.h"
+#include "robotick/framework/concurrency/Thread.h"
 #include "robotick/systems/audio/WavFile.h"
 
 #include "whisper.h"
@@ -10,7 +11,6 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <thread>
 
 namespace robotick::test
 {
@@ -163,7 +163,7 @@ namespace robotick::test
 			// set up SpeechToText - loading model etc
 			SpeechToTextSettings settings;
 			settings.model_path = model_path;
-			settings.num_threads = std::thread::hardware_concurrency(); // allow use of all available threads to keep test fast
+			settings.num_threads = Thread::get_hardware_concurrency(); // allow use of all available threads to keep test fast
 
 			SpeechToTextInternalState state;
 

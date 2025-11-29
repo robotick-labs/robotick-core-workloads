@@ -4,9 +4,6 @@
 #include "robotick/api.h"
 #include "robotick/framework/math/Sqrt.h"
 
-#include <chrono>
-#include <iostream>
-
 namespace robotick
 {
 
@@ -84,9 +81,8 @@ namespace robotick
 
 				static constexpr float seconds_to_microseconds = 1e6f;
 
-				std::cerr << std::fixed;
-				std::cerr << "[TimingDiagnostics] avg: " << outputs.avg_tick_rate << " Hz, stddev: " << outputs.tick_stddev * seconds_to_microseconds
-						  << " µs\n";
+				ROBOTICK_INFO(
+					"[TimingDiagnostics] avg: %.2f Hz, stddev: %.2f us", outputs.avg_tick_rate, outputs.tick_stddev * seconds_to_microseconds);
 
 				internal_state.count = 0;
 				internal_state.sum_dt = 0.0f;

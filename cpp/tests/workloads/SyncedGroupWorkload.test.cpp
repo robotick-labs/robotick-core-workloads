@@ -3,10 +3,10 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/Engine.h"
+#include "robotick/framework/concurrency/Atomic.h"
 #include "robotick/framework/concurrency/Thread.h"
 #include "robotick/framework/utils/TypeId.h"
 
-#include <atomic>
 #include <catch2/catch_all.hpp>
 #include <vector>
 
@@ -18,7 +18,7 @@ namespace
 
 	struct CountingWorkload
 	{
-		std::atomic<int> tick_count{0};
+		AtomicValue<int> tick_count{0};
 		float last_dt{0};
 
 		void tick(const TickInfo& tick_info)
@@ -33,10 +33,10 @@ namespace
 
 	struct SlowWorkload
 	{
-		std::atomic<int> tick_count{0};
+		AtomicValue<int> tick_count{0};
 		void tick(const TickInfo&)
 		{
-			tick_count++;
+			tick_count.fetch_add(1);
 			Thread::sleep_ms(30);
 		}
 	};
@@ -79,8 +79,8 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			Thread::sleep_ms(sleep_ms > 0 ? sleep_ms : 1);
 
 			// Confirm each child has exactly i + 1 ticks after this iteration
-			CHECK(wa->tick_count == i + 1);
-			CHECK(wb->tick_count == i + 1);
+			CHECK(wa->tick_count.load() == i + 1);
+			CHECK(wb->tick_count.load() == i + 1);
 		}
 
 		info.type->get_workload_desc()->stop_fn(group_ptr);
@@ -119,12 +119,12 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		const auto* w1 = engine.find_instance<SlowWorkload>(s1.unique_name);
 		const auto* w2 = engine.find_instance<SlowWorkload>(s2.unique_name);
 
-		INFO("Tick count s1: " << w1->tick_count);
-		INFO("Tick count s2: " << w2->tick_count);
+		INFO("Tick count s1: " << w1->tick_count.load());
+		INFO("Tick count s2: " << w2->tick_count.load());
 
 		// We expect 5 ticks issued, 10ms between ticks, and slow-job taking 30ms → can only respond to every 3rd
-		CHECK(w1->tick_count == 2);
-		CHECK(w2->tick_count == 2);
+		CHECK(w1->tick_count.load() == 2);
+		CHECK(w2->tick_count.load() == 2);
 	}
 
 	SECTION("tick() passes real time_delta (child thread measures time elapsed since last actionable tick)")
@@ -199,7 +199,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		Thread::sleep_ms(20); // allow child time to complete final tick
 		group_info.type->get_workload_desc()->stop_fn(group_ptr);
 
-		INFO("Child tick count (expected ~2): " << counting->tick_count);
-		CHECK(counting->tick_count == 2);
+		INFO("Child tick count (expected ~2): " << counting->tick_count.load());
+		CHECK(counting->tick_count.load() == 2);
 	}
 }

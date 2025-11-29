@@ -6,6 +6,7 @@
 #include "robotick/framework/utils/TypeId.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 
 #include <catch2/catch_all.hpp>
@@ -117,7 +118,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 
 		REQUIRE(output_blackboard->has("greeting"));
 		const FixedString64 greeting = output_blackboard->get<FixedString64>("greeting");
-		REQUIRE(std::string(greeting).substr(0, 15) == "[Python] Hello!");
+		REQUIRE(::strncmp(greeting.c_str(), "[Python] Hello!", 15) == 0);
 
 		REQUIRE(output_blackboard->has("val_double"));
 		const double val_double = output_blackboard->get<double>("val_double");

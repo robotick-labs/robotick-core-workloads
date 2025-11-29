@@ -145,7 +145,7 @@ namespace robotick
 				for (int row = 0; row < s.tex_h; ++row)
 				{
 					uint8_t* row_start = s.rgba.data() + static_cast<size_t>(row) * row_pitch;
-					std::memmove(row_start, row_start + 4, shift_bytes);
+					::memmove(row_start, row_start + 4, shift_bytes);
 				}
 			}
 

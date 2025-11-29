@@ -5,13 +5,14 @@
 
 #include "robotick/systems/auditory/CochlearTransform.h"
 
+#include "robotick/framework/containers/HeapVector.h"
+
 #include "robotick/framework/math/Abs.h"
 #include "robotick/framework/math/Trig.h"
 
 #include <catch2/catch_all.hpp>
 
 #include <cmath>
-#include <vector>
 
 namespace robotick::test
 {
@@ -159,14 +160,14 @@ namespace robotick::test
 			bool have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK_FALSE(have_frame);
 
-			std::vector<float> silence(CochlearTransformState::frame_size, 0.0f);
-			CochlearTransform::push_samples(silence.data(), silence.size(), config, state);
+			float silence[CochlearTransformState::frame_size] = {};
+			CochlearTransform::push_samples(silence, CochlearTransformState::frame_size, config, state);
 
 			have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK(have_frame); // first frame now available
 
-			std::vector<float> more_silence(CochlearTransformState::hop_size, 0.0f);
-			CochlearTransform::push_samples(more_silence.data(), more_silence.size(), config, state);
+			float more_silence[CochlearTransformState::hop_size] = {};
+			CochlearTransform::push_samples(more_silence, CochlearTransformState::hop_size, config, state);
 			have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK(have_frame); // second frame available
 		}
@@ -206,13 +207,13 @@ namespace robotick::test
 			const float target_tone_hz = 1200.0f;
 			const size_t total_samples = CochlearTransformState::frame_size + CochlearTransformState::hop_size;
 
-			std::vector<float> tone_buffer(total_samples, 0.0f);
+			float tone_buffer[CochlearTransformState::frame_size + CochlearTransformState::hop_size] = {};
 			for (size_t sample_index = 0; sample_index < total_samples; ++sample_index)
 			{
 				tone_buffer[sample_index] = generate_sine_sample(target_tone_hz, static_cast<float>(sample_rate_hz), sample_index);
 			}
 
-			CochlearTransform::push_samples(tone_buffer.data(), tone_buffer.size(), config, state);
+			CochlearTransform::push_samples(tone_buffer, total_samples, config, state);
 
 			REQUIRE(CochlearTransform::make_frame_from_ring(state));
 
