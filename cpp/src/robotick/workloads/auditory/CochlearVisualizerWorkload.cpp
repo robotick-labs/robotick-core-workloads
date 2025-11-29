@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/containers/HeapVector.h"
 #include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
 #include "robotick/systems/audio/AudioFrame.h"
@@ -11,7 +12,6 @@
 
 #include <cmath>
 #include <cstring>
-#include <vector> // desktop/test only; single allocation at init
 
 namespace robotick
 {
@@ -55,9 +55,9 @@ namespace robotick
 	{
 		bool initialized = false;
 
-		int tex_w = 0;			   // columns (history)
-		int tex_h = 0;			   // rows (cochlear bands)
-		std::vector<uint8_t> rgba; // RGBA8888, size = tex_w * tex_h * 4 (desktop/test)
+		int tex_w = 0;			  // columns (history)
+		int tex_h = 0;			  // rows (cochlear bands)
+		HeapVector<uint8_t> rgba; // RGBA8888, size = tex_w * tex_h * 4 (desktop/test)
 
 		Renderer renderer;
 	};
@@ -112,7 +112,12 @@ namespace robotick
 			s.tex_w = cols;
 			s.tex_h = bands;
 
-			s.rgba.assign(static_cast<size_t>(s.tex_w) * static_cast<size_t>(s.tex_h) * 4u, 0);
+			const size_t total_bytes = static_cast<size_t>(s.tex_w) * static_cast<size_t>(s.tex_h) * 4u;
+			s.rgba.initialize(total_bytes);
+			for (size_t i = 0; i < total_bytes; ++i)
+			{
+				s.rgba[i] = 0;
+			}
 
 			// Renderer is our single path for both live and offscreen
 			s.renderer.set_texture_only_size(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
