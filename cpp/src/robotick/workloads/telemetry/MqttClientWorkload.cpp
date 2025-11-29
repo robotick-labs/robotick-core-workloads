@@ -4,12 +4,12 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/Engine.h"
+#include "robotick/framework/strings/FixedString.h"
 #include "robotick/systems/MqttFieldSync.h"
 #include "robotick/framework/data/WorkloadsBuffer.h"
 #include "robotick/systems/MqttClient.h"
 
 #include <memory>
-#include <string>
 
 namespace robotick
 {
@@ -54,21 +54,27 @@ namespace robotick
 
 			// 1. Create and connect MQTT client
 
-			const std::string broker = [&]()
+			FixedString64 broker_url(config.broker_url.c_str());
+			const size_t broker_url_len = broker_url.length();
+			if (broker_url_len > 0)
 			{
-				std::string url = config.broker_url.c_str();
-				if (url.back() == '/')
-					url.pop_back(); // Remove trailing slash
-				return url + ":" + std::to_string(config.broker_mqtt_port);
-			}();
+				char* url_data = broker_url.str();
+				if (url_data[broker_url_len - 1] == '/')
+				{
+					url_data[broker_url_len - 1] = '\0';
+				}
+			}
 
-			const std::string client_id = "robotick::MqttClientWorkload";
-			auto mqtt_client = std::make_unique<MqttClient>(broker, client_id);
+			FixedString128 broker;
+			broker.format("%s:%u", broker_url.c_str(), config.broker_mqtt_port);
+
+			FixedString64 client_id("robotick::MqttClientWorkload");
+			auto mqtt_client = std::make_unique<MqttClient>(broker.c_str(), client_id.c_str());
 			mqtt_client->connect();
 
 			// 2. Create MqttFieldSync
-			const std::string root_ns = config.root_topic_namespace.c_str();
-			auto field_sync = std::make_unique<MqttFieldSync>(*const_cast<Engine*>(state->engine), root_ns, *mqtt_client);
+			FixedString64 root_ns(config.root_topic_namespace.c_str());
+			auto field_sync = std::make_unique<MqttFieldSync>(*const_cast<Engine*>(state->engine), root_ns.c_str(), *mqtt_client);
 
 			state->mqtt = std::move(mqtt_client);
 			state->field_sync = std::move(field_sync);
