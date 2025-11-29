@@ -216,19 +216,15 @@ namespace robotick
 
 			if (config.render_to_texture)
 			{
-				const auto png = s.renderer.capture_as_png();
-				if (!png.empty())
+				size_t png_size = 0;
+				if (s.renderer.capture_as_png(outputs.visualization_png.data(), outputs.visualization_png.capacity(), png_size))
 				{
-					if (outputs.visualization_png.capacity() >= png.size())
-					{
-						outputs.visualization_png.set(png.data(), png.size());
-					}
-					else
-					{
-						ROBOTICK_WARNING("Captured PNG (%zu bytes) exceeds visualization buffer capacity (%zu bytes)",
-							png.size(),
-							outputs.visualization_png.capacity());
-					}
+					outputs.visualization_png.set_size(png_size);
+				}
+				else
+				{
+					ROBOTICK_WARNING("Failed to capture Cochlear visualizer PNG (capacity %zu bytes)", outputs.visualization_png.capacity());
+					outputs.visualization_png.set_size(0);
 				}
 			}
 			else

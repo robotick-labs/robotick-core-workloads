@@ -1,12 +1,31 @@
 #if defined(ROBOTICK_PLATFORM_ESP32)
 
+#include "robotick/framework/containers/HeapVector.h"
 #include "robotick/systems/Renderer.h"
 #include <M5Unified.h>
-#include <vector>
 
 namespace robotick
 {
 	static M5Canvas* canvas = nullptr;
+	static HeapVector<uint16_t>* rgb565_buffer = nullptr;
+	static size_t rgb565_capacity = 0;
+
+	static void ensure_rgb565_capacity(const size_t required_pixels)
+	{
+		if (rgb565_buffer && rgb565_capacity >= required_pixels)
+			return;
+
+		if (rgb565_buffer)
+		{
+			delete rgb565_buffer;
+			rgb565_buffer = nullptr;
+			rgb565_capacity = 0;
+		}
+
+		rgb565_buffer = new HeapVector<uint16_t>();
+		rgb565_buffer->initialize(required_pixels);
+		rgb565_capacity = required_pixels;
+	}
 
 	void Renderer::init(bool texture_only)
 	{
@@ -29,10 +48,13 @@ namespace robotick
 		canvas->pushSprite(0, 0);
 	}
 
-	std::vector<uint8_t> Renderer::capture_as_png()
+	bool Renderer::capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size)
 	{
+		(void)dst;
+		(void)capacity;
+		out_size = 0;
 		ROBOTICK_WARNING("Renderer::capture_as_png() not yet supported on esp32 platforms");
-		return {};
+		return false;
 	}
 
 	void Renderer::cleanup()
@@ -41,6 +63,13 @@ namespace robotick
 		{
 			delete canvas;
 			canvas = nullptr;
+		}
+
+		if (rgb565_buffer)
+		{
+			delete rgb565_buffer;
+			rgb565_buffer = nullptr;
+			rgb565_capacity = 0;
 		}
 	}
 
@@ -83,11 +112,14 @@ namespace robotick
 		// Convert RGBA8888 -> RGB565 and draw scaled to the viewport region
 		// NOTE: For now we simply scale to fill the logical viewport using M5 drawScaledSprite-like path.
 		// M5Canvas doesn't provide an RGBA path, so convert then push.
-		static std::vector<uint16_t> rgb565; // desktop-only STL is avoided in core; here it's an ESP-side UI path
-		rgb565.resize(static_cast<size_t>(w) * static_cast<size_t>(h));
+		const size_t pixel_count = static_cast<size_t>(w) * static_cast<size_t>(h);
+		ensure_rgb565_capacity(pixel_count);
+		uint16_t* rgb565 = rgb565_buffer ? rgb565_buffer->data() : nullptr;
+		if (!rgb565)
+			return;
 
 		const uint8_t* src = pixels;
-		for (int i = 0, n = w * h; i < n; ++i)
+		for (int i = 0; i < w * h; ++i)
 		{
 			const uint8_t r = src[0];
 			const uint8_t g = src[1];
@@ -98,7 +130,7 @@ namespace robotick
 			const uint16_t r5 = static_cast<uint16_t>(r >> 3);
 			const uint16_t g6 = static_cast<uint16_t>(g >> 2);
 			const uint16_t b5 = static_cast<uint16_t>(b >> 3);
-			rgb565[static_cast<size_t>(i)] = (r5 << 11) | (g6 << 5) | (b5);
+			rgb565[static_cast<size_t>(i)] = static_cast<uint16_t>((r5 << 11) | (g6 << 5) | b5);
 		}
 
 		// Destination rect is the current logical viewport region in pixels
@@ -112,7 +144,7 @@ namespace robotick
 		// so we manually scale via drawPixel sampling (nearest). Kept simple for now.
 		if (dst_w == w && dst_h == h)
 		{
-			canvas->pushImage(dst_x, dst_y, w, h, rgb565.data());
+			canvas->pushImage(dst_x, dst_y, w, h, rgb565);
 		}
 		else
 		{

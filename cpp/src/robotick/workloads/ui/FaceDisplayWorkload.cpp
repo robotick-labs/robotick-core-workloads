@@ -73,8 +73,15 @@ namespace robotick
 
 			if (config.render_to_texture)
 			{
-				const auto& png = s.renderer.capture_as_png();
-				outputs.face_png_data.set(png.data(), png.size());
+				size_t png_size = 0;
+				if (s.renderer.capture_as_png(outputs.face_png_data.data(), outputs.face_png_data.capacity(), png_size))
+				{
+					outputs.face_png_data.set_size(png_size);
+				}
+				else
+				{
+					outputs.face_png_data.set_size(0);
+				}
 			}
 			else
 			{

@@ -5,8 +5,8 @@
 
 #include "robotick/framework/math/Vec2.h"
 
+#include <cstddef>
 #include <stdint.h>
-#include <vector>
 
 namespace robotick
 {
@@ -40,7 +40,7 @@ namespace robotick
 		// Lifecycle
 		void init(bool texture_only);
 		void clear(const Color& color = Colors::Black);
-		std::vector<uint8_t> capture_as_png();
+		bool capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size);
 		void present();
 		void cleanup();
 

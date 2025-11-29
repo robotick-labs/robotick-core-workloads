@@ -9,6 +9,7 @@
 #include <SDL2/SDL_ttf.h>
 
 #include <opencv2/opencv.hpp>
+#include <vector>
 
 namespace robotick
 {
@@ -160,13 +161,15 @@ namespace robotick
 		poll_platform_events();
 	}
 
-	std::vector<uint8_t> Renderer::capture_as_png()
+	bool Renderer::capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size)
 	{
-		std::vector<uint8_t> png_data;
+		out_size = 0;
+		if (!dst || capacity == 0)
+			return false;
 
 		SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, physical_w, physical_h, 32, SDL_PIXELFORMAT_ABGR8888);
 		if (!surface)
-			return png_data;
+			return false;
 
 		SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_ABGR8888, surface->pixels, surface->pitch);
 
@@ -174,10 +177,24 @@ namespace robotick
 		cv::Mat rgba;
 		cv::cvtColor(abgr, rgba, cv::COLOR_BGRA2RGBA);
 
+		// OpenCV only exposes std::vector-based encoders (no fixed buffer hook), so keep STL here and copy out afterward.
+		std_approved::vector<uint8_t> png_data;
 		cv::imencode(".png", rgba, png_data);
 
 		SDL_FreeSurface(surface);
-		return png_data;
+
+		if (png_data.empty())
+			return false;
+
+		if (png_data.size() > capacity)
+		{
+			ROBOTICK_WARNING("capture_as_png: PNG buffer (%zu bytes) exceeds destination capacity (%zu bytes)", png_data.size(), capacity);
+			return false;
+		}
+
+		::memcpy(dst, png_data.data(), png_data.size());
+		out_size = png_data.size();
+		return true;
 	}
 
 	void Renderer::draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color)
@@ -310,7 +327,7 @@ namespace robotick
 
 			for (int y = 0; y < h; ++y)
 			{
-				std::memcpy(dst + y * pitch, src + y * (w * 4), static_cast<size_t>(w * 4));
+				::memcpy(dst + y * pitch, src + y * (w * 4), static_cast<size_t>(w * 4));
 			}
 			SDL_UnlockTexture(blit_texture);
 		}
