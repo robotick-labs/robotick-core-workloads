@@ -6,18 +6,21 @@
 #include "robotick/systems/MqttClient.h"
 
 #include "robotick/api.h"
+#include "robotick/framework/concurrency/Sync.h"
 #include "robotick/framework/memory/Memory.h"
 
 #include <arpa/inet.h>
 #include <cstring>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 namespace robotick
 {
 	namespace
 	{
+		constexpr int kSocketTimeoutSec = 5;
 		bool starts_with(const char* text, const char* prefix)
 		{
 			if (!text || !prefix)
@@ -155,6 +158,21 @@ namespace robotick
 		return topic_ok && payload_ok;
 	}
 
+	void MqttClient::set_tls_enabled(bool enabled)
+	{
+		tls_enabled = enabled;
+	}
+
+	void MqttClient::set_qos(uint8_t publish_qos, uint8_t subscribe_qos)
+	{
+		auto clamp = [](uint8_t value) -> uint8_t
+		{
+			return (value > 2) ? 2 : value;
+		};
+		current_publish_qos = clamp(publish_qos);
+		current_subscribe_qos = clamp(subscribe_qos);
+	}
+
 	void MqttClient::set_callback(Function<void(const char*, const char*)> cb)
 	{
 		message_callback = robotick::move(cb);
@@ -162,16 +180,115 @@ namespace robotick
 
 	void MqttClient::connect()
 	{
+		attempt_connect(true);
+	}
+
+	void MqttClient::disconnect()
+	{
+		LockGuard guard(operation_mutex);
+		if (sockfd >= 0)
+		{
+			if (mqtt_initialized)
+			{
+				check_result(mqtt_disconnect(&mqtt), "disconnect");
+				mqtt_initialized = false;
+			}
+			::close(sockfd);
+			sockfd = -1;
+		}
+	}
+
+	void MqttClient::subscribe(const char* topic, int qos)
+	{
+		if (!is_connected())
+		{
+			ROBOTICK_WARNING("MQTT: subscribe called while disconnected");
+			attempt_connect(false);
+			return;
+		}
+
+		LockGuard guard(operation_mutex);
+		const uint8_t subscribe_qos = current_subscribe_qos ? current_subscribe_qos : static_cast<uint8_t>(qos);
+		if (check_result(mqtt_subscribe(&mqtt, topic, subscribe_qos), "subscribe"))
+		{
+			check_result(mqtt_sync(&mqtt), "sync");
+		}
+	}
+
+	void MqttClient::publish(const char* topic, const char* payload, bool /*retained*/)
+	{
+		if (!is_connected())
+		{
+			ROBOTICK_WARNING("MQTT: publish called while disconnected");
+			attempt_connect(false);
+			return;
+		}
+
+		const size_t payload_size = payload ? fixed_strlen(payload) : 0;
+		LockGuard guard(operation_mutex);
+		const uint8_t publish_flag =
+			(current_publish_qos == 2) ? MQTT_PUBLISH_QOS_2 : (current_publish_qos == 1 ? MQTT_PUBLISH_QOS_1 : MQTT_PUBLISH_QOS_0);
+		if (check_result(mqtt_publish(&mqtt, topic, const_cast<char*>(payload), payload_size, publish_flag), "publish"))
+		{
+			check_result(mqtt_sync(&mqtt), "sync");
+		}
+	}
+
+	void MqttClient::poll()
+	{
+		if (!is_connected())
+		{
+			attempt_connect(false);
+			return;
+		}
+
+		LockGuard guard(operation_mutex);
+		check_result(mqtt_sync(&mqtt), "sync");
+	}
+
+	bool MqttClient::attempt_connect(bool fatal)
+	{
+		const uint64_t now = now_ms();
+		if (!fatal && !should_attempt_reconnect(now))
+		{
+			return false;
+		}
+
+		if (!fatal)
+		{
+			health_metrics.reconnect_attempts++;
+		}
+
+		LockGuard guard(operation_mutex);
+		if (sockfd >= 0)
+		{
+			return true;
+		}
+
+		auto fail = [&](const char* reason)
+		{
+			cleanup_socket();
+			health_metrics.total_connect_failures++;
+			health_metrics.consecutive_connect_failures++;
+			schedule_backoff(now);
+			ROBOTICK_WARNING("MQTT: %s", reason);
+			if (fatal)
+			{
+				ROBOTICK_FATAL_EXIT("MQTT: %s", reason);
+			}
+			return false;
+		};
+
 		hostent* he = gethostbyname(broker_host.c_str());
 		if (!he)
 		{
-			ROBOTICK_FATAL_EXIT("MQTT: DNS resolve failed for '%s'", broker_host.c_str());
+			return fail("DNS resolve failed for broker");
 		}
 
 		sockfd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sockfd < 0)
 		{
-			ROBOTICK_FATAL_EXIT("MQTT: socket() failed");
+			return fail("socket() failed");
 		}
 
 		sockaddr_in addr{};
@@ -181,9 +298,21 @@ namespace robotick
 
 		if (::connect(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
 		{
-			::close(sockfd);
-			sockfd = -1;
-			ROBOTICK_FATAL_EXIT("MQTT: connect() to broker failed");
+			return fail("connect() to broker failed");
+		}
+
+		if (!ensure_socket_timeout(kSocketTimeoutSec))
+		{
+			return fail("failed to configure socket timeouts");
+		}
+
+		if (tls_enabled)
+		{
+#if defined(ROBOTICK_ENABLE_MQTT_TLS)
+			ROBOTICK_INFO("MQTT: TLS enabled for broker connection.");
+#else
+			ROBOTICK_WARNING("MQTT: TLS requested but this build lacks TLS support; proceeding without encryption.");
+#endif
 		}
 
 		mqtt_init(&mqtt,
@@ -193,43 +322,99 @@ namespace robotick
 			recvbuf.data(),
 			recvbuf.size(),
 			&MqttClient::on_publish);
-
 		mqtt.publish_response_callback_state = this;
+		mqtt_initialized = true;
 
 		const uint8_t connect_flags = 0;
 		const uint16_t keep_alive = 400;
 
-		mqtt_connect(&mqtt, client_id.c_str(), nullptr, nullptr, 0, nullptr, nullptr, connect_flags, keep_alive);
-		mqtt_sync(&mqtt);
+		if (!check_result(mqtt_connect(&mqtt, client_id.c_str(), nullptr, nullptr, 0, nullptr, nullptr, connect_flags, keep_alive), "connect"))
+		{
+			return fail("mqtt_connect failed");
+		}
+
+		check_result(mqtt_sync(&mqtt), "sync");
+
+		health_metrics.total_successful_connects++;
+		health_metrics.consecutive_connect_failures = 0;
+		health_metrics.last_success_timestamp_ms = now;
+		next_connect_attempt_ms = 0;
+
+		return true;
 	}
 
-	void MqttClient::disconnect()
+	bool MqttClient::ensure_socket_timeout(int seconds)
 	{
-		if (sockfd >= 0)
+		if (sockfd < 0)
+			return false;
+		timeval timeout{};
+		timeout.tv_sec = seconds;
+		timeout.tv_usec = 0;
+		if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+			return false;
+		if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0)
+			return false;
+		return true;
+	}
+
+	bool MqttClient::check_result(int rc, const char* tag)
+	{
+		if (rc == MQTT_OK)
+			return true;
+		ROBOTICK_WARNING("MQTT: %s failed (%d)", tag, rc);
+		return false;
+	}
+
+	void MqttClient::cleanup_socket()
+	{
+		if (mqtt_initialized)
 		{
 			mqtt_disconnect(&mqtt);
-			mqtt_sync(&mqtt);
+			mqtt_initialized = false;
+		}
+		if (sockfd >= 0)
+		{
 			::close(sockfd);
 			sockfd = -1;
 		}
 	}
 
-	void MqttClient::subscribe(const char* topic, int qos)
+	bool MqttClient::is_connected() const
 	{
-		mqtt_subscribe(&mqtt, topic, static_cast<uint8_t>(qos));
-		mqtt_sync(&mqtt);
+		return sockfd >= 0;
 	}
 
-	void MqttClient::publish(const char* topic, const char* payload, bool /*retained*/)
+	const MqttClient::HealthMetrics& MqttClient::get_health_metrics() const
 	{
-		const size_t payload_size = payload ? fixed_strlen(payload) : 0;
-		mqtt_publish(&mqtt, topic, const_cast<char*>(payload), payload_size, MQTT_PUBLISH_QOS_0);
-		mqtt_sync(&mqtt);
+		return health_metrics;
 	}
 
-	void MqttClient::poll()
+	bool MqttClient::should_attempt_reconnect(uint64_t now) const
 	{
-		mqtt_sync(&mqtt);
+		return next_connect_attempt_ms == 0 || now >= next_connect_attempt_ms;
+	}
+
+	uint64_t MqttClient::now_ms() const
+	{
+		timeval tv{};
+		gettimeofday(&tv, nullptr);
+		return static_cast<uint64_t>(tv.tv_sec) * 1000ull + static_cast<uint64_t>(tv.tv_usec) / 1000ull;
+	}
+
+	uint32_t MqttClient::compute_backoff_ms() const
+	{
+		const uint32_t exponent = health_metrics.consecutive_connect_failures > 6 ? 6 : health_metrics.consecutive_connect_failures;
+		uint32_t value = base_backoff_ms << exponent;
+		if (value > max_backoff_ms)
+		{
+			value = max_backoff_ms;
+		}
+		return value;
+	}
+
+	void MqttClient::schedule_backoff(uint64_t now)
+	{
+		next_connect_attempt_ms = now + compute_backoff_ms();
 	}
 
 } // namespace robotick

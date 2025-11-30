@@ -23,6 +23,9 @@ namespace robotick
 		FixedString64 broker_url = "mqtt://localhost";
 		uint16_t broker_mqtt_port = 1883;
 		FixedString64 root_topic_namespace = "robotick";
+		bool enable_tls = false;
+		uint8_t publish_qos = 1;
+		uint8_t subscribe_qos = 1;
 	};
 
 	//----------------------------------------------------------------------
@@ -71,6 +74,8 @@ namespace robotick
 
 			FixedString64 client_id("robotick::MqttClientWorkload");
 			auto mqtt_client = std_approved::make_unique<MqttClient>(broker.c_str(), client_id.c_str());
+			mqtt_client->set_tls_enabled(config.enable_tls);
+			mqtt_client->set_qos(config.publish_qos, config.subscribe_qos);
 			mqtt_client->connect();
 
 			// 2. Create MqttFieldSync

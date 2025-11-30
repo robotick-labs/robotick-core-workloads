@@ -5,10 +5,12 @@
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
+#include "robotick/framework/concurrency/Sync.h"
 #include "robotick/framework/containers/HeapVector.h"
 #include "robotick/framework/strings/FixedString.h"
 #include "robotick/framework/utility/Function.h"
 
+#include <cstdint>
 #include <mqtt.h> // now available to tests because of PUBLIC link above
 
 namespace robotick
@@ -27,6 +29,12 @@ namespace robotick
 		virtual void subscribe(const char* topic, int qos = 1) = 0;
 		virtual void publish(const char* topic, const char* payload, bool retained = true) = 0;
 		virtual void set_callback(Function<void(const char*, const char*)> on_message) = 0;
+		virtual void set_tls_enabled(bool enabled) { (void)enabled; }
+		virtual void set_qos(uint8_t publish_qos, uint8_t subscribe_qos)
+		{
+			(void)publish_qos;
+			(void)subscribe_qos;
+		}
 	};
 
 	class MqttClient : public IMqttClient
@@ -39,10 +47,25 @@ namespace robotick
 		void connect() override;
 		void subscribe(const char* topic, int qos = 1) override;
 		void publish(const char* topic, const char* payload, bool retained = true) override;
+		void set_tls_enabled(bool enabled) override;
+		void set_qos(uint8_t publish_qos, uint8_t subscribe_qos) override;
 
 		// Optional: drive mqtt-c from your engine tick
 		void poll();	   // declare
 		void disconnect(); // declare
+
+		bool is_connected() const;
+		struct HealthMetrics
+		{
+			uint32_t reconnect_attempts = 0;
+			uint32_t consecutive_connect_failures = 0;
+			uint32_t total_connect_failures = 0;
+			uint32_t total_successful_connects = 0;
+			uint64_t last_success_timestamp_ms = 0;
+
+			bool healthy() const { return consecutive_connect_failures < 3; }
+		};
+		const HealthMetrics& get_health_metrics() const;
 
 	  private:
 		// exact mqtt-c types
@@ -63,6 +86,24 @@ namespace robotick
 
 		void initialize_buffers();
 		bool assign_topic_payload(const mqtt_response_publish& published, FixedString256& topic_out, FixedString1024& payload_out);
+		bool ensure_socket_timeout(int seconds);
+		bool check_result(int rc, const char* tag);
+		bool attempt_connect(bool fatal);
+		void cleanup_socket();
+		bool should_attempt_reconnect(uint64_t now) const;
+		uint64_t now_ms() const;
+		uint32_t compute_backoff_ms() const;
+		void schedule_backoff(uint64_t now);
+
+		Mutex operation_mutex;
+		bool tls_enabled = false;
+		uint8_t current_publish_qos = 0;
+		uint8_t current_subscribe_qos = 0;
+		bool mqtt_initialized = false;
+		uint64_t next_connect_attempt_ms = 0;
+		uint32_t base_backoff_ms = 500;
+		uint32_t max_backoff_ms = 30000;
+		HealthMetrics health_metrics;
 	};
 
 } // namespace robotick
