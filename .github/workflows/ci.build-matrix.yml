@@ -27,12 +27,19 @@ jobs:
           - platform: linux
             preset: robotick-core-workloads-tests-linux-debug
             docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
+            enable_m5: "OFF"
           - platform: linux
             preset: robotick-core-workloads-tests-linux-release
             docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
-          - platform: esp32
+            enable_m5: "OFF"
+          - platform: esp32s3
             preset: esp32s3
             docker_image: espressif/idf:release-v5.4
+            enable_m5: "OFF"
+          - platform: esp32s3-m5
+            preset: esp32s3
+            docker_image: espressif/idf:release-v5.4
+            enable_m5: "ON"
 
     steps:
       - name: Checkout repository
@@ -75,8 +82,15 @@ jobs:
               export TERM=xterm-256color
               set -x
 
-              if [ '${{ matrix.platform }}' == 'esp32' ]; then
-                echo '🚧 ESP32 Setup'
+              if [[ '${{ matrix.platform }}' == esp32* ]]; then
+                echo '🚧 ESP32-S3 Setup (${{ matrix.platform }})'
+                if [ '${{ matrix.enable_m5 }}' == 'ON' ]; then
+                  export ROBOTICK_PLATFORM_ESP32S3_M5=1
+                  export IDF_EXTRA_CMAKE_ARGS="-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=ON"
+                else
+                  unset ROBOTICK_PLATFORM_ESP32S3_M5
+                  export IDF_EXTRA_CMAKE_ARGS="-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=OFF"
+                fi
                 cd /workspace/robotick-core-workloads/tools/esp32-compile-check
 
                 if ! command -v ninja >/dev/null 2>&1; then

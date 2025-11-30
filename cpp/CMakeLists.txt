@@ -20,8 +20,8 @@ if (DEFINED ROBOTICK_PLATFORM_LINUX)
     set(PLATFORM_DETECTED TRUE)
 endif()
 
-if (DEFINED ROBOTICK_PLATFORM_ESP32)
-    message(STATUS "Platform: ROBOTICK_PLATFORM_ESP32")
+if (DEFINED ROBOTICK_PLATFORM_ESP32S3)
+    message(STATUS "Platform: ROBOTICK_PLATFORM_ESP32S3")
     set(PLATFORM_DETECTED TRUE)
 endif()
 
@@ -31,7 +31,7 @@ if (DEFINED ROBOTICK_PLATFORM_DESKTOP)
 endif()
 
 if (NOT PLATFORM_DETECTED)
-    message(FATAL_ERROR "No platform macro defined! Please define at least one of: ROBOTICK_PLATFORM_LINUX, ROBOTICK_PLATFORM_DESKTOP, ROBOTICK_PLATFORM_ESP32.")
+    message(FATAL_ERROR "No platform macro defined! Please define at least one of: ROBOTICK_PLATFORM_LINUX, ROBOTICK_PLATFORM_DESKTOP, ROBOTICK_PLATFORM_ESP32S3.")
 endif()
 
 # =========================
@@ -238,7 +238,7 @@ target_link_libraries(robotick-core-workloads PRIVATE whisper)
 # ESP32 libs (if needed)
 # =========================
 
-if(ROBOTICK_PLATFORM_ESP32)
+if(ROBOTICK_PLATFORM_ESP32S3)
     target_include_directories(robotick-core-workloads PRIVATE
         ${IDF_PATH}/components/freertos/FreeRTOS-Kernel/include
         ${IDF_PATH}/components/freertos/FreeRTOS-Kernel/portable/xtensa/include

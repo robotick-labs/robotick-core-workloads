@@ -1,14 +1,22 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#if defined(ROBOTICK_PLATFORM_ESP32)
+#if defined(ROBOTICK_PLATFORM_ESP32S3)
 
+#include "robotick/boards/m5/BoardSupport.h"
 #include "robotick/framework/containers/HeapVector.h"
 #include "robotick/systems/Renderer.h"
+
+#if defined(ROBOTICK_PLATFORM_ESP32S3_M5)
 #include <M5Unified.h>
+#define ROBOTICK_RENDERER_HAS_M5 1
+#else
+#define ROBOTICK_RENDERER_HAS_M5 0
+#endif
 
 namespace robotick
 {
+#if ROBOTICK_RENDERER_HAS_M5
 	struct Renderer::RendererImpl
 	{
 		M5Canvas* canvas = nullptr;
@@ -53,6 +61,11 @@ namespace robotick
 
 		if (!impl)
 			impl = new RendererImpl();
+
+		if (!boards::m5::ensure_initialized())
+		{
+			ROBOTICK_FATAL_EXIT("Renderer requires ROBOTICK_PLATFORM_ESP32S3_M5 but initialization failed.");
+		}
 
 		M5.Lcd.setRotation(3);
 		physical_w = 320;
@@ -187,6 +200,50 @@ namespace robotick
 			}
 		}
 	}
+
+#else // ROBOTICK_RENDERER_HAS_M5
+
+	void Renderer::init(bool /*texture_only*/)
+	{
+		ROBOTICK_WARNING("Renderer (ESP32-S3) requires ROBOTICK_PLATFORM_ESP32S3_M5; rendering disabled.");
+		initialized = false;
+	}
+
+	void Renderer::clear(const Color&)
+	{
+	}
+
+	void Renderer::present()
+	{
+	}
+
+	bool Renderer::capture_as_png(uint8_t* /*dst*/, size_t /*capacity*/, size_t& out_size)
+	{
+		out_size = 0;
+		return false;
+	}
+
+	void Renderer::cleanup()
+	{
+	}
+
+	void Renderer::draw_ellipse_filled(const Vec2&, const float, const float, const Color&)
+	{
+	}
+
+	void Renderer::draw_triangle_filled(const Vec2&, const Vec2&, const Vec2&, const Color&)
+	{
+	}
+
+	void Renderer::draw_text(const char*, const Vec2&, const float, const TextAlign, const Color&)
+	{
+	}
+
+	void Renderer::draw_image_rgba8888_fit(const uint8_t*, int, int)
+	{
+	}
+
+#endif // ROBOTICK_RENDERER_HAS_M5
 } // namespace robotick
 
-#endif // #if defined(ROBOTICK_PLATFORM_ESP32)
+#endif // #if defined(ROBOTICK_PLATFORM_ESP32S3)

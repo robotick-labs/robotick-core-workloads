@@ -1,7 +1,7 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#if defined(ROBOTICK_PLATFORM_ESP32)
+#if defined(ROBOTICK_PLATFORM_ESP32S3)
 
 #if defined(ENABLE_ESP32_CAMERA_CODE)
 
@@ -212,4 +212,4 @@ namespace robotick
 } // namespace robotick
 
 #endif // #if defined(ENABLE_ESP32_CAMERA_CODE)
-#endif // ROBOTICK_PLATFORM_ESP32
+#endif // ROBOTICK_PLATFORM_ESP32S3

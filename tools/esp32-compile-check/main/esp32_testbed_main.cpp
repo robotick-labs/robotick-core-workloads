@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/framework/Engine.h"
-#include "robotick/framework/system/EntryPoint.h"
-#include "robotick/framework/services/NetworkManager.h"
 #include "robotick/framework/concurrency/Atomic.h"
+#include "robotick/framework/services/NetworkManager.h"
+#include "robotick/framework/system/EntryPoint.h"
 
+#if defined(ROBOTICK_PLATFORM_ESP32S3_M5)
 #include <M5Unified.h>
+#endif
 
 #include "esp_task_wdt.h"
 
