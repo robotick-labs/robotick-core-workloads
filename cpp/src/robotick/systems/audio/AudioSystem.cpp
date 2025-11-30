@@ -4,6 +4,7 @@
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/systems/audio/AudioSystem.h"
+
 #include "robotick/api.h"
 #include "robotick/framework/concurrency/Sync.h"
 #include "robotick/framework/containers/HeapVector.h"
@@ -14,6 +15,11 @@
 
 namespace robotick
 {
+	ROBOTICK_REGISTER_STRUCT_BEGIN(AudioBackpressureStats)
+	ROBOTICK_STRUCT_FIELD(AudioBackpressureStats, uint32_t, drop_events)
+	ROBOTICK_STRUCT_FIELD(AudioBackpressureStats, float, dropped_ms)
+	ROBOTICK_REGISTER_STRUCT_END(AudioBackpressureStats)
+
 	static constexpr size_t kScratchChunkFrames = 2048;
 
 	class AudioSystemImpl
@@ -136,10 +142,10 @@ namespace robotick
 		uint8_t input_channels() const { return obtained_input_spec.channels != 0 ? obtained_input_spec.channels : 1; }
 
 		// Queue already-interleaved stereo frames (frames == number of LR pairs)
-		bool queue_audio_data(const void* data, uint32_t bytes)
+		AudioQueueResult queue_audio_data(const void* data, uint32_t bytes)
 		{
 			if (output_device == 0 || data == nullptr || bytes == 0)
-				return false;
+				return AudioQueueResult::Error;
 
 			const uint32_t queued_bytes = SDL_GetQueuedAudioSize(output_device);
 			if (max_queued_bytes != 0 && queued_bytes + bytes > max_queued_bytes)
@@ -156,14 +162,14 @@ namespace robotick
 					if (max_queued_bytes != 0 && now_queued + bytes > max_queued_bytes)
 					{
 						record_drop(bytes);
-						return false;
+						return AudioQueueResult::Dropped;
 					}
 				}
 				else
 				{
 					record_drop(bytes);
 					ROBOTICK_WARNING("Audio queue overloaded (%.0fms queued); dropping %.0fms of audio", queued_ms, drop_ms);
-					return false;
+					return AudioQueueResult::Dropped;
 				}
 			}
 
@@ -171,9 +177,9 @@ namespace robotick
 			{
 				ROBOTICK_WARNING("SDL_QueueAudio failed: %s", SDL_GetError());
 				SDL_ClearError();
-				return false;
+				return AudioQueueResult::Error;
 			}
-			return true;
+			return AudioQueueResult::Success;
 		}
 
 		float bytes_to_ms(uint32_t bytes) const
@@ -191,24 +197,47 @@ namespace robotick
 			stats.dropped_ms += bytes_to_ms(bytes);
 		}
 
-		void write_interleaved_stereo(const float* interleaved_lr, size_t frames)
+		AudioQueueResult write_interleaved_stereo(const float* interleaved_lr, size_t frames)
 		{
-			const uint32_t bytes = static_cast<uint32_t>(frames * obtained_output_spec.channels * sizeof(float));
-			queue_audio_data(interleaved_lr, bytes);
-		}
-
-		// Queue mono to both channels (duplicates to L+R if output is stereo)
-		void write_mono(const float* mono, size_t frames)
-		{
-			if (output_device == 0 || mono == nullptr || frames == 0)
-				return;
+			if (output_device == 0 || interleaved_lr == nullptr || frames == 0)
+				return AudioQueueResult::Error;
 
 			if (obtained_output_spec.channels == 1)
 			{
-				const uint32_t bytes = static_cast<uint32_t>(frames * sizeof(float));
-				queue_audio_data(mono, bytes);
-				return;
+				float* mixed = mono_scratch.data();
+				size_t remaining = frames;
+				const size_t chunk_limit = kScratchChunkFrames;
+				const float* src = interleaved_lr;
+				while (remaining > 0)
+				{
+					const size_t chunk = (remaining > chunk_limit) ? chunk_limit : remaining;
+					for (size_t i = 0; i < chunk; ++i)
+					{
+						const float l = src[2 * i + 0];
+						const float r = src[2 * i + 1];
+						mixed[i] = 0.5f * (l + r);
+					}
+					const auto result = queue_audio_data(mixed, static_cast<uint32_t>(chunk * sizeof(float)));
+					if (result != AudioQueueResult::Success)
+						return result;
+					src += chunk * 2;
+					remaining -= chunk;
+				}
+				return AudioQueueResult::Success;
 			}
+
+			const uint32_t bytes = static_cast<uint32_t>(frames * obtained_output_spec.channels * sizeof(float));
+			return queue_audio_data(interleaved_lr, bytes);
+		}
+
+		// Queue mono to both channels (duplicates to L+R if output is stereo)
+		AudioQueueResult write_mono(const float* mono, size_t frames)
+		{
+			if (output_device == 0 || mono == nullptr || frames == 0)
+				return AudioQueueResult::Error;
+
+			if (obtained_output_spec.channels == 1)
+				return queue_audio_data(mono, static_cast<uint32_t>(frames * sizeof(float)));
 
 			size_t remaining = frames;
 			const size_t chunk_limit = kScratchChunkFrames;
@@ -222,26 +251,23 @@ namespace robotick
 					scratch[2 * i + 0] = v;
 					scratch[2 * i + 1] = v;
 				}
-				const uint32_t bytes = static_cast<uint32_t>(chunk * 2 * sizeof(float));
-				if (!queue_audio_data(scratch, bytes))
-					return;
+				const auto result = queue_audio_data(scratch, static_cast<uint32_t>(chunk * 2 * sizeof(float)));
+				if (result != AudioQueueResult::Success)
+					return result;
 				mono += chunk;
 				remaining -= chunk;
 			}
+			return AudioQueueResult::Success;
 		}
 
 		// Queue mono into a specific channel (0=left, 1=right). Other channel is zero.
-		void write_mono_to_channel(int channel, const float* mono, size_t frames)
+		AudioQueueResult write_mono_to_channel(int channel, const float* mono, size_t frames)
 		{
 			if (output_device == 0 || mono == nullptr || frames == 0)
-				return;
+				return AudioQueueResult::Error;
 
 			if (obtained_output_spec.channels == 1)
-			{
-				// Single channel device, just queue as-is
-				SDL_QueueAudio(output_device, mono, frames * sizeof(float));
-				return;
-			}
+				return queue_audio_data(mono, static_cast<uint32_t>(frames * sizeof(float)));
 
 			const int ch = (channel <= 0) ? 0 : 1; // clamp to 0/1
 			float* scratch = stereo_scratch.data();
@@ -256,17 +282,20 @@ namespace robotick
 					scratch[2 * i + 0] = (ch == 0) ? mono[i] : 0.0f;
 					scratch[2 * i + 1] = (ch == 1) ? mono[i] : 0.0f;
 				}
-				SDL_QueueAudio(output_device, scratch, chunk * 2 * sizeof(float));
+				const auto result = queue_audio_data(scratch, static_cast<uint32_t>(chunk * 2 * sizeof(float)));
+				if (result != AudioQueueResult::Success)
+					return result;
 				mono += chunk;
 				remaining -= chunk;
 			}
+			return AudioQueueResult::Success;
 		}
 
 		// Queue separate left/right mono buffers
-		void write_stereo(const float* left, const float* right, size_t frames)
+		AudioQueueResult write_stereo(const float* left, const float* right, size_t frames)
 		{
 			if (output_device == 0 || frames == 0 || (!left && !right))
-				return;
+				return AudioQueueResult::Error;
 
 			if (obtained_output_spec.channels == 1)
 			{
@@ -283,14 +312,16 @@ namespace robotick
 						const float r = right ? right[i] : 0.0f;
 						mixed[i] = 0.5f * (l + r);
 					}
-					SDL_QueueAudio(output_device, mixed, chunk * sizeof(float));
+					const auto result = queue_audio_data(mixed, static_cast<uint32_t>(chunk * sizeof(float)));
+					if (result != AudioQueueResult::Success)
+						return result;
 					if (left)
 						left += chunk;
 					if (right)
 						right += chunk;
 					remaining -= chunk;
 				}
-				return;
+				return AudioQueueResult::Success;
 			}
 
 			float* scratch = stereo_scratch.data();
@@ -306,13 +337,16 @@ namespace robotick
 					scratch[2 * i + 0] = l;
 					scratch[2 * i + 1] = r;
 				}
-				SDL_QueueAudio(output_device, scratch, chunk * 2 * sizeof(float));
+				const auto result = queue_audio_data(scratch, static_cast<uint32_t>(chunk * 2 * sizeof(float)));
+				if (result != AudioQueueResult::Success)
+					return result;
 				if (left)
 					left += chunk;
 				if (right)
 					right += chunk;
 				remaining -= chunk;
 			}
+			return AudioQueueResult::Success;
 		}
 
 		size_t read(float* buffer, size_t max_count)
@@ -374,25 +408,24 @@ namespace robotick
 		return g_audio_impl.input_channels();
 	}
 
-	void AudioSystem::write(const float* mono_samples, size_t frames)
+	AudioQueueResult AudioSystem::write(const float* mono_samples, size_t frames)
 	{
-		// Back-compat: treat as mono write duplicated to both channels if stereo
-		g_audio_impl.write_mono(mono_samples, frames);
+		return g_audio_impl.write_mono(mono_samples, frames);
 	}
 
-	void AudioSystem::write_interleaved_stereo(const float* interleaved_lr, size_t frames)
+	AudioQueueResult AudioSystem::write_interleaved_stereo(const float* interleaved_lr, size_t frames)
 	{
-		g_audio_impl.write_interleaved_stereo(interleaved_lr, frames);
+		return g_audio_impl.write_interleaved_stereo(interleaved_lr, frames);
 	}
 
-	void AudioSystem::write_stereo(const float* left, const float* right, size_t frames)
+	AudioQueueResult AudioSystem::write_stereo(const float* left, const float* right, size_t frames)
 	{
-		g_audio_impl.write_stereo(left, right, frames);
+		return g_audio_impl.write_stereo(left, right, frames);
 	}
 
-	void AudioSystem::write_mono_to_channel(int channel, const float* mono, size_t frames)
+	AudioQueueResult AudioSystem::write_mono_to_channel(int channel, const float* mono, size_t frames)
 	{
-		g_audio_impl.write_mono_to_channel(channel, mono, frames);
+		return g_audio_impl.write_mono_to_channel(channel, mono, frames);
 	}
 
 	size_t AudioSystem::read(float* buffer, size_t max_count)
@@ -430,6 +463,19 @@ namespace robotick
 		g_audio_impl.stats = {};
 	}
 
+	void AudioSystem::record_drop_for_test(uint32_t bytes)
+	{
+		LockGuard lock(g_audio_mutex);
+		g_audio_impl.record_drop(bytes);
+	}
+
+	void AudioSystem::set_output_spec_for_test(uint32_t sample_rate, uint8_t channels)
+	{
+		LockGuard lock(g_audio_mutex);
+		g_audio_impl.obtained_output_spec.freq = static_cast<int>(sample_rate);
+		g_audio_impl.obtained_output_spec.channels = static_cast<Uint8>(channels);
+	}
+
 } // namespace robotick
 
 #else
@@ -461,17 +507,21 @@ namespace robotick
 	{
 		return 0;
 	}
-	void AudioSystem::write(const float*, size_t)
+	AudioQueueResult AudioSystem::write(const float*, size_t)
 	{
+		return AudioQueueResult::Error;
 	}
-	void AudioSystem::write_interleaved_stereo(const float*, size_t)
+	AudioQueueResult AudioSystem::write_interleaved_stereo(const float*, size_t)
 	{
+		return AudioQueueResult::Error;
 	}
-	void AudioSystem::write_stereo(const float*, const float*, size_t)
+	AudioQueueResult AudioSystem::write_stereo(const float*, const float*, size_t)
 	{
+		return AudioQueueResult::Error;
 	}
-	void AudioSystem::write_mono_to_channel(int, const float*, size_t)
+	AudioQueueResult AudioSystem::write_mono_to_channel(int, const float*, size_t)
 	{
+		return AudioQueueResult::Error;
 	}
 	size_t AudioSystem::read(float*, size_t)
 	{
@@ -489,6 +539,12 @@ namespace robotick
 		return {};
 	}
 	void AudioSystem::reset_backpressure_stats()
+	{
+	}
+	void AudioSystem::record_drop_for_test(uint32_t)
+	{
+	}
+	void AudioSystem::set_output_spec_for_test(uint32_t, uint8_t)
 	{
 	}
 } // namespace robotick

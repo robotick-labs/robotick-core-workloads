@@ -60,15 +60,16 @@ namespace robotick::test
 			Map<FixedString256, FixedString256, 128> retained;
 
 			void connect() override {}
-			void subscribe(const char* /*topic*/, int /*qos*/ = 1) override {}
+			MqttOpResult subscribe(const char* /*topic*/, int /*qos*/ = 1) override { return MqttOpResult::Success; }
 
-			void publish(const char* topic, const char* payload, bool retain = true) override
+			MqttOpResult publish(const char* topic, const char* payload, bool retain = true) override
 			{
 				if (!retain)
-					return;
+					return MqttOpResult::Success;
 				const FixedString256 key = topic ? FixedString256(topic) : FixedString256("");
 				const FixedString256 value = payload ? FixedString256(payload) : FixedString256("");
 				retained.insert(key, value);
+				return MqttOpResult::Success;
 			}
 
 			bool has_retained(const char* topic) const

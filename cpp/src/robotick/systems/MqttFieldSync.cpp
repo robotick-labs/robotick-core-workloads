@@ -10,6 +10,19 @@
 
 namespace robotick
 {
+	static const char* mqtt_op_result_str(MqttOpResult result)
+	{
+		switch (result)
+		{
+		case MqttOpResult::Success:
+			return "success";
+		case MqttOpResult::Dropped:
+			return "dropped";
+		case MqttOpResult::Error:
+		default:
+			return "error";
+		}
+	}
 	namespace
 	{
 		bool starts_with(const char* text, const char* prefix)
@@ -124,23 +137,13 @@ namespace robotick
 		FixedString512 control_topic;
 		control_topic.format("%s/control/#", root.c_str());
 
-		try
+		const MqttOpResult sub_result = mqtt_ptr->subscribe(control_topic.c_str());
+		if (sub_result != MqttOpResult::Success)
 		{
-			mqtt_ptr->subscribe(control_topic.c_str());
-		}
-		catch (...)
-		{
-			ROBOTICK_WARNING("MqttFieldSync - Failed to subscribe to control topics.");
+			ROBOTICK_WARNING("MqttFieldSync - Failed to subscribe to control topics (%s).", mqtt_op_result_str(sub_result));
 		}
 
-		try
-		{
-			publish_fields(*engine_ptr, engine_ptr->get_workloads_buffer(), true);
-		}
-		catch (...)
-		{
-			ROBOTICK_WARNING("MqttFieldSync - Failed to publish startup fields.");
-		}
+		publish_fields(*engine_ptr, engine_ptr->get_workloads_buffer(), true);
 
 		updated_topics.clear();
 	}
@@ -246,7 +249,7 @@ namespace robotick
 							[&](const WorkloadFieldView& child)
 							{
 								const char* child_name = child.subfield_info ? child.subfield_info->name.c_str()
-													   : (child.field_info ? child.field_info->name.c_str() : "(unknown)");
+																			 : (child.field_info ? child.field_info->name.c_str() : "(unknown)");
 								FixedString512 next_path(path_so_far.c_str());
 								next_path.append("/");
 								next_path.append(child_name);
@@ -272,20 +275,20 @@ namespace robotick
 					const std_approved::string dumped = value.dump();
 					payload.assign(dumped.c_str(), dumped.size());
 
-					try
+					if (mqtt_ptr)
 					{
-						if (mqtt_ptr)
-							mqtt_ptr->publish(state_topic.c_str(), payload.c_str(), true);
-						else if (publisher)
+						const MqttOpResult pub_res = mqtt_ptr->publish(state_topic.c_str(), payload.c_str(), true);
+						if (pub_res != MqttOpResult::Success)
 						{
-							FixedString512 relative_topic;
-							relative_topic.format("state/%s", path_so_far.c_str());
-							publisher(relative_topic.c_str(), payload.c_str(), true);
+							ROBOTICK_WARNING(
+								"MqttFieldSync - Failed to publish state topic %s (%s)", state_topic.c_str(), mqtt_op_result_str(pub_res));
 						}
 					}
-					catch (...)
+					else if (publisher)
 					{
-						ROBOTICK_WARNING("MqttFieldSync - Failed to publish state topic: %s", state_topic.c_str());
+						FixedString512 relative_topic;
+						relative_topic.format("state/%s", path_so_far.c_str());
+						publisher(relative_topic.c_str(), payload.c_str(), true);
 					}
 
 					if (publish_control && !is_struct_read_only)
@@ -294,20 +297,21 @@ namespace robotick
 						control_topic.format("%s/control/%s", root.c_str(), path_so_far.c_str());
 						store_topic(last_published, control_topic.c_str(), value);
 
-						try
+						if (mqtt_ptr)
 						{
-							if (mqtt_ptr)
-								mqtt_ptr->publish(control_topic.c_str(), payload.c_str(), true);
-							else if (publisher)
+							const MqttOpResult control_res = mqtt_ptr->publish(control_topic.c_str(), payload.c_str(), true);
+							if (control_res != MqttOpResult::Success)
 							{
-								FixedString512 relative_topic;
-								relative_topic.format("control/%s", path_so_far.c_str());
-								publisher(relative_topic.c_str(), payload.c_str(), true);
+								ROBOTICK_WARNING("MqttFieldSync - Failed to publish control topic %s (%s)",
+									control_topic.c_str(),
+									mqtt_op_result_str(control_res));
 							}
 						}
-						catch (...)
+						else if (publisher)
 						{
-							ROBOTICK_WARNING("MqttFieldSync - Failed to publish control topic: %s", control_topic.c_str());
+							FixedString512 relative_topic;
+							relative_topic.format("control/%s", path_so_far.c_str());
+							publisher(relative_topic.c_str(), payload.c_str(), true);
 						}
 					}
 				};

@@ -198,24 +198,26 @@ namespace robotick
 		}
 	}
 
-	void MqttClient::subscribe(const char* topic, int qos)
+	MqttOpResult MqttClient::subscribe(const char* topic, int qos)
 	{
 		if (!ensure_connected_or_drop(false))
-			return;
+			return MqttOpResult::Dropped;
 
 		LockGuard guard(operation_mutex);
 		const uint8_t subscribe_qos = current_subscribe_qos ? current_subscribe_qos : static_cast<uint8_t>(qos);
 		if (check_result(mqtt_subscribe(&mqtt, topic, subscribe_qos), "subscribe"))
 		{
 			check_result(mqtt_sync(&mqtt), "sync");
+			return MqttOpResult::Success;
 		}
+		return MqttOpResult::Error;
 	}
 
-	void MqttClient::publish(const char* topic, const char* payload, bool /*retained*/)
+	MqttOpResult MqttClient::publish(const char* topic, const char* payload, bool /*retained*/)
 	{
 		if (!ensure_connected_or_drop(true))
 		{
-			return;
+			return MqttOpResult::Dropped;
 		}
 
 		const size_t payload_size = payload ? fixed_strlen(payload) : 0;
@@ -225,7 +227,9 @@ namespace robotick
 		if (check_result(mqtt_publish(&mqtt, topic, const_cast<char*>(payload), payload_size, publish_flag), "publish"))
 		{
 			check_result(mqtt_sync(&mqtt), "sync");
+			return MqttOpResult::Success;
 		}
+		return MqttOpResult::Error;
 	}
 
 	void MqttClient::poll()

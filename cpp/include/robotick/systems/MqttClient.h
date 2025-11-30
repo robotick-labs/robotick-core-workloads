@@ -21,13 +21,20 @@ namespace robotick
 		uint16_t port = 1883;
 	};
 
+	enum class MqttOpResult
+	{
+		Success,
+		Dropped,
+		Error,
+	};
+
 	class IMqttClient
 	{
 	  public:
 		virtual ~IMqttClient() = default;
 		virtual void connect() = 0;
-		virtual void subscribe(const char* topic, int qos = 1) = 0;
-		virtual void publish(const char* topic, const char* payload, bool retained = true) = 0;
+		virtual MqttOpResult subscribe(const char* topic, int qos = 1) = 0;
+		virtual MqttOpResult publish(const char* topic, const char* payload, bool retained = true) = 0;
 		virtual void set_callback(Function<void(const char*, const char*)> on_message) = 0;
 		virtual void set_tls_enabled(bool enabled) { (void)enabled; }
 		virtual void set_qos(uint8_t publish_qos, uint8_t subscribe_qos)
@@ -45,8 +52,8 @@ namespace robotick
 
 		void set_callback(Function<void(const char*, const char*)>) override;
 		void connect() override;
-		void subscribe(const char* topic, int qos = 1) override;
-		void publish(const char* topic, const char* payload, bool retained = true) override;
+		MqttOpResult subscribe(const char* topic, int qos = 1) override;
+		MqttOpResult publish(const char* topic, const char* payload, bool retained = true) override;
 		void set_tls_enabled(bool enabled) override;
 		void set_qos(uint8_t publish_qos, uint8_t subscribe_qos) override;
 
