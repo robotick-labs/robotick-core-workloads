@@ -98,15 +98,14 @@ namespace robotick
 			return -1.0f;
 		}
 
-		void init_if_needed(const TickInfo& tick)
+		void initialize_renderer(float tick_rate_hz)
 		{
 			auto& s = state.get();
 			if (s.initialized)
 				return;
 
-			// Derive rolling image size: one column per tick across window_seconds
 			const int bands = static_cast<int>(inputs.cochlear_frame.envelope.capacity());
-			const int cols = robotick::max(1, static_cast<int>(lroundf(tick.tick_rate_hz * config.window_seconds)));
+			const int cols = robotick::max(1, static_cast<int>(lroundf(tick_rate_hz * config.window_seconds)));
 
 			s.tex_w = cols;
 			s.tex_h = bands;
@@ -118,7 +117,6 @@ namespace robotick
 				s.rgba[i] = 0;
 			}
 
-			// Renderer is our single path for both live and offscreen
 			s.renderer.set_texture_only_size(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
 			s.renderer.set_viewport(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
 			s.renderer.init(config.render_to_texture);
@@ -126,10 +124,17 @@ namespace robotick
 			s.initialized = true;
 		}
 
+		void start(float tick_rate_hz) { initialize_renderer(tick_rate_hz); }
+
 		void tick(const TickInfo& tick)
 		{
 			auto& s = state.get();
-			init_if_needed(tick);
+			if (!s.initialized)
+			{
+				initialize_renderer(tick.tick_rate_hz);
+				if (!s.initialized)
+					return;
+			}
 
 			if (s.tex_w <= 0 || s.tex_h <= 0)
 				return;

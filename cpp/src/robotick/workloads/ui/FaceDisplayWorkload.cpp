@@ -50,18 +50,21 @@ namespace robotick
 
 		void setup() { schedule_blink_pair(0.0f); }
 
+		void start(float)
+		{
+			auto& s = state.get();
+			if (s.has_init_renderer)
+				return;
+
+			s.renderer.set_texture_only_size(800, 480);
+			s.renderer.set_viewport(320, 240);
+			s.renderer.init(config.render_to_texture);
+			s.has_init_renderer = true;
+		}
+
 		void tick(const TickInfo& tick_info)
 		{
 			auto& s = state.get();
-
-			// Init renderer if needed
-			if (!s.has_init_renderer)
-			{
-				s.renderer.set_texture_only_size(800, 480);
-				s.renderer.set_viewport(320, 240);
-				s.renderer.init(config.render_to_texture);
-				s.has_init_renderer = true;
-			}
 
 			// Update blink animations
 			const float time_now_sec = tick_info.time_now;

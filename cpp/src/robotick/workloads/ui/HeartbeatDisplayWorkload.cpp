@@ -4,11 +4,16 @@
 #include "robotick/api.h"
 #include "robotick/systems/Renderer.h"
 
-
 namespace
 {
-	inline float cosine_deg(float degrees) { return cosf(robotick::deg_to_rad(degrees)); }
-	inline float sine_deg(float degrees) { return sinf(robotick::deg_to_rad(degrees)); }
+	inline float cosine_deg(float degrees)
+	{
+		return cosf(robotick::deg_to_rad(degrees));
+	}
+	inline float sine_deg(float degrees)
+	{
+		return sinf(robotick::deg_to_rad(degrees));
+	}
 
 	inline int round_to_int(float value)
 	{
@@ -55,16 +60,20 @@ namespace robotick
 		HeartbeatDisplayOutputs outputs;
 		State<HeartbeatState> state;
 
+		void start(float)
+		{
+			auto& s = state.get();
+			if (s.has_init_renderer)
+				return;
+
+			const bool render_to_texture = false;
+			s.renderer.init(render_to_texture);
+			s.has_init_renderer = true;
+		}
+
 		void tick(const TickInfo& tick_info)
 		{
 			auto& s = state.get();
-
-			if (!s.has_init_renderer)
-			{
-				const bool render_to_texture = false;
-				s.renderer.init(render_to_texture);
-				s.has_init_renderer = true;
-			}
 
 			const float time_now_sec = tick_info.time_now;
 			const float bpm = config.rest_heart_rate * inputs.heart_rate_scale;
@@ -97,7 +106,10 @@ namespace robotick
 			const float min_activation_hi = 0.7f;
 			const float min_activation_lo = 0.5f;
 
-			auto ramp = [](float f) { return 0.5f * (1.0f - cosf(f * robotick::kPi)); };
+			auto ramp = [](float f)
+			{
+				return 0.5f * (1.0f - cosf(f * robotick::kPi));
+			};
 
 			outputs.activation_amount = min_activation_lo;
 
