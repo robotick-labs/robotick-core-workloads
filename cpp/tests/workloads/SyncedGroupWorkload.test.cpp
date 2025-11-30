@@ -42,6 +42,23 @@ namespace
 	};
 	ROBOTICK_REGISTER_WORKLOAD(SlowWorkload);
 
+	struct ThreadAwareWorkload
+	{
+		Thread::ThreadId start_thread = 0;
+		Thread::ThreadId tick_thread = 0;
+		AtomicValue<int> tick_count{0};
+
+		void start(float) { start_thread = Thread::get_current_thread_id(); }
+		void tick(const TickInfo&)
+		{
+			if (tick_count.fetch_add(1) == 0)
+			{
+				tick_thread = Thread::get_current_thread_id();
+			}
+		}
+	};
+	ROBOTICK_REGISTER_WORKLOAD(ThreadAwareWorkload);
+
 } // namespace
 
 TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
@@ -201,5 +218,39 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 
 		INFO("Child tick count (expected ~2): " << counting->tick_count.load());
 		CHECK(counting->tick_count.load() == 2);
+	}
+
+	SECTION("Child start executes on same thread as child tick")
+	{
+		const TickInfo tick_info = TICK_INFO_FIRST_10MS_100HZ;
+		const float tick_rate_hz = 1.0f / tick_info.delta_time;
+
+		Model model;
+		const WorkloadSeed& child_seed = model.add("ThreadAwareWorkload", "threadedChild").set_tick_rate_hz(tick_rate_hz);
+		const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&child_seed}).set_tick_rate_hz(tick_rate_hz);
+		model.set_root_workload(group_seed);
+
+		Engine engine;
+		engine.load(model);
+
+		const auto& group_info = *engine.find_instance_info(group_seed.unique_name);
+		auto* group_ptr = group_info.get_ptr(engine);
+		REQUIRE(group_ptr != nullptr);
+
+		group_info.type->get_workload_desc()->start_fn(group_ptr, tick_rate_hz);
+
+		for (int i = 0; i < 3; ++i)
+		{
+			group_info.type->get_workload_desc()->tick_fn(group_ptr, tick_info);
+			Thread::sleep_ms(10);
+		}
+
+		group_info.type->get_workload_desc()->stop_fn(group_ptr);
+
+		const auto* child = engine.find_instance<ThreadAwareWorkload>(child_seed.unique_name);
+		REQUIRE(child != nullptr);
+		REQUIRE(child->tick_count.load() > 0);
+		CHECK(child->start_thread == child->tick_thread);
+		CHECK(child->start_thread != 0);
 	}
 }

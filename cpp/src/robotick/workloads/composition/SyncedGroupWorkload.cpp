@@ -3,11 +3,11 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/WorkloadInstanceInfo.h"
-#include "robotick/framework/data/DataConnection.h"
 #include "robotick/framework/concurrency/Atomic.h"
-#include "robotick/framework/time/Clock.h"
 #include "robotick/framework/concurrency/Sync.h"
 #include "robotick/framework/concurrency/Thread.h"
+#include "robotick/framework/data/DataConnection.h"
+#include "robotick/framework/time/Clock.h"
 
 #include <string>
 
@@ -168,15 +168,20 @@ namespace robotick
 
 			auto workload_tick_fn = child.workload_descriptor->tick_fn;
 
+			if (child.workload_descriptor->start_fn)
+			{
+				child.workload_descriptor->start_fn(child_info.workload_ptr, child.seed->tick_rate_hz);
+			}
+
 			while (true)
 			{
 				{
 					UniqueLock lock(tick_mutex);
 					tick_cv.wait(lock,
 						[&]
-							{
-								return child_info.tick_counter.load() > last_tick || !running;
-							});
+						{
+							return child_info.tick_counter.load() > last_tick || !running;
+						});
 					last_tick = child_info.tick_counter.load();
 				}
 

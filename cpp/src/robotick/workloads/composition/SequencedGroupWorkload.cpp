@@ -24,7 +24,19 @@ namespace robotick
 
 		void set_engine(const Engine& engine_in) { engine = &engine_in; }
 
-                void start(float tick_rate_hz) { (void)tick_rate_hz; }
+		void start(float)
+		{
+			for (auto& child : children)
+			{
+				if (!child.workload_info || !child.workload_info->workload_descriptor)
+					continue;
+
+				if (child.workload_info->workload_descriptor->start_fn)
+				{
+					child.workload_info->workload_descriptor->start_fn(child.workload_ptr, child.workload_info->seed->tick_rate_hz);
+				}
+			}
+		}
 
 		ChildWorkloadInfo* find_child_workload(const WorkloadInstanceInfo& query_child)
 		{
@@ -98,37 +110,33 @@ namespace robotick
 		{
 			ROBOTICK_ASSERT(engine != nullptr && "Engine should have been set by now");
 
-            for (auto& child_info : children)
-            {
-                if (child_info.workload_info != nullptr && child_info.workload_info->workload_descriptor->tick_fn != nullptr)
-                {
-                    // process any incoming data-connections:
-                    for (auto connection_in : child_info.connections_in)
-                    {
-                        connection_in->do_data_copy();
-                    }
+			for (auto& child_info : children)
+			{
+				if (child_info.workload_info != nullptr && child_info.workload_info->workload_descriptor->tick_fn != nullptr)
+				{
+					// process any incoming data-connections:
+					for (auto connection_in : child_info.connections_in)
+					{
+						connection_in->do_data_copy();
+					}
 
-                    TickInfo child_tick_info(tick_info);
-                    child_tick_info.workload_stats = child_info.workload_info->workload_stats;
+					TickInfo child_tick_info(tick_info);
+					child_tick_info.workload_stats = child_info.workload_info->workload_stats;
 
-                    const auto budget_duration = Clock::from_seconds(1.0f / child_info.workload_info->seed->tick_rate_hz);
-                    const uint32_t budget_ns =
-                        detail::clamp_to_uint32(Clock::to_nanoseconds(budget_duration).count());
+					const auto budget_duration = Clock::from_seconds(1.0f / child_info.workload_info->seed->tick_rate_hz);
+					const uint32_t budget_ns = detail::clamp_to_uint32(Clock::to_nanoseconds(budget_duration).count());
 
-                    const auto now_pre_tick = Clock::now();
-                    child_info.workload_info->workload_descriptor->tick_fn(child_info.workload_ptr, child_tick_info);
-                    const auto now_post_tick = Clock::now();
+					const auto now_pre_tick = Clock::now();
+					child_info.workload_info->workload_descriptor->tick_fn(child_info.workload_ptr, child_tick_info);
+					const auto now_post_tick = Clock::now();
 
-                    const uint32_t duration_ns =
-                        detail::clamp_to_uint32(Clock::to_nanoseconds(now_post_tick - now_pre_tick).count());
+					const uint32_t duration_ns = detail::clamp_to_uint32(Clock::to_nanoseconds(now_post_tick - now_pre_tick).count());
 
-                    child_info.workload_info->workload_stats->last_time_delta_ns =
-                        static_cast<uint32_t>(child_tick_info.delta_time * 1e9f);
-                    child_info.workload_info->workload_stats->record_tick_duration_ns(duration_ns, budget_ns);
-                }
-            }
-        }
-
+					child_info.workload_info->workload_stats->last_time_delta_ns = static_cast<uint32_t>(child_tick_info.delta_time * 1e9f);
+					child_info.workload_info->workload_stats->record_tick_duration_ns(duration_ns, budget_ns);
+				}
+			}
+		}
 	};
 
 	struct SequencedGroupWorkload
