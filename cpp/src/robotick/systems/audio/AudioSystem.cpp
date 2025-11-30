@@ -4,7 +4,7 @@
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/systems/audio/AudioSystem.h"
-
+#include "robotick/api.h"
 #include <SDL2/SDL.h>
 #include <cstring>
 
@@ -116,6 +116,8 @@ namespace robotick
 
 		uint32_t sample_rate() const { return obtained_output_spec.freq; }
 		uint8_t output_channels() const { return obtained_output_spec.channels; }
+		uint32_t input_sample_rate() const { return obtained_input_spec.freq != 0 ? obtained_input_spec.freq : obtained_output_spec.freq; }
+		uint8_t input_channels() const { return obtained_input_spec.channels != 0 ? obtained_input_spec.channels : 1; }
 
 		// Queue already-interleaved stereo frames (frames == number of LR pairs)
 		void write_interleaved_stereo(const float* interleaved_lr, size_t frames)
@@ -243,11 +245,29 @@ namespace robotick
 
 		size_t read(float* buffer, size_t max_count)
 		{
-			if (input_device == 0 || buffer == nullptr)
+			if (input_device == 0 || buffer == nullptr || max_count == 0)
 				return 0;
 
-			size_t bytes = SDL_DequeueAudio(input_device, buffer, max_count * sizeof(float));
-			return bytes / sizeof(float);
+			const uint32_t requested_bytes = static_cast<uint32_t>(max_count * sizeof(float));
+			const uint32_t dequeued_bytes = SDL_DequeueAudio(input_device, buffer, requested_bytes);
+
+			if (dequeued_bytes == 0)
+			{
+				const char* err = SDL_GetError();
+				if (err != nullptr && err[0] != '\0')
+				{
+					ROBOTICK_WARNING("AudioSystem::read - SDL_DequeueAudio returned 0 bytes: %s", err);
+					SDL_ClearError();
+				}
+				return 0;
+			}
+
+			if ((dequeued_bytes % sizeof(float)) != 0)
+			{
+				ROBOTICK_WARNING("AudioSystem::read received a partial sample block (%u bytes)", dequeued_bytes);
+			}
+
+			return dequeued_bytes / sizeof(float);
 		}
 	};
 
@@ -270,6 +290,16 @@ namespace robotick
 	uint8_t AudioSystem::get_output_channels()
 	{
 		return g_audio_impl.output_channels();
+	}
+
+	uint32_t AudioSystem::get_input_sample_rate()
+	{
+		return g_audio_impl.input_sample_rate();
+	}
+
+	uint8_t AudioSystem::get_input_channels()
+	{
+		return g_audio_impl.input_channels();
 	}
 
 	void AudioSystem::write(const float* mono_samples, size_t frames)
@@ -324,6 +354,14 @@ namespace robotick
 		return 0;
 	}
 	uint8_t AudioSystem::get_output_channels()
+	{
+		return 0;
+	}
+	uint32_t AudioSystem::get_input_sample_rate()
+	{
+		return 0;
+	}
+	uint8_t AudioSystem::get_input_channels()
 	{
 		return 0;
 	}

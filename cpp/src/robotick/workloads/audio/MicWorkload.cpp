@@ -34,7 +34,8 @@ namespace robotick
 		void load()
 		{
 			AudioSystem::init();
-			outputs.mono.sample_rate = AudioSystem::get_sample_rate(); // constant once init'd
+			const uint32_t input_rate = AudioSystem::get_input_sample_rate();
+			outputs.mono.sample_rate = (input_rate != 0) ? input_rate : AudioSystem::get_sample_rate();
 		}
 
 		// Pull a chunk from the mic and publish to outputs.

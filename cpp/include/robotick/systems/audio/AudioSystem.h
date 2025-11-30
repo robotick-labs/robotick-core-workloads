@@ -24,6 +24,10 @@ namespace robotick
 		static uint32_t get_sample_rate();
 		static uint8_t get_output_channels(); // e.g. 2 for stereo
 
+		// Input device info (microphone)
+		static uint32_t get_input_sample_rate();
+		static uint8_t get_input_channels();
+
 		// --- Output: convenience APIs ---
 		// Back-compat: queue a mono buffer. If output is stereo, duplicates to L+R.
 		static void write(const float* mono_samples, size_t frames);

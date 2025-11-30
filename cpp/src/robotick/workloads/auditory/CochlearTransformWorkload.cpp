@@ -31,7 +31,8 @@ namespace robotick
 		void load()
 		{
 			AudioSystem::init();
-			state->sample_rate = AudioSystem::get_sample_rate();
+			const uint32_t input_rate = AudioSystem::get_input_sample_rate();
+			state->sample_rate = (input_rate != 0) ? input_rate : AudioSystem::get_sample_rate();
 
 			// Derived rate for envelope/filter math.
 			state->frame_rate_hz = static_cast<double>(state->sample_rate) / static_cast<double>(CochlearTransformState::hop_size);
