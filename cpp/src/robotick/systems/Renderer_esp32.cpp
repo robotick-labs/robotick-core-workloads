@@ -12,7 +12,7 @@ namespace robotick
 	struct Renderer::RendererImpl
 	{
 		M5Canvas* canvas = nullptr;
-		HeapVector<uint16_t> rgb565_buffer;
+		HeapVector<uint16_t>* rgb565_buffer = nullptr;
 		size_t rgb565_capacity = 0;
 
 		~RendererImpl()
@@ -22,14 +22,24 @@ namespace robotick
 				delete canvas;
 				canvas = nullptr;
 			}
+			if (rgb565_buffer)
+			{
+				delete rgb565_buffer;
+				rgb565_buffer = nullptr;
+				rgb565_capacity = 0;
+			}
 		}
 
 		void ensure_capacity(size_t required_pixels)
 		{
-			if (rgb565_capacity >= required_pixels && rgb565_buffer.size() >= required_pixels)
+			if (rgb565_buffer && rgb565_capacity >= required_pixels)
 				return;
-			rgb565_buffer.deinitialize();
-			rgb565_buffer.initialize(required_pixels);
+
+			if (rgb565_buffer)
+				delete rgb565_buffer;
+
+			rgb565_buffer = new HeapVector<uint16_t>();
+			rgb565_buffer->initialize(required_pixels);
 			rgb565_capacity = required_pixels;
 		}
 	};
@@ -130,7 +140,7 @@ namespace robotick
 		// M5Canvas doesn't provide an RGBA path, so convert then push.
 		const size_t pixel_count = static_cast<size_t>(w) * static_cast<size_t>(h);
 		impl->ensure_capacity(pixel_count);
-		uint16_t* rgb565 = impl->rgb565_buffer.data();
+		uint16_t* rgb565 = impl->rgb565_buffer ? impl->rgb565_buffer->data() : nullptr;
 		if (!rgb565)
 			return;
 

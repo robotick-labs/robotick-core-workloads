@@ -3,6 +3,8 @@
 //
 // CochlearTransformWorkload.cpp  (thin wrapper around robotick::CochlearTransform)
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearTransform.h"
@@ -72,3 +74,5 @@ namespace robotick
 		}
 	};
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

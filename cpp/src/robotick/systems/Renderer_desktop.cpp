@@ -1,7 +1,7 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
-#if defined(ROBOTICK_PLATFORM_DESKTOP)
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/api.h"
 #include "robotick/framework/system/PlatformEvents.h"
@@ -73,8 +73,8 @@ namespace robotick
 
 		if (texture_only)
 		{
-			impl->window = SDL_CreateWindow(
-				"OffscreenRenderer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, physical_w, physical_h, SDL_WINDOW_HIDDEN);
+			impl->window =
+				SDL_CreateWindow("OffscreenRenderer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, physical_w, physical_h, SDL_WINDOW_HIDDEN);
 			if (!impl->window)
 				ROBOTICK_FATAL_EXIT("SDL_CreateWindow (offscreen) failed: %s", SDL_GetError());
 
@@ -413,4 +413,4 @@ namespace robotick
 	}
 } // namespace robotick
 
-#endif // ROBOTICK_PLATFORM_DESKTOP
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

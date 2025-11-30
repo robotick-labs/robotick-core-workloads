@@ -1,23 +1,33 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include <pybind11/embed.h>
 
 namespace robotick
 {
 
-	// On first call, allocate a scoped_interpreter and never delete it.
-	// That way Python is initialized exactly once, we release the GIL for future use,
-	// and we never try to finalize after things get torn down.
 	void ensure_python_runtime()
 	{
 		static auto* guard = []()
 		{
 			auto* g = new pybind11::scoped_interpreter{};
-			PyEval_SaveThread(); // drop the GIL so gil_scoped_acquire works later
+			PyEval_SaveThread();
 			return g;
 		}();
 		(void)guard;
 	}
 
 } // namespace robotick
+
+#else
+
+namespace robotick
+{
+	inline void ensure_python_runtime()
+	{
+	}
+} // namespace robotick
+
+#endif

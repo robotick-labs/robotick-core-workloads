@@ -1,6 +1,8 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/strings/FixedString.h"
@@ -400,3 +402,5 @@ namespace robotick
 #endif // #ifdef ROBOTICK_BUILD_CORE_WORKLOAD_TESTS
 
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

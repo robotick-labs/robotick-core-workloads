@@ -3,6 +3,8 @@
 //
 // CochlearTransform.cpp
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/systems/auditory/CochlearTransform.h"
 #include "robotick/framework/math/MathUtils.h"
 
@@ -343,3 +345,5 @@ namespace robotick
 	}
 
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

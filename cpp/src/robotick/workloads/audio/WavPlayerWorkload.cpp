@@ -63,10 +63,10 @@ namespace robotick
 			outputs.total_frame_count = wav_file.get_frame_count();
 
 			ROBOTICK_ASSERT_MSG(AudioSystem::get_sample_rate() == wav_file.get_sample_rate(),
-				"Audio System sample-rate (%i) and that of wav-file '%s' (%i) differ",
-				AudioSystem::get_sample_rate(),
+				"Audio System sample-rate (%u) and that of wav-file '%s' (%u) differ",
+				static_cast<unsigned>(AudioSystem::get_sample_rate()),
 				config.file_path.c_str(),
-				(int)wav_file.get_sample_rate());
+				static_cast<unsigned>(wav_file.get_sample_rate()));
 		}
 
 		void start(float /*tick_rate_hz*/) { state->time_to_loop_sec = config.loop_delay_sec; }

@@ -1,6 +1,8 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/api.h"
 #include "robotick/framework/Engine.h"
 #include "robotick/framework/data/WorkloadsBuffer.h"
@@ -93,3 +95,5 @@ namespace robotick
 	};
 
 } // namespace robotick
+
+#endif

@@ -1,6 +1,8 @@
 // Copyright Robotick Labs
 // SPDX-License-Identifier: Apache-2.0
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <SDL2/SDL.h>
@@ -123,7 +125,6 @@ namespace robotick
 			const size_t bytes = frames * obtained_output_spec.channels * sizeof(float);
 			SDL_QueueAudio(output_device, interleaved_lr, bytes);
 		}
-
 
 		// Queue mono to both channels (duplicates to L+R if output is stereo)
 		void write_mono(const float* mono, size_t frames)
@@ -304,3 +305,44 @@ namespace robotick
 	}
 
 } // namespace robotick
+
+#else
+
+#include "robotick/systems/audio/AudioSystem.h"
+
+namespace robotick
+{
+	bool AudioSystem::init()
+	{
+		return false;
+	}
+	void AudioSystem::shutdown()
+	{
+	}
+	uint32_t AudioSystem::get_sample_rate()
+	{
+		return 0;
+	}
+	uint8_t AudioSystem::get_output_channels()
+	{
+		return 0;
+	}
+	void AudioSystem::write(const float*, size_t)
+	{
+	}
+	void AudioSystem::write_interleaved_stereo(const float*, size_t)
+	{
+	}
+	void AudioSystem::write_stereo(const float*, const float*, size_t)
+	{
+	}
+	void AudioSystem::write_mono_to_channel(int, const float*, size_t)
+	{
+	}
+	size_t AudioSystem::read(float*, size_t)
+	{
+		return 0;
+	}
+} // namespace robotick
+
+#endif

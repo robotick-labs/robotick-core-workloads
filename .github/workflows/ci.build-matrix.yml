@@ -1,4 +1,4 @@
-name: CI - Build Matrix (Linux)
+name: CI - Build Matrix (Linux + ESP32)
 
 on:
   push:
@@ -30,6 +30,9 @@ jobs:
           - platform: linux
             preset: robotick-core-workloads-tests-linux-release
             docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
+          - platform: esp32
+            preset: esp32s3
+            docker_image: espressif/idf:release-v5.4
 
     steps:
       - name: Checkout repository
@@ -72,18 +75,33 @@ jobs:
               export TERM=xterm-256color
               set -x
 
-              echo '🚧 Linux Setup'
-              bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
+              if [ '${{ matrix.platform }}' == 'esp32' ]; then
+                echo '🚧 ESP32 Setup'
+                cd /workspace/robotick-core-workloads/tools/esp32-compile-check
 
-              # cd to our repo, install deps and build our target:
-              cd /workspace/robotick-core-workloads
+                if ! command -v ninja >/dev/null 2>&1; then
+                  DEBIAN_FRONTEND=noninteractive apt-get update -yq
+                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ninja-build ccache
+                  apt-get clean
+                  rm -rf /var/lib/apt/lists/*
+                fi
 
-              bash cpp/tests/install_deps.sh
-              
-              cmake --preset ${{ matrix.preset }}
-              cmake --build --preset ${{ matrix.preset }} -j$(nproc)
+                bash /workspace/robotick-core-workloads/tools/make_esp32_symlinks.sh
 
-              if [ '${{ matrix.preset }}' == 'robotick-core-workloads-tests-linux-debug' ]; then
-                ctest --test-dir build/${{ matrix.preset }}/cpp/tests --output-on-failure --timeout 120 --fail-if-no-tests -j$(nproc)
+                ./1_idf_clean.sh || (echo '❌ IDF clean failed' && exit 1)
+                ./2_idf_build.sh || (echo '❌ IDF build failed' && exit 1)
+              else
+                echo '🚧 Linux Setup'
+                bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
+
+                cd /workspace/robotick-core-workloads
+                bash cpp/tests/install_deps.sh
+                
+                cmake --preset ${{ matrix.preset }}
+                cmake --build --preset ${{ matrix.preset }} -j$(nproc)
+
+                if [ '${{ matrix.preset }}' == 'robotick-core-workloads-tests-linux-debug' ]; then
+                  ctest --test-dir build/${{ matrix.preset }}/cpp/tests --output-on-failure --timeout 120 --fail-if-no-tests -j$(nproc)
+                fi
               fi
             "

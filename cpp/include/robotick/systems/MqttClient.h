@@ -3,6 +3,8 @@
 
 #pragma once
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/framework/containers/HeapVector.h"
 #include "robotick/framework/strings/FixedString.h"
 #include "robotick/framework/utility/Function.h"
@@ -64,3 +66,5 @@ namespace robotick
 	};
 
 } // namespace robotick
+
+#endif // desktop/linux
