@@ -5,11 +5,12 @@
 
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/api.h"
-#include <SDL2/SDL.h>
-#include <cstring>
-
 #include "robotick/framework/concurrency/Sync.h"
 #include "robotick/framework/containers/HeapVector.h"
+
+#include <SDL2/SDL.h>
+#include <cstdint>
+#include <cstring>
 
 namespace robotick
 {
@@ -27,6 +28,7 @@ namespace robotick
 
 		HeapVector<float> stereo_scratch;
 		HeapVector<float> mono_scratch;
+		uint32_t max_queued_bytes = 0;
 
 		void cleanup()
 		{
@@ -111,6 +113,18 @@ namespace robotick
 
 			SDL_PauseAudioDevice(input_device, 0);
 
+			const double queue_seconds = (obtained_output_spec.freq > 0) ? 1.5 : 0.0;
+			const double bytes_per_second = static_cast<double>(obtained_output_spec.freq * obtained_output_spec.channels * sizeof(float));
+			const double max_bytes = queue_seconds * bytes_per_second;
+			if (max_bytes > 0.0 && max_bytes < static_cast<double>(UINT32_MAX))
+			{
+				max_queued_bytes = static_cast<uint32_t>(max_bytes);
+			}
+			else
+			{
+				max_queued_bytes = 0;
+			}
+
 			return true;
 		}
 
@@ -120,12 +134,42 @@ namespace robotick
 		uint8_t input_channels() const { return obtained_input_spec.channels != 0 ? obtained_input_spec.channels : 1; }
 
 		// Queue already-interleaved stereo frames (frames == number of LR pairs)
+		bool queue_audio_data(const void* data, uint32_t bytes)
+		{
+			if (output_device == 0 || data == nullptr || bytes == 0)
+				return false;
+
+			const uint32_t queued_bytes = SDL_GetQueuedAudioSize(output_device);
+			if (max_queued_bytes != 0 && queued_bytes + bytes > max_queued_bytes)
+			{
+				const float queued_ms = bytes_to_ms(queued_bytes);
+				const float drop_ms = bytes_to_ms(bytes);
+				ROBOTICK_WARNING("Audio queue overloaded (%.0fms queued); dropping %.0fms of audio", queued_ms, drop_ms);
+				return false;
+			}
+
+			if (SDL_QueueAudio(output_device, data, bytes) < 0)
+			{
+				ROBOTICK_WARNING("SDL_QueueAudio failed: %s", SDL_GetError());
+				SDL_ClearError();
+				return false;
+			}
+			return true;
+		}
+
+		float bytes_to_ms(uint32_t bytes) const
+		{
+			if (obtained_output_spec.freq == 0 || obtained_output_spec.channels == 0)
+				return 0.0f;
+
+			const float frame_bytes = static_cast<float>(obtained_output_spec.channels * sizeof(float));
+			return (bytes / frame_bytes) / static_cast<float>(obtained_output_spec.freq) * 1000.0f;
+		}
+
 		void write_interleaved_stereo(const float* interleaved_lr, size_t frames)
 		{
-			if (output_device == 0 || interleaved_lr == nullptr || frames == 0)
-				return;
-			const size_t bytes = frames * obtained_output_spec.channels * sizeof(float);
-			SDL_QueueAudio(output_device, interleaved_lr, bytes);
+			const uint32_t bytes = static_cast<uint32_t>(frames * obtained_output_spec.channels * sizeof(float));
+			queue_audio_data(interleaved_lr, bytes);
 		}
 
 		// Queue mono to both channels (duplicates to L+R if output is stereo)
@@ -136,7 +180,8 @@ namespace robotick
 
 			if (obtained_output_spec.channels == 1)
 			{
-				SDL_QueueAudio(output_device, mono, frames * sizeof(float));
+				const uint32_t bytes = static_cast<uint32_t>(frames * sizeof(float));
+				queue_audio_data(mono, bytes);
 				return;
 			}
 
@@ -152,7 +197,9 @@ namespace robotick
 					scratch[2 * i + 0] = v;
 					scratch[2 * i + 1] = v;
 				}
-				SDL_QueueAudio(output_device, scratch, chunk * 2 * sizeof(float));
+				const uint32_t bytes = static_cast<uint32_t>(chunk * 2 * sizeof(float));
+				if (!queue_audio_data(scratch, bytes))
+					return;
 				mono += chunk;
 				remaining -= chunk;
 			}
