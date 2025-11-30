@@ -27,6 +27,12 @@ namespace robotick
 		Error,
 	};
 
+	struct AudioReadResult
+	{
+		AudioQueueResult status = AudioQueueResult::Error;
+		size_t samples_read = 0;
+	};
+
 	/**
 	 * @brief Singleton audio system wrapper for SDL2
 	 *
@@ -62,7 +68,7 @@ namespace robotick
 
 		// --- Input ---
 		// Read mono float32 samples from the microphone.
-		static size_t read(float* buffer, size_t max_count);
+		static AudioReadResult read(float* buffer, size_t max_count);
 
 		// Shutdown audio devices and release SDL resources.
 		static void shutdown();

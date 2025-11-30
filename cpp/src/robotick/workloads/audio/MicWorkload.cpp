@@ -23,6 +23,8 @@ namespace robotick
 	struct MicOutputs
 	{
 		AudioFrame mono; // most recent captured block (mono, float32)
+		AudioQueueResult last_read_status = AudioQueueResult::Success;
+		uint32_t dropped_reads = 0;
 	};
 
 	struct MicWorkload
@@ -45,8 +47,25 @@ namespace robotick
 			outputs.mono.timestamp = ns_to_sec * (double)tick_info.time_now_ns;
 
 			// Read up to the buffer capacity from the mic.
-			const size_t num_samples_read = AudioSystem::read(outputs.mono.samples.data(), outputs.mono.samples.capacity());
-			outputs.mono.samples.set_size(num_samples_read);
+			const AudioReadResult read_result = AudioSystem::read(outputs.mono.samples.data(), outputs.mono.samples.capacity());
+			outputs.last_read_status = read_result.status;
+			outputs.mono.samples.set_size(read_result.samples_read);
+
+			if (read_result.status == AudioQueueResult::Dropped)
+			{
+				// Queue empty; surface telemetry and keep output empty for this tick
+				outputs.dropped_reads++;
+				return;
+			}
+			if (read_result.status == AudioQueueResult::Error)
+			{
+				ROBOTICK_WARNING("MicWorkload failed to read from AudioSystem input");
+				outputs.dropped_reads++;
+				outputs.mono.samples.set_size(0);
+				return;
+			}
+
+			const size_t num_samples_read = read_result.samples_read;
 
 			const float gain_db = config.amplitude_gain_db;
 			if (fabsf(gain_db) > 1e-6f)

@@ -349,10 +349,11 @@ namespace robotick
 			return AudioQueueResult::Success;
 		}
 
-		size_t read(float* buffer, size_t max_count)
+		AudioReadResult read(float* buffer, size_t max_count)
 		{
+			AudioReadResult result;
 			if (input_device == 0 || buffer == nullptr || max_count == 0)
-				return 0;
+				return result;
 
 			const uint32_t requested_bytes = static_cast<uint32_t>(max_count * sizeof(float));
 			const uint32_t dequeued_bytes = SDL_DequeueAudio(input_device, buffer, requested_bytes);
@@ -364,8 +365,13 @@ namespace robotick
 				{
 					ROBOTICK_WARNING("AudioSystem::read - SDL_DequeueAudio returned 0 bytes: %s", err);
 					SDL_ClearError();
+					result.status = AudioQueueResult::Error;
 				}
-				return 0;
+				else
+				{
+					result.status = AudioQueueResult::Dropped;
+				}
+				return result;
 			}
 
 			if ((dequeued_bytes % sizeof(float)) != 0)
@@ -373,7 +379,9 @@ namespace robotick
 				ROBOTICK_WARNING("AudioSystem::read received a partial sample block (%u bytes)", dequeued_bytes);
 			}
 
-			return dequeued_bytes / sizeof(float);
+			result.status = AudioQueueResult::Success;
+			result.samples_read = dequeued_bytes / sizeof(float);
+			return result;
 		}
 	};
 
@@ -428,7 +436,7 @@ namespace robotick
 		return g_audio_impl.write_mono_to_channel(channel, mono, frames);
 	}
 
-	size_t AudioSystem::read(float* buffer, size_t max_count)
+	AudioReadResult AudioSystem::read(float* buffer, size_t max_count)
 	{
 		return g_audio_impl.read(buffer, max_count);
 	}
@@ -523,9 +531,9 @@ namespace robotick
 	{
 		return AudioQueueResult::Error;
 	}
-	size_t AudioSystem::read(float*, size_t)
+	AudioReadResult AudioSystem::read(float*, size_t)
 	{
-		return 0;
+		return {};
 	}
 	void AudioSystem::set_backpressure_strategy(AudioBackpressureStrategy)
 	{
