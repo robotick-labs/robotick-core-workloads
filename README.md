@@ -108,6 +108,21 @@ Built to be tested:
 - Consistent simulated timing for verification
 - Easy integration with CI
 
+### ⚠️ Error Reporting + Metrics
+
+Workloads should always pair log messages with a metric/output so operators (Hub/CLI) can see the same fault the log reports. The recommended pattern (also shown in `TemplateWorkload.cpp`) is:
+
+```cpp
+if (!sensor_ok)
+{
+    ROBOTICK_WARNING("sensor '%s' below threshold (%d < %d)", inputs.sensor_label.c_str(), inputs.sensor_value, config.threshold);
+    outputs.status = "sensor below threshold";
+    outputs.warning_count++; // telemetry counter surfaced to Hub
+}
+```
+
+Use `ROBOTICK_INFO/WARNING/ERROR` depending on severity, and update an output/telemetry counter each time to keep systems observable.
+
 ---
 
 ## 📁 Project Structure
