@@ -30,6 +30,7 @@ docker run --rm \
   bash -c '
 set -Eeuo pipefail
 export TERM=xterm-256color
+unset ROBOTICK_PLATFORM_ESP32_M5
 set -x
 
 cd /workspace/robotick-core-workloads/tools/esp32-compile-check
@@ -42,6 +43,29 @@ if ! command -v ninja >/dev/null 2>&1; then
 fi
 
 bash /workspace/robotick-core-workloads/tools/make_esp32_symlinks.sh
+
+COMPONENTS_DIR="/workspace/robotick-core-workloads/tools/esp32-compile-check/components"
+M5_UNIFIED_DIR="${COMPONENTS_DIR}/M5Unified"
+M5_GFX_DIR="${COMPONENTS_DIR}/M5GFX"
+BACKUP_SUFFIX=".disabled-backup"
+
+restore_m5_components() {
+  for dir in "M5Unified" "M5GFX"; do
+    local backup="${COMPONENTS_DIR}/.${dir}${BACKUP_SUFFIX}"
+    local target="${COMPONENTS_DIR}/${dir}"
+    if [ -d "${backup}" ] && [ ! -d "${target}" ]; then
+      mv "${backup}" "${target}"
+    fi
+  done
+}
+
+trap restore_m5_components EXIT
+
+for dir in "M5Unified" "M5GFX"; do
+  if [ -d "${COMPONENTS_DIR}/${dir}" ]; then
+    mv "${COMPONENTS_DIR}/${dir}" "${COMPONENTS_DIR}/.${dir}${BACKUP_SUFFIX}"
+  fi
+done
 
 ./1_idf_clean.sh
 ./2_idf_build.sh

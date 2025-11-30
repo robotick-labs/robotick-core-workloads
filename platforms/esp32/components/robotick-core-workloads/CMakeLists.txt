@@ -20,3 +20,7 @@ idf_component_register(
 )
 
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ROBOTICK_PLATFORM_ESP32)
+
+if(DEFINED ENV{ROBOTICK_PLATFORM_ESP32_M5} AND NOT "$ENV{ROBOTICK_PLATFORM_ESP32_M5}" STREQUAL "")
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ROBOTICK_PLATFORM_ESP32_M5)
+endif()
