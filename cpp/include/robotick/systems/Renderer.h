@@ -93,5 +93,9 @@ namespace robotick
 		float scale = 1.0f;
 		int offset_x = 0;
 		int offset_y = 0;
+
+		bool initialized = false;
+		struct RendererImpl;
+		RendererImpl* impl = nullptr;
 	};
 } // namespace robotick

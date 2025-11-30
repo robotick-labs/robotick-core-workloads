@@ -9,46 +9,61 @@
 
 namespace robotick
 {
-	static M5Canvas* canvas = nullptr;
-	static HeapVector<uint16_t>* rgb565_buffer = nullptr;
-	static size_t rgb565_capacity = 0;
-
-	static void ensure_rgb565_capacity(const size_t required_pixels)
+	struct Renderer::RendererImpl
 	{
-		if (rgb565_buffer && rgb565_capacity >= required_pixels)
-			return;
+		M5Canvas* canvas = nullptr;
+		HeapVector<uint16_t> rgb565_buffer;
+		size_t rgb565_capacity = 0;
 
-		if (rgb565_buffer)
+		~RendererImpl()
 		{
-			delete rgb565_buffer;
-			rgb565_buffer = nullptr;
-			rgb565_capacity = 0;
+			if (canvas)
+			{
+				delete canvas;
+				canvas = nullptr;
+			}
 		}
 
-		rgb565_buffer = new HeapVector<uint16_t>();
-		rgb565_buffer->initialize(required_pixels);
-		rgb565_capacity = required_pixels;
-	}
+		void ensure_capacity(size_t required_pixels)
+		{
+			if (rgb565_capacity >= required_pixels && rgb565_buffer.size() >= required_pixels)
+				return;
+			rgb565_buffer.deinitialize();
+			rgb565_buffer.initialize(required_pixels);
+			rgb565_capacity = required_pixels;
+		}
+	};
 
 	void Renderer::init(bool texture_only)
 	{
 		ROBOTICK_WARNING_IF(texture_only, "Renderer - texture_only not yet supported on esp32 platforms");
 
+		if (initialized)
+			return;
+
+		if (!impl)
+			impl = new RendererImpl();
+
 		M5.Lcd.setRotation(3);
 		physical_w = 320;
 		physical_h = 240;
-		canvas = new M5Canvas(&M5.Lcd);
-		canvas->createSprite(physical_w, physical_h);
+		impl->canvas = new M5Canvas(&M5.Lcd);
+		impl->canvas->createSprite(physical_w, physical_h);
+		initialized = true;
 	}
 
 	void Renderer::clear(const Color& color)
 	{
-		canvas->fillScreen(canvas->color565(color.r, color.g, color.b));
+		if (!impl || !impl->canvas)
+			return;
+		impl->canvas->fillScreen(impl->canvas->color565(color.r, color.g, color.b));
 	}
 
 	void Renderer::present()
 	{
-		canvas->pushSprite(0, 0);
+		if (!impl || !impl->canvas)
+			return;
+		impl->canvas->pushSprite(0, 0);
 	}
 
 	bool Renderer::capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size)
@@ -62,28 +77,26 @@ namespace robotick
 
 	void Renderer::cleanup()
 	{
-		if (canvas)
-		{
-			delete canvas;
-			canvas = nullptr;
-		}
+		if (!impl)
+			return;
 
-		if (rgb565_buffer)
-		{
-			delete rgb565_buffer;
-			rgb565_buffer = nullptr;
-			rgb565_capacity = 0;
-		}
+		delete impl;
+		impl = nullptr;
+		initialized = false;
 	}
 
 	void Renderer::draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color)
 	{
-		canvas->setColor(color.r, color.g, color.b);
-		canvas->fillEllipse(to_px_x(center.x), to_px_y(center.y), to_px_w(rx), to_px_h(ry));
+		if (!impl || !impl->canvas)
+			return;
+		impl->canvas->setColor(color.r, color.g, color.b);
+		impl->canvas->fillEllipse(to_px_x(center.x), to_px_y(center.y), to_px_w(rx), to_px_h(ry));
 	}
 
 	void Renderer::draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color)
 	{
+		if (!impl || !impl->canvas)
+			return;
 		int x0 = to_px_x(p0.x);
 		int y0 = to_px_y(p0.y);
 		int x1 = to_px_x(p1.x);
@@ -91,33 +104,33 @@ namespace robotick
 		int x2 = to_px_x(p2.x);
 		int y2 = to_px_y(p2.y);
 
-		uint32_t c = canvas->color565(color.r, color.g, color.b);
-		canvas->fillTriangle(x0, y0, x1, y1, x2, y2, c);
+		uint32_t c = impl->canvas->color565(color.r, color.g, color.b);
+		impl->canvas->fillTriangle(x0, y0, x1, y1, x2, y2, c);
 	}
 
 	void Renderer::draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color)
 	{
-		if (!text || !*text || !canvas)
+		if (!text || !*text || !impl || !impl->canvas)
 			return;
 
-		canvas->setTextSize(1);
-		canvas->setTextColor(canvas->color565(color.r, color.g, color.b));
-		canvas->setTextDatum(align == TextAlign::Center ? middle_center : top_left);
-		canvas->drawString(text, to_px_x(pos.x), to_px_y(pos.y));
+		impl->canvas->setTextSize(1);
+		impl->canvas->setTextColor(impl->canvas->color565(color.r, color.g, color.b));
+		impl->canvas->setTextDatum(align == TextAlign::Center ? middle_center : top_left);
+		impl->canvas->drawString(text, to_px_x(pos.x), to_px_y(pos.y));
 	}
 
 	// === New: raw RGBA blit, stretched to current viewport ===
 	void Renderer::draw_image_rgba8888_fit(const uint8_t* pixels, int w, int h)
 	{
-		if (!pixels || w <= 0 || h <= 0 || !canvas)
+		if (!pixels || w <= 0 || h <= 0 || !impl || !impl->canvas)
 			return;
 
 		// Convert RGBA8888 -> RGB565 and draw scaled to the viewport region
 		// NOTE: For now we simply scale to fill the logical viewport using M5 drawScaledSprite-like path.
 		// M5Canvas doesn't provide an RGBA path, so convert then push.
 		const size_t pixel_count = static_cast<size_t>(w) * static_cast<size_t>(h);
-		ensure_rgb565_capacity(pixel_count);
-		uint16_t* rgb565 = rgb565_buffer ? rgb565_buffer->data() : nullptr;
+		impl->ensure_capacity(pixel_count);
+		uint16_t* rgb565 = impl->rgb565_buffer.data();
 		if (!rgb565)
 			return;
 
@@ -147,7 +160,7 @@ namespace robotick
 		// so we manually scale via drawPixel sampling (nearest). Kept simple for now.
 		if (dst_w == w && dst_h == h)
 		{
-			canvas->pushImage(dst_x, dst_y, w, h, rgb565);
+			impl->canvas->pushImage(dst_x, dst_y, w, h, rgb565);
 		}
 		else
 		{
@@ -159,7 +172,7 @@ namespace robotick
 				for (int x = 0; x < dst_w; ++x)
 				{
 					const int sx = (x * w) / dst_w;
-					canvas->drawPixel(dst_x + x, dst_y + y, row[sx]);
+					impl->canvas->drawPixel(dst_x + x, dst_y + y, row[sx]);
 				}
 			}
 		}

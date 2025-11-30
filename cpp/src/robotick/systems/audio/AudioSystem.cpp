@@ -17,6 +17,7 @@ namespace robotick
 	{
 	  public:
 		bool initialized = false;
+		bool owns_sdl_audio = false;
 		SDL_AudioDeviceID output_device = 0;
 		SDL_AudioDeviceID input_device = 0;
 		SDL_AudioSpec obtained_output_spec{};
@@ -25,14 +26,61 @@ namespace robotick
 		HeapVector<float> stereo_scratch;
 		HeapVector<float> mono_scratch;
 
+		void cleanup()
+		{
+			if (output_device != 0)
+			{
+				SDL_CloseAudioDevice(output_device);
+				output_device = 0;
+			}
+			if (input_device != 0)
+			{
+				SDL_CloseAudioDevice(input_device);
+				input_device = 0;
+			}
+
+			::memset(&obtained_output_spec, 0, sizeof(obtained_output_spec));
+			::memset(&obtained_input_spec, 0, sizeof(obtained_input_spec));
+
+			if (owns_sdl_audio)
+			{
+				SDL_QuitSubSystem(SDL_INIT_AUDIO);
+				owns_sdl_audio = false;
+			}
+
+			initialized = false;
+		}
+
 		bool init()
 		{
 			if (initialized)
 				return true;
 
-			if (SDL_Init(SDL_INIT_AUDIO) < 0)
-				return false;
+			if ((SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO) == 0)
+			{
+				if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0)
+					return false;
+				owns_sdl_audio = true;
+			}
 
+			if (!open_devices())
+			{
+				cleanup();
+				return false;
+			}
+
+			const size_t stereo_samples = kScratchChunkFrames * 2;
+			if (stereo_scratch.size() == 0)
+				stereo_scratch.initialize(stereo_samples);
+			if (mono_scratch.size() == 0)
+				mono_scratch.initialize(kScratchChunkFrames);
+
+			initialized = true;
+			return true;
+		}
+
+		bool open_devices()
+		{
 			// --- Output device (speaker) ---
 			SDL_AudioSpec desired_output{};
 			desired_output.freq = 44100;
@@ -61,13 +109,6 @@ namespace robotick
 
 			SDL_PauseAudioDevice(input_device, 0);
 
-			const size_t stereo_samples = kScratchChunkFrames * 2;
-			if (stereo_scratch.size() == 0)
-				stereo_scratch.initialize(stereo_samples);
-			if (mono_scratch.size() == 0)
-				mono_scratch.initialize(kScratchChunkFrames);
-
-			initialized = true;
 			return true;
 		}
 
@@ -82,6 +123,7 @@ namespace robotick
 			const size_t bytes = frames * obtained_output_spec.channels * sizeof(float);
 			SDL_QueueAudio(output_device, interleaved_lr, bytes);
 		}
+
 
 		// Queue mono to both channels (duplicates to L+R if output is stereo)
 		void write_mono(const float* mono, size_t frames)
@@ -253,6 +295,12 @@ namespace robotick
 	size_t AudioSystem::read(float* buffer, size_t max_count)
 	{
 		return g_audio_impl.read(buffer, max_count);
+	}
+
+	void AudioSystem::shutdown()
+	{
+		LockGuard lock(g_audio_mutex);
+		g_audio_impl.cleanup();
 	}
 
 } // namespace robotick
