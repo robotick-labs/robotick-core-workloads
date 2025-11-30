@@ -8,6 +8,18 @@
 
 namespace robotick
 {
+	enum class AudioBackpressureStrategy
+	{
+		DropNewest,
+		DropOldest,
+	};
+
+	struct AudioBackpressureStats
+	{
+		uint32_t drop_events = 0;
+		float dropped_ms = 0.0f;
+	};
+
 	/**
 	 * @brief Singleton audio system wrapper for SDL2
 	 *
@@ -47,6 +59,12 @@ namespace robotick
 
 		// Shutdown audio devices and release SDL resources.
 		static void shutdown();
+
+		// Back-pressure controls
+		static void set_backpressure_strategy(AudioBackpressureStrategy strategy);
+		static AudioBackpressureStrategy get_backpressure_strategy();
+		static AudioBackpressureStats get_backpressure_stats();
+		static void reset_backpressure_stats();
 	};
 
 } // namespace robotick

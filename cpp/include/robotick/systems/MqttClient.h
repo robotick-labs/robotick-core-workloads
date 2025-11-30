@@ -65,7 +65,14 @@ namespace robotick
 
 			bool healthy() const { return consecutive_connect_failures < 3; }
 		};
+		struct BackpressureStats
+		{
+			uint32_t publish_drops = 0;
+			uint32_t subscribe_drops = 0;
+			uint64_t last_drop_timestamp_ms = 0;
+		};
 		const HealthMetrics& get_health_metrics() const;
+		const BackpressureStats& get_backpressure_stats() const;
 
 	  private:
 		// exact mqtt-c types
@@ -94,6 +101,8 @@ namespace robotick
 		uint64_t now_ms() const;
 		uint32_t compute_backoff_ms() const;
 		void schedule_backoff(uint64_t now);
+		bool ensure_connected_or_drop(bool publish);
+		void record_backpressure(bool publish);
 
 		Mutex operation_mutex;
 		bool tls_enabled = false;
@@ -104,6 +113,7 @@ namespace robotick
 		uint32_t base_backoff_ms = 500;
 		uint32_t max_backoff_ms = 30000;
 		HealthMetrics health_metrics;
+		BackpressureStats backpressure_stats;
 	};
 
 } // namespace robotick

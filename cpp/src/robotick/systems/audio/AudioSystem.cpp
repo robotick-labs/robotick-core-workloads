@@ -29,6 +29,8 @@ namespace robotick
 		HeapVector<float> stereo_scratch;
 		HeapVector<float> mono_scratch;
 		uint32_t max_queued_bytes = 0;
+		AudioBackpressureStrategy strategy = AudioBackpressureStrategy::DropNewest;
+		AudioBackpressureStats stats{};
 
 		void cleanup()
 		{
@@ -144,8 +146,25 @@ namespace robotick
 			{
 				const float queued_ms = bytes_to_ms(queued_bytes);
 				const float drop_ms = bytes_to_ms(bytes);
-				ROBOTICK_WARNING("Audio queue overloaded (%.0fms queued); dropping %.0fms of audio", queued_ms, drop_ms);
-				return false;
+				if (strategy == AudioBackpressureStrategy::DropOldest && queued_bytes > 0)
+				{
+					SDL_ClearQueuedAudio(output_device);
+					record_drop(queued_bytes);
+					const float cleared_ms = bytes_to_ms(queued_bytes);
+					ROBOTICK_WARNING("Audio queue overloaded (%.0fms queued); dropping %.0fms of queued audio to make room", queued_ms, cleared_ms);
+					const uint32_t now_queued = SDL_GetQueuedAudioSize(output_device);
+					if (max_queued_bytes != 0 && now_queued + bytes > max_queued_bytes)
+					{
+						record_drop(bytes);
+						return false;
+					}
+				}
+				else
+				{
+					record_drop(bytes);
+					ROBOTICK_WARNING("Audio queue overloaded (%.0fms queued); dropping %.0fms of audio", queued_ms, drop_ms);
+					return false;
+				}
 			}
 
 			if (SDL_QueueAudio(output_device, data, bytes) < 0)
@@ -164,6 +183,12 @@ namespace robotick
 
 			const float frame_bytes = static_cast<float>(obtained_output_spec.channels * sizeof(float));
 			return (bytes / frame_bytes) / static_cast<float>(obtained_output_spec.freq) * 1000.0f;
+		}
+
+		void record_drop(uint32_t bytes)
+		{
+			stats.drop_events++;
+			stats.dropped_ms += bytes_to_ms(bytes);
 		}
 
 		void write_interleaved_stereo(const float* interleaved_lr, size_t frames)
@@ -381,6 +406,30 @@ namespace robotick
 		g_audio_impl.cleanup();
 	}
 
+	void AudioSystem::set_backpressure_strategy(AudioBackpressureStrategy strategy)
+	{
+		LockGuard lock(g_audio_mutex);
+		g_audio_impl.strategy = strategy;
+	}
+
+	AudioBackpressureStrategy AudioSystem::get_backpressure_strategy()
+	{
+		LockGuard lock(g_audio_mutex);
+		return g_audio_impl.strategy;
+	}
+
+	AudioBackpressureStats AudioSystem::get_backpressure_stats()
+	{
+		LockGuard lock(g_audio_mutex);
+		return g_audio_impl.stats;
+	}
+
+	void AudioSystem::reset_backpressure_stats()
+	{
+		LockGuard lock(g_audio_mutex);
+		g_audio_impl.stats = {};
+	}
+
 } // namespace robotick
 
 #else
@@ -427,6 +476,20 @@ namespace robotick
 	size_t AudioSystem::read(float*, size_t)
 	{
 		return 0;
+	}
+	void AudioSystem::set_backpressure_strategy(AudioBackpressureStrategy)
+	{
+	}
+	AudioBackpressureStrategy AudioSystem::get_backpressure_strategy()
+	{
+		return AudioBackpressureStrategy::DropNewest;
+	}
+	AudioBackpressureStats AudioSystem::get_backpressure_stats()
+	{
+		return {};
+	}
+	void AudioSystem::reset_backpressure_stats()
+	{
 	}
 } // namespace robotick
 

@@ -200,12 +200,8 @@ namespace robotick
 
 	void MqttClient::subscribe(const char* topic, int qos)
 	{
-		if (!is_connected())
-		{
-			ROBOTICK_WARNING("MQTT: subscribe called while disconnected");
-			attempt_connect(false);
+		if (!ensure_connected_or_drop(false))
 			return;
-		}
 
 		LockGuard guard(operation_mutex);
 		const uint8_t subscribe_qos = current_subscribe_qos ? current_subscribe_qos : static_cast<uint8_t>(qos);
@@ -217,10 +213,8 @@ namespace robotick
 
 	void MqttClient::publish(const char* topic, const char* payload, bool /*retained*/)
 	{
-		if (!is_connected())
+		if (!ensure_connected_or_drop(true))
 		{
-			ROBOTICK_WARNING("MQTT: publish called while disconnected");
-			attempt_connect(false);
 			return;
 		}
 
@@ -415,6 +409,40 @@ namespace robotick
 	void MqttClient::schedule_backoff(uint64_t now)
 	{
 		next_connect_attempt_ms = now + compute_backoff_ms();
+	}
+
+	bool MqttClient::ensure_connected_or_drop(bool publish)
+	{
+		if (is_connected())
+			return true;
+
+		ROBOTICK_WARNING("MQTT: %s called while disconnected", publish ? "publish" : "subscribe");
+
+		if (!attempt_connect(false))
+		{
+			record_backpressure(publish);
+			return false;
+		}
+		return true;
+	}
+
+	void MqttClient::record_backpressure(bool publish)
+	{
+		const uint64_t now = now_ms();
+		backpressure_stats.last_drop_timestamp_ms = now;
+		if (publish)
+		{
+			backpressure_stats.publish_drops++;
+		}
+		else
+		{
+			backpressure_stats.subscribe_drops++;
+		}
+	}
+
+	const MqttClient::BackpressureStats& MqttClient::get_backpressure_stats() const
+	{
+		return backpressure_stats;
 	}
 
 } // namespace robotick
