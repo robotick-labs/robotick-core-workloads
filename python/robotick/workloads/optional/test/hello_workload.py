@@ -3,18 +3,15 @@ class HelloWorkload:
     @staticmethod
     def describe():
         return {
-            "config": {},
-            "inputs": {
-                "no_output": "int",
-                "force_error": "int"
-            },
+            "config": {"example_in": "double"},
+            "inputs": {"no_output": "int", "force_error": "int"},
             "outputs": {
                 "greeting": "FixedString64",
                 "val_double": "double",
-                "val_int": "int"
-            }
+                "val_int": "int",
+            },
         }
-        
+
     def __init__(self, config):
         print("[Python] HelloWorkload __init__")
 
@@ -27,8 +24,8 @@ class HelloWorkload:
         if input.get("no_output", 0):
             return
 
-        output['val_double'] = 1.23
-        output['val_int'] = 456
-        output['greeting'] = f"[Python] Hello! {1.0 / time_delta:.2f} Hz"
+        output["val_double"] = 1.23
+        output["val_int"] = 456
+        output["greeting"] = f"[Python] Hello! {1.0 / time_delta:.2f} Hz"
 
-        print(output['greeting'])
+        print(output["greeting"])

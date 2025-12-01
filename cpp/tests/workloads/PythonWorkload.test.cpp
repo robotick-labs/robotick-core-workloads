@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/Engine.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/utils/TypeId.h"
 #include "robotick/systems/PythonRuntime.h"
@@ -114,11 +115,11 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 	SECTION("Output reflects Python computation")
 	{
 		Model model;
-		const WorkloadSeed& root =
-			model.add("PythonWorkload", "py")
-				.set_tick_rate_hz(1.0f)
-				.set_config(
-					{{"script_name", "robotick.workloads.optional.test.hello_workload"}, {"class_name", "HelloWorkload"}, {"example_in", "21.0"}});
+		const WorkloadSeed& root = model.add("PythonWorkload", "py")
+									   .set_tick_rate_hz(1.0f)
+									   .set_config({{"script_name", "robotick.workloads.optional.test.hello_workload"},
+										   {"class_name", "HelloWorkload"},
+										   {"script.example_in", "21.0"}});
 		model.set_root_workload(root);
 
 		Engine engine;
