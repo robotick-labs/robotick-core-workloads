@@ -99,6 +99,35 @@ Use Python to:
 
 Zero-copy overlay support is in progress for high-efficiency interop.
 
+#### Configuring the embedded Python runtime
+
+`PythonWorkload` calls `ensure_python_runtime()` the first time it touches the interpreter. By default we import the standard `site` module and trust whatever user-level package directories exist on the host. If you need deterministic startup (skip `site`) or want to add workspace-specific module paths, configure the runtime up front:
+
+```cpp
+#include "robotick/systems/PythonRuntime.h"
+
+using namespace robotick;
+
+namespace
+{
+const char* const kPythonPaths[] = {"/home/robotick/workspaces/robotick-core-workloads/python"};
+}
+
+int main()
+{
+    PythonRuntimeConfig config;
+    config.import_site = false;      // skip site packages for MCU determinism
+    config.allow_user_site = false;  // ignore ~/.local/lib/python...
+    config.extra_module_paths = kPythonPaths;
+    config.extra_module_path_count = 1;
+    set_python_runtime_config(config);
+
+    // build/load Engine + workloads as usual
+}
+```
+
+Pointers supplied via `extra_module_paths` must outlive the process (static arrays work well). You can also provide `post_init_hook` to run custom CPython setup while the GIL is held.
+
 ### 🧪 Simulation-First Testing
 
 Built to be tested:

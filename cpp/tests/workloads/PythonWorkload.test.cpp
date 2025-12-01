@@ -4,6 +4,7 @@
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/utils/TypeId.h"
+#include "robotick/systems/PythonRuntime.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -23,6 +24,10 @@ using namespace robotick;
 
 namespace
 {
+	static FixedString1024 g_python_module_path;
+	static const char* const g_python_path_array[] = {g_python_module_path.c_str()};
+	static bool g_runtime_configured = false;
+
 	static void trim_to_parent(FixedString1024& path)
 	{
 		char* data = path.str();
@@ -67,9 +72,17 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 
 	// ensure we can access our hello_workload.py as a Python module:
 	{
-		const FixedString1024 python_path = compute_python_path();
-		setenv("PYTHONPATH", python_path.c_str(), 1);
-		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", python_path.c_str());
+		g_python_module_path = compute_python_path();
+		setenv("PYTHONPATH", g_python_module_path.c_str(), 1);
+		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", g_python_module_path.c_str());
+		if (!g_runtime_configured && !python_runtime_is_initialized())
+		{
+			PythonRuntimeConfig runtime_config;
+			runtime_config.extra_module_paths = g_python_path_array;
+			runtime_config.extra_module_path_count = 1;
+			set_python_runtime_config(runtime_config);
+			g_runtime_configured = true;
+		}
 	}
 
 	// ============================
