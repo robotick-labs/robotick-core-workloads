@@ -55,6 +55,7 @@ target_compile_options(robotick_core_workloads_tests PRIVATE -fexceptions)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_ENABLE_PYTHON=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_TEST_MODE=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE CATCH_CONFIG_ENABLE_EXCEPTIONS)
+target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_CORE_ROOT="${CMAKE_SOURCE_DIR}")
 
 target_link_libraries(robotick_core_workloads_tests PRIVATE whisper)
 
@@ -90,4 +91,3 @@ message(STATUS "Copying test data to:   ${TEST_DATA_DEST_DIR}")
 
 file(COPY ${TEST_DATA_SOURCE_DIR}
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-

@@ -56,6 +56,7 @@ namespace robotick
 		MqttOpResult publish(const char* topic, const char* payload, bool retained = true) override;
 		void set_tls_enabled(bool enabled) override;
 		void set_qos(uint8_t publish_qos, uint8_t subscribe_qos) override;
+		void set_socket_timeout_ms(uint32_t milliseconds);
 
 		// Optional: drive mqtt-c from your engine tick
 		void poll();	   // declare
@@ -103,7 +104,7 @@ namespace robotick
 
 		void initialize_buffers();
 		bool assign_topic_payload(const mqtt_response_publish& published, FixedString256& topic_out, FixedString1024& payload_out);
-		bool ensure_socket_timeout(int seconds);
+		bool ensure_socket_timeout(uint32_t milliseconds);
 		bool check_result(int rc, const char* tag);
 		bool attempt_connect(bool fatal);
 		void cleanup_socket();
@@ -118,6 +119,7 @@ namespace robotick
 		bool tls_enabled = false;
 		uint8_t current_publish_qos = 0;
 		uint8_t current_subscribe_qos = 0;
+		uint32_t socket_timeout_ms = 5000;
 		bool mqtt_initialized = false;
 		uint64_t next_connect_attempt_ms = 0;
 		uint32_t base_backoff_ms = 500;
@@ -129,7 +131,7 @@ namespace robotick
 	namespace mqtt_detail
 	{
 		bool parse_broker_uri(const char* uri, BrokerAddress& out);
-		bool set_socket_timeout(int sockfd, int seconds);
+		bool set_socket_timeout(int sockfd, uint32_t milliseconds);
 	} // namespace mqtt_detail
 
 } // namespace robotick

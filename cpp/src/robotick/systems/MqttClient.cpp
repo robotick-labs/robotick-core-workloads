@@ -79,13 +79,13 @@ namespace robotick
 			return !out.host.empty();
 		}
 
-		bool set_socket_timeout(int sockfd, int seconds)
+		bool set_socket_timeout(int sockfd, uint32_t milliseconds)
 		{
 			if (sockfd < 0)
 				return false;
 			timeval timeout{};
-			timeout.tv_sec = seconds;
-			timeout.tv_usec = 0;
+			timeout.tv_sec = static_cast<time_t>(milliseconds / 1000);
+			timeout.tv_usec = static_cast<suseconds_t>((milliseconds % 1000) * 1000);
 			if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
 				return false;
 			if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0)
@@ -96,8 +96,6 @@ namespace robotick
 
 	namespace
 	{
-		constexpr int kSocketTimeoutSec = 5;
-
 		bool copy_into(FixedString256& destination, const void* src, size_t size)
 		{
 			destination.assign(static_cast<const char*>(src), size);
@@ -189,6 +187,21 @@ namespace robotick
 		};
 		current_publish_qos = clamp(publish_qos);
 		current_subscribe_qos = clamp(subscribe_qos);
+	}
+
+	void MqttClient::set_socket_timeout_ms(uint32_t milliseconds)
+	{
+		if (milliseconds == 0)
+		{
+			milliseconds = 1;
+		}
+
+		LockGuard guard(operation_mutex);
+		socket_timeout_ms = milliseconds;
+		if (sockfd >= 0)
+		{
+			ensure_socket_timeout(socket_timeout_ms);
+		}
 	}
 
 	void MqttClient::set_callback(Function<void(const char*, const char*)> cb)
@@ -313,7 +326,7 @@ namespace robotick
 			return fail("connect() to broker failed");
 		}
 
-		if (!ensure_socket_timeout(kSocketTimeoutSec))
+		if (!ensure_socket_timeout(socket_timeout_ms))
 		{
 			return fail("failed to configure socket timeouts");
 		}
@@ -355,11 +368,11 @@ namespace robotick
 		return true;
 	}
 
-	bool MqttClient::ensure_socket_timeout(int seconds)
+	bool MqttClient::ensure_socket_timeout(uint32_t milliseconds)
 	{
 		if (sockfd < 0)
 			return false;
-		return mqtt_detail::set_socket_timeout(sockfd, seconds);
+		return mqtt_detail::set_socket_timeout(sockfd, milliseconds);
 	}
 
 	bool MqttClient::check_result(int rc, const char* tag)

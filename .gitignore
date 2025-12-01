@@ -2,3 +2,4 @@
 **/__pycache__/
 build-release
 cpp/tests/data/models/whisper/ggml-base.en.bin
+.mqttenv/
