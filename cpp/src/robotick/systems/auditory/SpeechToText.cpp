@@ -17,6 +17,8 @@ namespace robotick
 	ROBOTICK_REGISTER_STRUCT_BEGIN(SpeechToTextSettings)
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, FixedString256, model_path)
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, uint16_t, num_threads)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, min_voiced_duration_sec)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, silence_hangover_sec)
 	ROBOTICK_REGISTER_STRUCT_END(SpeechToTextSettings)
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(TranscribedWord)
