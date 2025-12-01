@@ -178,9 +178,9 @@ namespace robotick
 		message_callback = robotick::move(cb);
 	}
 
-	void MqttClient::connect()
+	bool MqttClient::connect()
 	{
-		attempt_connect(true);
+		return attempt_connect(true);
 	}
 
 	void MqttClient::disconnect()
@@ -270,10 +270,6 @@ namespace robotick
 			health_metrics.consecutive_connect_failures++;
 			schedule_backoff(now);
 			ROBOTICK_WARNING("MQTT: %s", reason);
-			if (fatal)
-			{
-				ROBOTICK_FATAL_EXIT("MQTT: %s", reason);
-			}
 			return false;
 		};
 

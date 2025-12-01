@@ -44,9 +44,19 @@ namespace robotick
 	// Workload
 	//----------------------------------------------------------------------
 
+	struct MqttClientOutputs
+	{
+		MqttClient::HealthMetrics health{};
+		MqttClient::BackpressureStats backpressure{};
+		MqttFieldSync::Metrics field_sync_metrics{};
+		MqttOpResult last_subscribe = MqttOpResult::Success;
+		bool connected = false;
+	};
+
 	struct MqttClientWorkload
 	{
 		MqttClientConfig config;
+		MqttClientOutputs outputs;
 
 		State<MqttClientWorkloadState> state;
 
@@ -76,7 +86,10 @@ namespace robotick
 			auto mqtt_client = std_approved::make_unique<MqttClient>(broker.c_str(), client_id.c_str());
 			mqtt_client->set_tls_enabled(config.enable_tls);
 			mqtt_client->set_qos(config.publish_qos, config.subscribe_qos);
-			mqtt_client->connect();
+			if (!mqtt_client->connect())
+			{
+				ROBOTICK_WARNING("MqttClientWorkload - initial MQTT connect failed (proceeding, will retry on tick).");
+			}
 
 			// 2. Create MqttFieldSync
 			FixedString64 root_ns(config.root_topic_namespace.c_str());
@@ -84,18 +97,35 @@ namespace robotick
 
 			state->mqtt = robotick::move(mqtt_client);
 			state->field_sync = robotick::move(field_sync);
+			outputs.connected = state->mqtt->is_connected();
+			outputs.health = state->mqtt->get_health_metrics();
+			outputs.backpressure = state->mqtt->get_backpressure_stats();
 		}
 
 		void start(float)
 		{
 			// Subscribe and initial sync
-			state->field_sync->subscribe_and_sync_startup();
+			if (state->field_sync)
+			{
+				const MqttOpResult sub_result = state->field_sync->subscribe_and_sync_startup();
+				outputs.last_subscribe = sub_result;
+				outputs.field_sync_metrics = state->field_sync->get_metrics();
+			}
 		}
 
 		void tick(const TickInfo&)
 		{
+			if (!state->field_sync || !state->mqtt)
+				return;
+
 			state->field_sync->apply_control_updates();
 			state->field_sync->publish_state_fields();
+			outputs.field_sync_metrics = state->field_sync->get_metrics();
+
+			state->mqtt->poll();
+			outputs.connected = state->mqtt->is_connected();
+			outputs.health = state->mqtt->get_health_metrics();
+			outputs.backpressure = state->mqtt->get_backpressure_stats();
 		}
 	};
 

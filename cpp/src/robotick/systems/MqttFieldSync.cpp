@@ -129,7 +129,7 @@ namespace robotick
 		}
 	}
 
-	void MqttFieldSync::subscribe_and_sync_startup()
+	MqttOpResult MqttFieldSync::subscribe_and_sync_startup()
 	{
 		ROBOTICK_ASSERT_MSG(mqtt_ptr != nullptr, "MqttFieldSync::subscribe_and_sync_startup - mqtt_ptr should have been set before calling");
 		ROBOTICK_ASSERT_MSG(engine_ptr != nullptr, "MqttFieldSync::subscribe_and_sync_startup - engine_ptr should have been set before calling");
@@ -138,14 +138,18 @@ namespace robotick
 		control_topic.format("%s/control/#", root.c_str());
 
 		const MqttOpResult sub_result = mqtt_ptr->subscribe(control_topic.c_str());
+		metrics.last_subscribe_result = sub_result;
+		metrics.last_control_result = sub_result;
 		if (sub_result != MqttOpResult::Success)
 		{
 			ROBOTICK_WARNING("MqttFieldSync - Failed to subscribe to control topics (%s).", mqtt_op_result_str(sub_result));
+			metrics.subscribe_failures++;
 		}
 
 		publish_fields(*engine_ptr, engine_ptr->get_workloads_buffer(), true);
 
 		updated_topics.clear();
+		return sub_result;
 	}
 
 	void MqttFieldSync::apply_control_updates()
@@ -278,8 +282,10 @@ namespace robotick
 					if (mqtt_ptr)
 					{
 						const MqttOpResult pub_res = mqtt_ptr->publish(state_topic.c_str(), payload.c_str(), true);
+						metrics.last_state_result = pub_res;
 						if (pub_res != MqttOpResult::Success)
 						{
+							metrics.state_publish_failures++;
 							ROBOTICK_WARNING(
 								"MqttFieldSync - Failed to publish state topic %s (%s)", state_topic.c_str(), mqtt_op_result_str(pub_res));
 						}
@@ -300,8 +306,10 @@ namespace robotick
 						if (mqtt_ptr)
 						{
 							const MqttOpResult control_res = mqtt_ptr->publish(control_topic.c_str(), payload.c_str(), true);
+							metrics.last_control_result = control_res;
 							if (control_res != MqttOpResult::Success)
 							{
+								metrics.control_publish_failures++;
 								ROBOTICK_WARNING("MqttFieldSync - Failed to publish control topic %s (%s)",
 									control_topic.c_str(),
 									mqtt_op_result_str(control_res));
@@ -333,6 +341,62 @@ namespace robotick
 		return nullptr;
 	}
 
+} // namespace robotick
+
+#else
+
+#include "robotick/systems/MqttFieldSync.h"
+
+namespace robotick
+{
+	MqttFieldSync::MqttFieldSync(const char*, PublisherFn in_publisher)
+		: publisher(robotick::move(in_publisher))
+		, mqtt_ptr(nullptr)
+		, engine_ptr(nullptr)
+	{
+	}
+
+	MqttFieldSync::MqttFieldSync(Engine&, const char*, IMqttClient&)
+		: publisher(nullptr)
+		, mqtt_ptr(nullptr)
+		, engine_ptr(nullptr)
+	{
+	}
+
+	MqttOpResult MqttFieldSync::subscribe_and_sync_startup()
+	{
+		return MqttOpResult::Success;
+	}
+
+	void MqttFieldSync::apply_control_updates()
+	{
+	}
+
+	void MqttFieldSync::publish_state_fields()
+	{
+	}
+
+	void MqttFieldSync::publish_fields(const Engine&, const WorkloadsBuffer&, bool)
+	{
+	}
+
+	void MqttFieldSync::queue_control_topic(const char*, const nlohmann::json&)
+	{
+	}
+
+	nlohmann::json MqttFieldSync::serialize(void*, TypeId)
+	{
+		return nullptr;
+	}
+
+	void MqttFieldSync::store_topic(TopicMap&, const char*, const nlohmann::json&)
+	{
+	}
+
+	bool MqttFieldSync::topic_starts_with(const char*, const char*) const
+	{
+		return false;
+	}
 } // namespace robotick
 
 #endif // ROBOTICK_PLATFORM_DESKTOP

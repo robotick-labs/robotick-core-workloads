@@ -32,7 +32,7 @@ namespace robotick
 	{
 	  public:
 		virtual ~IMqttClient() = default;
-		virtual void connect() = 0;
+		virtual bool connect() = 0;
 		virtual MqttOpResult subscribe(const char* topic, int qos = 1) = 0;
 		virtual MqttOpResult publish(const char* topic, const char* payload, bool retained = true) = 0;
 		virtual void set_callback(Function<void(const char*, const char*)> on_message) = 0;
@@ -51,7 +51,7 @@ namespace robotick
 		~MqttClient() override; // declare
 
 		void set_callback(Function<void(const char*, const char*)>) override;
-		void connect() override;
+		bool connect() override;
 		MqttOpResult subscribe(const char* topic, int qos = 1) override;
 		MqttOpResult publish(const char* topic, const char* payload, bool retained = true) override;
 		void set_tls_enabled(bool enabled) override;

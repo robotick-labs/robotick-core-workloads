@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 CANONICAL_SCRIPT = Path("tools/code_policy_check.py")
+EXCLUDED_DIRS = ["cpp/tests/external"]
 
 
 def _resolve_engine_root(cli_root: str | None) -> Path:
@@ -70,7 +71,9 @@ def main():
         )
 
     module = _load_canonical_module(script_path)
-    module.run_policy_check(args.source_root, header_mode="exact")
+    module.run_policy_check(
+        args.source_root, header_mode="exact", exclude_dirs=EXCLUDED_DIRS
+    )
 
 
 if __name__ == "__main__":
