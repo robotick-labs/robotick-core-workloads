@@ -81,6 +81,9 @@ namespace robotick
 		const HealthMetrics& get_health_metrics() const;
 		const BackpressureStats& get_backpressure_stats() const;
 
+		uint8_t get_publish_qos_for_test() const;
+		uint8_t get_subscribe_qos_for_test() const;
+
 	  private:
 		// exact mqtt-c types
 		struct mqtt_client mqtt;
@@ -122,6 +125,12 @@ namespace robotick
 		HealthMetrics health_metrics;
 		BackpressureStats backpressure_stats;
 	};
+
+	namespace mqtt_detail
+	{
+		bool parse_broker_uri(const char* uri, BrokerAddress& out);
+		bool set_socket_timeout(int sockfd, int seconds);
+	} // namespace mqtt_detail
 
 } // namespace robotick
 

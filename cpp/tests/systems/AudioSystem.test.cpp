@@ -3,6 +3,7 @@
 
 #include "robotick/systems/audio/AudioSystem.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 namespace robotick::tests
@@ -35,5 +36,27 @@ namespace robotick::tests
 		const AudioReadResult buffer_result = AudioSystem::read(&buffer, 1);
 		REQUIRE(buffer_result.status == AudioQueueResult::Error);
 		REQUIRE(buffer_result.samples_read == 0);
+	}
+
+	TEST_CASE("AudioSystem write reports error without initialization", "[audio]")
+	{
+		AudioSystem::shutdown();
+		float sample = 0.0f;
+		const auto result = AudioSystem::write(&sample, 1);
+		REQUIRE(result == AudioQueueResult::Error);
+	}
+
+	TEST_CASE("AudioSystem drop stats compute ms from bytes", "[audio]")
+	{
+		AudioSystem::reset_backpressure_stats();
+		AudioSystem::set_output_spec_for_test(48000, 2);
+
+		const uint32_t frames = 48000;
+		const uint32_t bytes = frames * 2 * sizeof(float);
+		AudioSystem::record_drop_for_test(bytes);
+
+		const auto stats = AudioSystem::get_backpressure_stats();
+		REQUIRE(stats.drop_events == 1);
+		CHECK(stats.dropped_ms == Catch::Approx(1000.0f).margin(0.1f));
 	}
 } // namespace robotick::tests

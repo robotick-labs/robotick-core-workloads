@@ -18,9 +18,8 @@
 
 namespace robotick
 {
-	namespace
+	namespace mqtt_detail
 	{
-		constexpr int kSocketTimeoutSec = 5;
 		bool starts_with(const char* text, const char* prefix)
 		{
 			if (!text || !prefix)
@@ -80,6 +79,25 @@ namespace robotick
 			return !out.host.empty();
 		}
 
+		bool set_socket_timeout(int sockfd, int seconds)
+		{
+			if (sockfd < 0)
+				return false;
+			timeval timeout{};
+			timeout.tv_sec = seconds;
+			timeout.tv_usec = 0;
+			if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
+				return false;
+			if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0)
+				return false;
+			return true;
+		}
+	} // namespace mqtt_detail
+
+	namespace
+	{
+		constexpr int kSocketTimeoutSec = 5;
+
 		bool copy_into(FixedString256& destination, const void* src, size_t size)
 		{
 			destination.assign(static_cast<const char*>(src), size);
@@ -112,7 +130,7 @@ namespace robotick
 		: broker_port(1883)
 	{
 		BrokerAddress parsed;
-		if (!parse_broker_uri(broker_uri, parsed))
+		if (!mqtt_detail::parse_broker_uri(broker_uri, parsed))
 		{
 			ROBOTICK_FATAL_EXIT("MQTT: Invalid broker URI '%s'", broker_uri ? broker_uri : "(null)");
 		}
@@ -341,14 +359,7 @@ namespace robotick
 	{
 		if (sockfd < 0)
 			return false;
-		timeval timeout{};
-		timeout.tv_sec = seconds;
-		timeout.tv_usec = 0;
-		if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0)
-			return false;
-		if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0)
-			return false;
-		return true;
+		return mqtt_detail::set_socket_timeout(sockfd, seconds);
 	}
 
 	bool MqttClient::check_result(int rc, const char* tag)
@@ -443,6 +454,16 @@ namespace robotick
 	const MqttClient::BackpressureStats& MqttClient::get_backpressure_stats() const
 	{
 		return backpressure_stats;
+	}
+
+	uint8_t MqttClient::get_publish_qos_for_test() const
+	{
+		return current_publish_qos;
+	}
+
+	uint8_t MqttClient::get_subscribe_qos_for_test() const
+	{
+		return current_subscribe_qos;
 	}
 
 } // namespace robotick
