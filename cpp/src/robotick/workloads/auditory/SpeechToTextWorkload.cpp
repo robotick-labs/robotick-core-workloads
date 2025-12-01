@@ -207,7 +207,7 @@ namespace robotick
 				lock.unlock();
 			}
 
-			state->is_bgthread_active.unset();
+			state->is_bgthread_active.clear();
 		}
 	}
 
@@ -226,8 +226,8 @@ namespace robotick
 			SpeechToText::initialize(config.settings, state->internal_state);
 			state->thread_should_exit = false;
 			state->thread_has_work = false;
-			state->is_bgthread_active.unset();
-			state->has_new_transcript.unset();
+			state->is_bgthread_active.clear();
+			state->has_new_transcript.clear();
 			state->is_buffer_swapped.set(false);
 
 			state->bg_thread = Thread(speech_to_text_thread, static_cast<void*>(&state.get()), "SpeechToTextThread");
@@ -306,7 +306,7 @@ namespace robotick
 			// Retrieve transcript if ready
 			if (state->has_new_transcript.is_set())
 			{
-				state->has_new_transcript.unset();
+				state->has_new_transcript.clear();
 
 				LockGuard lock(state->mutex);
 				outputs.words = state->last_result;
