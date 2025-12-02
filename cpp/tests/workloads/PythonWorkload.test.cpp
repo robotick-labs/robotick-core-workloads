@@ -47,11 +47,16 @@ namespace
 
 	static FixedString1024 compute_python_path()
 	{
+		// Derive the path to the test python package by walking up from this
+		// test source file (…/tests/workloads/) to the repository root and
+		// then appending the fixed \"python\" folder. This mirrors the repo
+		// layout so tests can set PYTHONPATH without hard‑coding absolute
+		// paths that would break on other machines or CI agents.
 		FixedString1024 result(__FILE__);
 		trim_to_parent(result); // remove filename
 		for (int i = 0; i < 3; ++i)
 			trim_to_parent(result);
-		result.append("/python");
+		result.append(\"/python\");
 		return result;
 	}
 } // namespace
