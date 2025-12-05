@@ -1,4 +1,4 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // HarmonicPitchWorkload.cpp  (thin wrapper around robotick::HarmonicPitch)
