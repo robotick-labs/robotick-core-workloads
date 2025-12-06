@@ -73,7 +73,7 @@ namespace robotick::test
 				{},
 				{}
 			};
-			static const WorkloadSeed* children[] = {&sender, &receiver};
+			static const WorkloadSeed* const children[] = {&sender, &receiver};
 			static const WorkloadSeed group_seed{
 				TypeId("SyncedGroupWorkload"),
 				StringView("group"),
@@ -82,9 +82,9 @@ namespace robotick::test
 				{},
 				{}
 			};
-			static const WorkloadSeed* workloads[] = {&sender, &receiver, &group_seed};
+			static const WorkloadSeed* const workloads[] = {&sender, &receiver, &group_seed};
 			static const DataConnectionSeed conn{"sender.outputs.output", "receiver.inputs.input"};
-			static const DataConnectionSeed* connections[] = {&conn};
+			static const DataConnectionSeed* const connections[] = {&conn};
 
 			model.use_workload_seeds(workloads);
 			model.use_data_connection_seeds(connections);

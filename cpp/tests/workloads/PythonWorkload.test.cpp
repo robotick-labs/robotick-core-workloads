@@ -111,7 +111,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 			python_config,
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&python_workload};
+		static const WorkloadSeed* const workloads[] = {&python_workload};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(python_workload);
 
@@ -144,7 +144,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 			python_config,
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&root};
+		static const WorkloadSeed* const workloads[] = {&root};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(root);
 
@@ -209,7 +209,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 			python_config,
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&root};
+		static const WorkloadSeed* const workloads[] = {&root};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(root);
 

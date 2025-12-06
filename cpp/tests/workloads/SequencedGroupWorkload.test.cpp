@@ -77,7 +77,7 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* children[] = {&child1, &child2};
+		static const WorkloadSeed* const children[] = {&child1, &child2};
 		static const WorkloadSeed group{
 			TypeId("SequencedGroupWorkload"),
 			StringView("group"),
@@ -86,7 +86,7 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&child1, &child2, &group};
+		static const WorkloadSeed* const workloads[] = {&child1, &child2, &group};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group);
 
@@ -117,7 +117,7 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* children[] = {&workload_seed};
+		static const WorkloadSeed* const children[] = {&workload_seed};
 		static const WorkloadSeed group_seed{
 			TypeId("SequencedGroupWorkload"),
 			StringView("group"),
@@ -126,7 +126,7 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&workload_seed, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&workload_seed, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
@@ -150,7 +150,7 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* children[] = {&child_seed};
+		static const WorkloadSeed* const children[] = {&child_seed};
 		static const WorkloadSeed group_seed{
 			TypeId("SequencedGroupWorkload"),
 			StringView("group"),
@@ -159,7 +159,7 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&child_seed, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&child_seed, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 

@@ -133,7 +133,7 @@ namespace robotick::test
 		SECTION("MqttFieldSync can publish state and control fields")
 		{
 			Model model;
-			static const WorkloadSeed* workloads[] = {&test_workload_w1_tick};
+			static const WorkloadSeed* const workloads[] = {&test_workload_w1_tick};
 			model.use_workload_seeds(workloads);
 			model.set_root_workload(test_workload_w1_tick);
 
@@ -177,7 +177,7 @@ namespace robotick::test
 		SECTION("MqttFieldSync metrics capture subscribe failures")
 		{
 			Model model;
-			static const WorkloadSeed* workloads[] = {&test_workload_w1_no_tick};
+			static const WorkloadSeed* const workloads[] = {&test_workload_w1_no_tick};
 			model.use_workload_seeds(workloads);
 			model.set_root_workload(test_workload_w1_no_tick);
 
@@ -199,7 +199,7 @@ namespace robotick::test
 		SECTION("MqttFieldSync metrics capture publish failures")
 		{
 			Model model;
-			static const WorkloadSeed* workloads[] = {&test_workload_w1_no_tick};
+			static const WorkloadSeed* const workloads[] = {&test_workload_w1_no_tick};
 			model.use_workload_seeds(workloads);
 			model.set_root_workload(test_workload_w1_no_tick);
 
@@ -239,7 +239,7 @@ namespace robotick::test
 		SECTION("MqttFieldSync can apply control updates")
 		{
 			Model model;
-			static const WorkloadSeed* workloads[] = {&test_workload_w2_tick};
+			static const WorkloadSeed* const workloads[] = {&test_workload_w2_tick};
 			model.use_workload_seeds(workloads);
 			model.set_root_workload(test_workload_w2_tick);
 

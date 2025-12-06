@@ -86,7 +86,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* group_children[] = {&a, &b};
+		static const WorkloadSeed* const group_children[] = {&a, &b};
 		static const WorkloadSeed group_seed{
 			TypeId("SyncedGroupWorkload"),
 			StringView("group"),
@@ -95,7 +95,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&a, &b, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&a, &b, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
@@ -150,7 +150,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* slow_children[] = {&s1, &s2};
+		static const WorkloadSeed* const slow_children[] = {&s1, &s2};
 		static const WorkloadSeed group_seed{
 			TypeId("SyncedGroupWorkload"),
 			StringView("group"),
@@ -159,7 +159,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&s1, &s2, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&s1, &s2, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
@@ -206,7 +206,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* child_list[] = {&h};
+		static const WorkloadSeed* const child_list[] = {&h};
 		static const WorkloadSeed group_seed{
 			TypeId("SyncedGroupWorkload"),
 			StringView("group"),
@@ -215,7 +215,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&h, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&h, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
@@ -264,7 +264,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* child_list[] = {&h};
+		static const WorkloadSeed* const child_list[] = {&h};
 		static const WorkloadSeed group_seed{
 			TypeId("SyncedGroupWorkload"),
 			StringView("group"),
@@ -273,7 +273,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&h, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&h, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
@@ -316,7 +316,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* child_list[] = {&child_seed};
+		static const WorkloadSeed* const child_list[] = {&child_seed};
 		static const WorkloadSeed group_seed{
 			TypeId("SyncedGroupWorkload"),
 			StringView("group"),
@@ -325,7 +325,7 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 			{},
 			{}
 		};
-		static const WorkloadSeed* workloads[] = {&child_seed, &group_seed};
+		static const WorkloadSeed* const workloads[] = {&child_seed, &group_seed};
 		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
