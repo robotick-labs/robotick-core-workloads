@@ -21,10 +21,11 @@ namespace robotick
 	ROBOTICK_REGISTER_STRUCT_END(AudioBackpressureStats)
 
 	static constexpr size_t kScratchChunkFrames = 2048;
+	static Mutex g_audio_mutex;
 
-	class AudioSystemImpl
-	{
-	  public:
+class AudioSystemImpl
+{
+  public:
 		bool initialized = false;
 		bool owns_sdl_audio = false;
 		SDL_AudioDeviceID output_device = 0;
@@ -105,6 +106,12 @@ namespace robotick
 			if (output_device == 0)
 				return false;
 
+			if (obtained_output_spec.channels != 1 && obtained_output_spec.channels != 2)
+			{
+				ROBOTICK_WARNING("AudioSystem::open_devices - unsupported output channel count (%u); only mono/stereo supported", static_cast<unsigned int>(obtained_output_spec.channels));
+				return false;
+			}
+
 			SDL_PauseAudioDevice(output_device, 0);
 
 			// --- Input device (microphone) ---
@@ -118,6 +125,12 @@ namespace robotick
 			input_device = SDL_OpenAudioDevice(nullptr, 1, &desired_input, &obtained_input_spec, SDL_AUDIO_ALLOW_ANY_CHANGE);
 			if (input_device == 0)
 				return false;
+
+			if (obtained_input_spec.channels != 1)
+			{
+				ROBOTICK_WARNING("AudioSystem::open_devices - unsupported input channel count (%u); only mono supported", static_cast<unsigned int>(obtained_input_spec.channels));
+				return false;
+			}
 
 			SDL_PauseAudioDevice(input_device, 0);
 
@@ -193,6 +206,7 @@ namespace robotick
 
 		void record_drop(uint32_t bytes)
 		{
+			LockGuard lock(g_audio_mutex);
 			stats.drop_events++;
 			stats.dropped_ms += bytes_to_ms(bytes);
 		}
@@ -369,7 +383,7 @@ namespace robotick
 				}
 				else
 				{
-					result.status = AudioQueueResult::Dropped;
+					result.status = AudioQueueResult::NoData;
 				}
 				return result;
 			}
@@ -386,7 +400,6 @@ namespace robotick
 	};
 
 	static AudioSystemImpl g_audio_impl;
-	static Mutex g_audio_mutex;
 
 	bool AudioSystem::init()
 	{
@@ -471,11 +484,10 @@ namespace robotick
 		g_audio_impl.stats = {};
 	}
 
-	void AudioSystem::record_drop_for_test(uint32_t bytes)
-	{
-		LockGuard lock(g_audio_mutex);
-		g_audio_impl.record_drop(bytes);
-	}
+void AudioSystem::record_drop_for_test(uint32_t bytes)
+{
+	g_audio_impl.record_drop(bytes);
+}
 
 	void AudioSystem::set_output_spec_for_test(uint32_t sample_rate, uint8_t channels)
 	{

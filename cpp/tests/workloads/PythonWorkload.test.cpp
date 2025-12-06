@@ -26,7 +26,7 @@ using namespace robotick;
 namespace
 {
 	static FixedString1024 g_python_module_path;
-	static const char* const g_python_path_array[] = {g_python_module_path.c_str()};
+	static const char* g_python_path_array[1] = {nullptr};
 	static bool g_runtime_configured = false;
 
 	static void trim_to_parent(FixedString1024& path)
@@ -49,14 +49,14 @@ namespace
 	{
 		// Derive the path to the test python package by walking up from this
 		// test source file (…/tests/workloads/) to the repository root and
-		// then appending the fixed \"python\" folder. This mirrors the repo
+		// then appending the fixed "python" folder. This mirrors the repo
 		// layout so tests can set PYTHONPATH without hard‑coding absolute
 		// paths that would break on other machines or CI agents.
 		FixedString1024 result(__FILE__);
 		trim_to_parent(result); // remove filename
 		for (int i = 0; i < 3; ++i)
 			trim_to_parent(result);
-		result.append(\"/python\");
+		result.append("/python");
 		return result;
 	}
 } // namespace
@@ -79,6 +79,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 	// ensure we can access our hello_workload.py as a Python module:
 	{
 		g_python_module_path = compute_python_path();
+		g_python_path_array[0] = g_python_module_path.c_str();
 		setenv("PYTHONPATH", g_python_module_path.c_str(), 1);
 		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", g_python_module_path.c_str());
 		if (!g_runtime_configured && !python_runtime_is_initialized())

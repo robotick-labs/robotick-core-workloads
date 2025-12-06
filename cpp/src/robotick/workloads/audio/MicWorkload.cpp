@@ -49,6 +49,8 @@ namespace robotick
 				return "Success";
 			case AudioQueueResult::Dropped:
 				return "Dropped";
+			case AudioQueueResult::NoData:
+				return "NoData";
 			case AudioQueueResult::Error:
 				return "Error";
 			default:
@@ -68,9 +70,15 @@ namespace robotick
 			outputs.last_read_status = describe_queue_result(read_result.status);
 			outputs.mono.samples.set_size(read_result.samples_read);
 
-			if (read_result.status == AudioQueueResult::Dropped)
+			if (read_result.status == AudioQueueResult::NoData)
 			{
 				// Queue empty; surface telemetry and keep output empty for this tick
+				outputs.dropped_reads++;
+				return;
+			}
+			if (read_result.status == AudioQueueResult::Dropped)
+			{
+				// Backpressure or drop; treat as a failed read as well
 				outputs.dropped_reads++;
 				return;
 			}

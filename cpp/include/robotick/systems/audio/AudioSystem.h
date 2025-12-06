@@ -24,6 +24,7 @@ namespace robotick
 	{
 		Success,
 		Dropped,
+		NoData,
 		Error,
 	};
 
