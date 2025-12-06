@@ -86,10 +86,10 @@ jobs:
                 echo '🚧 ESP32-S3 Setup (${{ matrix.platform }})'
                 if [ '${{ matrix.enable_m5 }}' == 'ON' ]; then
                   export ROBOTICK_PLATFORM_ESP32S3_M5=1
-                  export IDF_EXTRA_CMAKE_ARGS='-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=ON'
+                  export IDF_EXTRA_CMAKE_ARGS=\"-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=ON\"
                 else
                   unset ROBOTICK_PLATFORM_ESP32S3_M5
-                  export IDF_EXTRA_CMAKE_ARGS='-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=OFF'
+                  export IDF_EXTRA_CMAKE_ARGS=\"-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=OFF\"
                 fi
                 cd /workspace/robotick-core-workloads/tools/esp32-compile-check
 

@@ -16,12 +16,30 @@
 #else
 namespace nlohmann
 {
-	class json;
+	class json
+	{
+	  public:
+		json() = default;
+	};
 }
 #endif
 
 namespace robotick
 {
+#if !(defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX))
+	enum class MqttOpResult
+	{
+		Success,
+		Dropped,
+		Error,
+	};
+
+	class IMqttClient
+	{
+	  public:
+		virtual ~IMqttClient() = default;
+	};
+#endif
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 	class MqttFieldSync
 	{

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-
 #include "robotick/boards/m5/BoardSupport.h"
+#include "robotick/framework/WorkloadInstanceInfo.h"
 
 #if defined(ROBOTICK_PLATFORM_ESP32S3) && defined(ROBOTICK_PLATFORM_ESP32S3_M5)
 #include <M5Unified.h>

@@ -386,7 +386,7 @@ namespace robotick
 
 	nlohmann::json MqttFieldSync::serialize(void*, TypeId)
 	{
-		return nullptr;
+		return nlohmann::json();
 	}
 
 	void MqttFieldSync::store_topic(TopicMap&, const char*, const nlohmann::json&)

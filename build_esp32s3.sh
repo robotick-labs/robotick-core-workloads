@@ -28,10 +28,10 @@ docker run --rm \
   -w /workspace/robotick-core-workloads \
   "${IMAGE}" \
 bash -c '
-set -Eeuo pipefail
-export TERM=xterm-256color
-unset ROBOTICK_PLATFORM_ESP32S3_M5
-export IDF_EXTRA_CMAKE_ARGS='-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=OFF'
+              set -Eeuo pipefail
+              export TERM=xterm-256color
+              unset ROBOTICK_PLATFORM_ESP32S3_M5
+              export IDF_EXTRA_CMAKE_ARGS="-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=OFF"
 set -x
 
 cd /workspace/robotick-core-workloads/tools/esp32-compile-check
