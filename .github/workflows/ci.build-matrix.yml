@@ -83,7 +83,7 @@ jobs:
               set -x
 
               if [[ '${{ matrix.platform }}' == esp32* ]]; then
-                echo '🚧 ESP32-S3 Setup (${{ matrix.platform }})'
+                echo '[ESP32-S3 Setup] ${{ matrix.platform }}'
                 if [ '${{ matrix.enable_m5 }}' == 'ON' ]; then
                   export ROBOTICK_PLATFORM_ESP32S3_M5=1
                   export IDF_EXTRA_CMAKE_ARGS=\"-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=ON\"
@@ -102,10 +102,10 @@ jobs:
 
                 bash /workspace/robotick-core-workloads/tools/make_esp32_symlinks.sh
 
-                ./1_idf_clean.sh || (echo '❌ IDF clean failed' && exit 1)
-                ./2_idf_build.sh || (echo '❌ IDF build failed' && exit 1)
+                ./1_idf_clean.sh || (echo '[ERROR] IDF clean failed' && exit 1)
+                ./2_idf_build.sh || (echo '[ERROR] IDF build failed' && exit 1)
               else
-                echo '🚧 Linux Setup'
+                echo '[Linux Setup]'
                 bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
 
                 cd /workspace/robotick-core-workloads
