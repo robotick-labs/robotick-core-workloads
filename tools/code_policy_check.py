@@ -15,12 +15,13 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 CANONICAL_SCRIPT = Path("tools/code_policy_check.py")
 EXCLUDED_DIRS = ["cpp/tests/external"]
 
 
-def _resolve_engine_root(cli_root: str | None) -> Path:
+def _resolve_engine_root(cli_root: Optional[str]) -> Path:
     if cli_root:
         return Path(cli_root).resolve()
 

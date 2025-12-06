@@ -9,12 +9,19 @@ endif()
 
 set(main_priv_requires robotick-engine robotick-core-workloads)
 
+set(m5_enabled FALSE)
 if(DEFINED ENV{ROBOTICK_PLATFORM_ESP32S3_M5} AND NOT "$ENV{ROBOTICK_PLATFORM_ESP32S3_M5}" STREQUAL "")
-    list(APPEND main_priv_requires M5Unified)
+    set(m5_enabled TRUE)
+endif()
+if(DEFINED ROBOTICK_PLATFORM_ESP32S3_M5 AND ROBOTICK_PLATFORM_ESP32S3_M5)
+    set(m5_enabled TRUE)
 endif()
 
-if(DEFINED ROBOTICK_PLATFORM_ESP32S3_M5 AND ROBOTICK_PLATFORM_ESP32S3_M5)
-    list(APPEND main_priv_requires M5Unified)
+if(m5_enabled)
+    list(FIND main_priv_requires "M5Unified" m5_idx)
+    if(m5_idx EQUAL -1)
+        list(APPEND main_priv_requires M5Unified)
+    endif()
 endif()
 
 idf_component_register(
