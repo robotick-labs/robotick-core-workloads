@@ -70,9 +70,33 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		const int tick_count = 5;
 
 		Model model;
-		const WorkloadSeed& a = model.add("CountingWorkload", "a").set_tick_rate_hz(tick_rate_hz);
-		const WorkloadSeed& b = model.add("CountingWorkload", "b").set_tick_rate_hz(tick_rate_hz);
-		const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&a, &b}).set_tick_rate_hz(tick_rate_hz);
+		static const WorkloadSeed a{
+			TypeId("CountingWorkload"),
+			StringView("a"),
+			tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed b{
+			TypeId("CountingWorkload"),
+			StringView("b"),
+			tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* group_children[] = {&a, &b};
+		static const WorkloadSeed group_seed{
+			TypeId("SyncedGroupWorkload"),
+			StringView("group"),
+			tick_rate_hz,
+			group_children,
+			{},
+			{}
+		};
+		static const WorkloadSeed* workloads[] = {&a, &b, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;
@@ -110,9 +134,33 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		constexpr int num_ticks = 5;
 
 		Model model;
-		const WorkloadSeed& s1 = model.add("SlowWorkload", "s1").set_tick_rate_hz(tick_rate_hz);
-		const WorkloadSeed& s2 = model.add("SlowWorkload", "s2").set_tick_rate_hz(tick_rate_hz);
-		const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&s1, &s2}).set_tick_rate_hz(tick_rate_hz);
+		static const WorkloadSeed s1{
+			TypeId("SlowWorkload"),
+			StringView("s1"),
+			tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed s2{
+			TypeId("SlowWorkload"),
+			StringView("s2"),
+			tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* slow_children[] = {&s1, &s2};
+		static const WorkloadSeed group_seed{
+			TypeId("SyncedGroupWorkload"),
+			StringView("group"),
+			tick_rate_hz,
+			slow_children,
+			{},
+			{}
+		};
+		static const WorkloadSeed* workloads[] = {&s1, &s2, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;
@@ -150,8 +198,25 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		const float tick_rate_hz = 1.0f / tick_info.delta_time;
 
 		Model model;
-		const WorkloadSeed& h = model.add("CountingWorkload", "ticky").set_tick_rate_hz(tick_rate_hz);
-		const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&h}).set_tick_rate_hz(tick_rate_hz);
+		static const WorkloadSeed h{
+			TypeId("CountingWorkload"),
+			StringView("ticky"),
+			tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* child_list[] = {&h};
+		static const WorkloadSeed group_seed{
+			TypeId("SyncedGroupWorkload"),
+			StringView("group"),
+			tick_rate_hz,
+			child_list,
+			{},
+			{}
+		};
+		static const WorkloadSeed* workloads[] = {&h, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;
@@ -191,8 +256,25 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		const float child_tick_rate_hz = 1.0f / TICK_INFO_FIRST_100MS_10HZ.delta_time; // child wants to tick 10x slower than group - we should let it
 
 		Model model;
-		const WorkloadSeed& h = model.add("CountingWorkload", "slower").set_tick_rate_hz(child_tick_rate_hz);
-		const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&h}).set_tick_rate_hz(group_tick_rate_hz);
+		static const WorkloadSeed h{
+			TypeId("CountingWorkload"),
+			StringView("slower"),
+			child_tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* child_list[] = {&h};
+		static const WorkloadSeed group_seed{
+			TypeId("SyncedGroupWorkload"),
+			StringView("group"),
+			group_tick_rate_hz,
+			child_list,
+			{},
+			{}
+		};
+		static const WorkloadSeed* workloads[] = {&h, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;
@@ -226,8 +308,25 @@ TEST_CASE("Unit/Workloads/SyncedGroupWorkload")
 		const float tick_rate_hz = 1.0f / tick_info.delta_time;
 
 		Model model;
-		const WorkloadSeed& child_seed = model.add("ThreadAwareWorkload", "threadedChild").set_tick_rate_hz(tick_rate_hz);
-		const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&child_seed}).set_tick_rate_hz(tick_rate_hz);
+		static const WorkloadSeed child_seed{
+			TypeId("ThreadAwareWorkload"),
+			StringView("threadedChild"),
+			tick_rate_hz,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* child_list[] = {&child_seed};
+		static const WorkloadSeed group_seed{
+			TypeId("SyncedGroupWorkload"),
+			StringView("group"),
+			tick_rate_hz,
+			child_list,
+			{},
+			{}
+		};
+		static const WorkloadSeed* workloads[] = {&child_seed, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;

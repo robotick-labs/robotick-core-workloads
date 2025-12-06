@@ -5,6 +5,7 @@
 #include "robotick/framework/concurrency/Atomic.h"
 #include "robotick/framework/concurrency/Thread.h"
 #include "robotick/framework/containers/FixedVector.h"
+#include "robotick/framework/model/DataConnectionSeed.h"
 #include "robotick/framework/time/Clock.h"
 
 #include <catch2/catch_all.hpp>
@@ -56,11 +57,38 @@ namespace robotick::test
 			Model model;
 			const float tick_rate = 100.0f;
 
-			const WorkloadSeed& sender = model.add("SenderWorkload", "sender").set_tick_rate_hz(tick_rate);
-			const WorkloadSeed& receiver = model.add("ReceiverWorkload", "receiver").set_tick_rate_hz(tick_rate);
-			const WorkloadSeed& group_seed = model.add("SyncedGroupWorkload", "group").set_children({&sender, &receiver}).set_tick_rate_hz(tick_rate);
+			static const WorkloadSeed sender{
+				TypeId("SenderWorkload"),
+				StringView("sender"),
+				tick_rate,
+				{},
+				{},
+				{}
+			};
+			static const WorkloadSeed receiver{
+				TypeId("ReceiverWorkload"),
+				StringView("receiver"),
+				tick_rate,
+				{},
+				{},
+				{}
+			};
+			static const WorkloadSeed* children[] = {&sender, &receiver};
+			static const WorkloadSeed group_seed{
+				TypeId("SyncedGroupWorkload"),
+				StringView("group"),
+				tick_rate,
+				children,
+				{},
+				{}
+			};
+			static const WorkloadSeed* workloads[] = {&sender, &receiver, &group_seed};
+			static const DataConnectionSeed conn{"sender.outputs.output", "receiver.inputs.input"};
+			static const DataConnectionSeed* connections[] = {&conn};
 
-			model.connect("sender.outputs.output", "receiver.inputs.input");
+			model.use_workload_seeds(workloads);
+			model.use_data_connection_seeds(connections);
+
 			model.set_telemetry_port(7999);
 			model.set_root_workload(group_seed);
 

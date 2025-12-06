@@ -98,19 +98,50 @@ namespace robotick::test
 		};
 	} // namespace
 
+	namespace
+	{
+		static const WorkloadSeed test_workload_w1_tick{
+			TypeId("TestWorkload"),
+			StringView("W1"),
+			1.0f,
+			{},
+			{},
+			{}
+		};
+
+		static const WorkloadSeed test_workload_w1_no_tick{
+			TypeId("TestWorkload"),
+			StringView("W1"),
+			0.0f,
+			{},
+			{},
+			{}
+		};
+
+		static const WorkloadSeed test_workload_w2_tick{
+			TypeId("TestWorkload"),
+			StringView("W2"),
+			1.0f,
+			{},
+			{},
+			{}
+		};
+	} // namespace
+
 	TEST_CASE("Unit/Framework/Data/MqttFieldSync")
 	{
 		SECTION("MqttFieldSync can publish state and control fields")
 		{
 			Model model;
-			const WorkloadSeed& test_workload_seed = model.add("TestWorkload", "W1").set_tick_rate_hz(1.0f);
-			model.set_root_workload(test_workload_seed);
+			static const WorkloadSeed* workloads[] = {&test_workload_w1_tick};
+			model.use_workload_seeds(workloads);
+			model.set_root_workload(test_workload_w1_tick);
 
 			Engine engine;
 			engine.load(model);
 
 			// initialize our input fields & blackboard-fields:
-			const auto& info = *engine.find_instance_info(test_workload_seed.unique_name);
+			const auto& info = *engine.find_instance_info(test_workload_w1_tick.unique_name);
 			auto* test_workload_ptr = static_cast<TestWorkload*>((void*)info.get_ptr(engine));
 			test_workload_ptr->inputs.value = 42;
 			test_workload_ptr->inputs.blackboard.set("flag", 2);
@@ -146,8 +177,9 @@ namespace robotick::test
 		SECTION("MqttFieldSync metrics capture subscribe failures")
 		{
 			Model model;
-			const WorkloadSeed& test_workload_seed = model.add("TestWorkload", "W1");
-			model.set_root_workload(test_workload_seed);
+			static const WorkloadSeed* workloads[] = {&test_workload_w1_no_tick};
+			model.use_workload_seeds(workloads);
+			model.set_root_workload(test_workload_w1_no_tick);
 
 			Engine engine;
 			engine.load(model);
@@ -167,8 +199,9 @@ namespace robotick::test
 		SECTION("MqttFieldSync metrics capture publish failures")
 		{
 			Model model;
-			const WorkloadSeed& test_workload_seed = model.add("TestWorkload", "W1");
-			model.set_root_workload(test_workload_seed);
+			static const WorkloadSeed* workloads[] = {&test_workload_w1_no_tick};
+			model.use_workload_seeds(workloads);
+			model.set_root_workload(test_workload_w1_no_tick);
 
 			Engine engine;
 			engine.load(model);
@@ -206,13 +239,14 @@ namespace robotick::test
 		SECTION("MqttFieldSync can apply control updates")
 		{
 			Model model;
-			const WorkloadSeed& test_workload_seed = model.add("TestWorkload", "W2").set_tick_rate_hz(1.0f);
-			model.set_root_workload(test_workload_seed);
+			static const WorkloadSeed* workloads[] = {&test_workload_w2_tick};
+			model.use_workload_seeds(workloads);
+			model.set_root_workload(test_workload_w2_tick);
 
 			Engine engine;
 			engine.load(model);
 
-			const auto& info = *engine.find_instance_info(test_workload_seed.unique_name);
+			const auto& info = *engine.find_instance_info(test_workload_w2_tick.unique_name);
 			auto* test_workload_ptr = static_cast<TestWorkload*>((void*)info.get_ptr(engine));
 
 			DummyMqttClient dummy_client;
