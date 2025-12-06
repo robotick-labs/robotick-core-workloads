@@ -1,0 +1,4 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/Image.cpp

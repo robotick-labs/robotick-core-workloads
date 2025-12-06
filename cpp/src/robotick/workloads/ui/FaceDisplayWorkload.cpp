@@ -1,7 +1,8 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
 
 namespace robotick
@@ -26,7 +27,7 @@ namespace robotick
 
 	struct FaceDisplayOutputs
 	{
-		FixedVector16k face_png_data;
+		ImagePng16k face_png_data;
 		// ^- size estimate, tune as needed
 	};
 
@@ -49,17 +50,21 @@ namespace robotick
 
 		void setup() { schedule_blink_pair(0.0f); }
 
+		void start(float)
+		{
+			auto& s = state.get();
+			if (s.has_init_renderer)
+				return;
+
+			s.renderer.set_texture_only_size(800, 480);
+			s.renderer.set_viewport(320, 240);
+			s.renderer.init(config.render_to_texture);
+			s.has_init_renderer = true;
+		}
+
 		void tick(const TickInfo& tick_info)
 		{
 			auto& s = state.get();
-
-			// Init renderer if needed
-			if (!s.has_init_renderer)
-			{
-				s.renderer.set_viewport(320, 240);
-				s.renderer.init(config.render_to_texture);
-				s.has_init_renderer = true;
-			}
 
 			// Update blink animations
 			const float time_now_sec = tick_info.time_now;
@@ -71,8 +76,15 @@ namespace robotick
 
 			if (config.render_to_texture)
 			{
-				const auto& png = s.renderer.capture_as_png();
-				outputs.face_png_data.set(png.data(), png.size());
+				size_t png_size = 0;
+				if (s.renderer.capture_as_png(outputs.face_png_data.data(), outputs.face_png_data.capacity(), png_size))
+				{
+					outputs.face_png_data.set_size(png_size);
+				}
+				else
+				{
+					outputs.face_png_data.set_size(0);
+				}
 			}
 			else
 			{

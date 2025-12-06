@@ -1,16 +1,16 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/auditory/SpeechToText.h"
+#include "robotick/framework/containers/HeapVector.h"
+#include "robotick/framework/concurrency/Thread.h"
 #include "robotick/systems/audio/WavFile.h"
 
 #include "whisper.h"
 
 #include <catch2/catch_all.hpp>
 #include <cmath>
-#include <filesystem>
-#include <fstream>
-#include <thread>
+#include <cstdio>
 
 namespace robotick::test
 {
@@ -19,90 +19,111 @@ namespace robotick::test
 	{
 		// Tiny WAV reader (16-bit PCM mono @ 16 kHz).
 		// - parses RIFF header and finds the "data" chunk.
-		static bool load_wav_s16_mono_16k(const char* path, std::vector<float>& out)
+		static bool load_wav_s16_mono_16k(const char* path, HeapVector<float>& out)
 		{
-			std::ifstream f(path, std::ios::binary);
+			FILE* f = ::fopen(path, "rb");
 			if (!f)
 			{
 				return false;
 			}
 
-			auto rd32 = [&](uint32_t& v)
-			{
-				f.read(reinterpret_cast<char*>(&v), 4);
-				return bool(f);
-			};
-			auto rd16 = [&](uint16_t& v)
-			{
-				f.read(reinterpret_cast<char*>(&v), 2);
-				return bool(f);
-			};
+			auto rd32 = [&](uint32_t& v) { return ::fread(&v, 1, 4, f) == 4; };
+			auto rd16 = [&](uint16_t& v) { return ::fread(&v, 1, 2, f) == 2; };
 
-			uint32_t riff, riff_size, wave;
+			uint32_t riff = 0, riff_size = 0, wave = 0;
 			if (!rd32(riff) || !rd32(riff_size) || !rd32(wave))
 			{
+				::fclose(f);
 				return false;
 			}
 			if (riff != 0x46464952 /*"RIFF"*/ || wave != 0x45564157 /*"WAVE"*/)
 			{
+				::fclose(f);
 				return false;
 			}
 
 			uint16_t audio_format = 0, num_channels = 0, bits_per_sample = 0;
 			uint32_t sample_rate = 0;
 			uint32_t data_size = 0;
-			std::streampos data_pos = -1;
+			long data_pos = -1;
 
-			while (f && data_pos < 0)
+			while (data_pos < 0 && !::feof(f))
 			{
 				uint32_t chunk_id = 0, chunk_sz = 0;
 				if (!rd32(chunk_id) || !rd32(chunk_sz))
 				{
+					::fclose(f);
 					return false;
 				}
-				const std::streampos next = f.tellg() + static_cast<std::streamoff>(chunk_sz);
 
 				if (chunk_id == 0x20746d66 /*"fmt "*/)
 				{
 					if (chunk_sz < 16)
+					{
+						::fclose(f);
 						return false;
+					}
 					if (!rd16(audio_format) || !rd16(num_channels) || !rd32(sample_rate))
+					{
+						::fclose(f);
 						return false;
+					}
 					uint32_t byte_rate = 0;
 					uint16_t block_align = 0;
 					if (!rd32(byte_rate) || !rd16(block_align) || !rd16(bits_per_sample))
+					{
+						::fclose(f);
 						return false;
-					f.seekg(next);
+					}
+					if (chunk_sz > 16 && ::fseek(f, static_cast<long>(chunk_sz - 16), SEEK_CUR) != 0)
+					{
+						::fclose(f);
+						return false;
+					}
 				}
 				else if (chunk_id == 0x61746164 /*"data"*/)
 				{
-					data_pos = f.tellg();
+					data_pos = ::ftell(f);
 					data_size = chunk_sz;
-					f.seekg(next); // leave loop afterward
+					if (::fseek(f, static_cast<long>(chunk_sz), SEEK_CUR) != 0)
+					{
+						::fclose(f);
+						return false;
+					}
 				}
 				else
 				{
-					f.seekg(next);
+					if (::fseek(f, static_cast<long>(chunk_sz), SEEK_CUR) != 0)
+					{
+						::fclose(f);
+						return false;
+					}
 				}
 			}
 
-			if (data_pos < 0)
-				return false;
-			if (audio_format != 1 /*PCM*/ || num_channels != 1 || bits_per_sample != 16 || sample_rate != 16000)
+			if (data_pos < 0 || audio_format != 1 || num_channels != 1 || bits_per_sample != 16 || sample_rate != 16000)
 			{
-				return false; // keep the test strict to match the CLI sample
+				::fclose(f);
+				return false;
 			}
 
-			// Read PCM16 payload
-			f.clear();
-			f.seekg(data_pos);
-			const size_t num_samples = data_size / 2;
-			std::vector<int16_t> pcm16(num_samples);
-			f.read(reinterpret_cast<char*>(pcm16.data()), data_size);
-			if (!f)
+			if (::fseek(f, data_pos, SEEK_SET) != 0)
+			{
+				::fclose(f);
 				return false;
+			}
 
-			out.resize(num_samples);
+			const size_t num_samples = data_size / 2;
+			HeapVector<int16_t> pcm16;
+			pcm16.initialize(num_samples);
+			if (::fread(pcm16.data(), sizeof(int16_t), num_samples, f) != num_samples)
+			{
+				::fclose(f);
+				return false;
+			}
+			::fclose(f);
+
+			out.initialize(num_samples);
 			for (size_t i = 0; i < num_samples; ++i)
 			{
 				out[i] = static_cast<float>(pcm16[i]) / 32768.0f;
@@ -150,12 +171,10 @@ namespace robotick::test
 
 		static constexpr size_t num_expected_words_jfk = sizeof(expected_words_jfk) / sizeof(expected_words_jfk[0]);
 
-		ROBOTICK_INFO("Current working dir: '%s'", std::filesystem::current_path().string().c_str());
-
 		SECTION("SpeechToText transcribes JFK WAV correctly")
 		{
 			// load our wav-file in required format
-			std::vector<float> pcmf32;
+			HeapVector<float> pcmf32;
 			REQUIRE(utils::load_wav_s16_mono_16k(wav_path_jfk, pcmf32));
 			REQUIRE(!pcmf32.empty());
 			REQUIRE(pcmf32.size() == 176000);
@@ -163,7 +182,7 @@ namespace robotick::test
 			// set up SpeechToText - loading model etc
 			SpeechToTextSettings settings;
 			settings.model_path = model_path;
-			settings.num_threads = std::thread::hardware_concurrency(); // allow use of all available threads to keep test fast
+			settings.num_threads = Thread::get_hardware_concurrency(); // allow use of all available threads to keep test fast
 
 			SpeechToTextInternalState state;
 

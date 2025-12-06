@@ -1,19 +1,16 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
+
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
+#include "robotick/framework/utility/Algorithm.h"
 
 #include <mujoco/mujoco.h>
 #include <yaml-cpp/yaml.h>
 
-#define _USE_MATH_DEFINES
-#include <cmath>
 #include <cstdio>
-#include <filesystem>
-#include <fstream>
-#include <string>
-#include <vector>
 
 namespace robotick
 {
@@ -128,7 +125,7 @@ namespace robotick
 
 		// --- helpers: field parsing ---
 
-		static MjEntityType parse_entity_type(const std::string& s)
+		static MjEntityType parse_entity_type(const StringView& s)
 		{
 			if (s == "joint")
 				return MjEntityType::Joint;
@@ -141,7 +138,7 @@ namespace robotick
 			return MjEntityType::Unknown;
 		}
 
-		static MjField parse_field(const std::string& s)
+		static MjField parse_field(const StringView& s)
 		{
 			if (s == "qpos")
 				return MjField::QPos;
@@ -175,27 +172,23 @@ namespace robotick
 			size_t index = 0;
 			for (const auto& item : yaml_node)
 			{
-				const std::string alias = item.first.as<std::string>();
+				const char* alias_scalar = item.first.Scalar().c_str();
 				const auto& val = item.second;
 
 				FieldDescriptor& fd = fields[index];
 				MuJoCoBinding& b = bindings[index];
 
-				b.alias = alias.c_str();
+				b.alias = alias_scalar;
 				b.blackboard_field = &fd;
 
 				fd.name = b.alias.c_str();
 
 				// Expect sequences like: ["joint","hinge_pitch","qpos_deg"]
-				ROBOTICK_ASSERT_MSG(val.IsSequence() && val.size() >= 3, "Malformed YAML for '%s' (expect [entity,name,field]).", alias.c_str());
+				ROBOTICK_ASSERT_MSG(val.IsSequence() && val.size() >= 3, "Malformed YAML for '%s' (expect [entity,name,field]).", b.alias.c_str());
 
-				const std::string ent = val[0].as<std::string>();
-				const std::string nam = val[1].as<std::string>();
-				const std::string fld = val[2].as<std::string>();
-
-				b.entity_type = parse_entity_type(ent);
-				b.name = nam.c_str();
-				b.field = parse_field(fld);
+				b.entity_type = parse_entity_type(StringView(val[0].Scalar().c_str()));
+				b.name = val[1].Scalar().c_str();
+				b.field = parse_field(StringView(val[2].Scalar().c_str()));
 
 				switch (b.field)
 				{
@@ -277,27 +270,37 @@ namespace robotick
 
 		void configure_from_config_file()
 		{
-			const char* path = config.workload_config_file_path.c_str();
+			const StringView path = config.workload_config_file_path.c_str();
 
-			std::ifstream fin(path);
-			if (!fin.is_open())
+			YAML::Node root;
+			try
 			{
-				auto cwd = std::filesystem::current_path().string();
-				ROBOTICK_FATAL_EXIT("Failed to open YAML config file: %s (cwd: %s)", path, cwd.c_str());
+				root = YAML::LoadFile(path.c_str());
 			}
-			YAML::Node root = YAML::Load(fin);
+			catch (const YAML::BadFile&)
+			{
+				ROBOTICK_FATAL_EXIT("Failed to open YAML config file: %s", path.c_str());
+			}
 			if (!root || !root.IsMap())
 			{
-				ROBOTICK_FATAL_EXIT("Invalid YAML root: %s", path);
+				ROBOTICK_FATAL_EXIT("Invalid YAML root: %s", path.c_str());
 			}
 
 			YAML::Node mujoco = root["mujoco"];
 			if (!mujoco || !mujoco.IsMap())
 			{
-				ROBOTICK_FATAL_EXIT("Missing 'mujoco' map in: %s", path);
+				ROBOTICK_FATAL_EXIT("Missing 'mujoco' map in: %s", path.c_str());
 			}
 
-			config.model_path = mujoco["model_path"].as<std::string>("").c_str();
+			const YAML::Node model_path_node = mujoco["model_path"];
+			if (model_path_node && model_path_node.IsScalar())
+			{
+				config.model_path = model_path_node.Scalar().c_str();
+			}
+			else
+			{
+				config.model_path.clear();
+			}
 			ROBOTICK_ASSERT_MSG(!config.model_path.empty(), "mujoco.model_path is required.");
 
 			config.sim_tick_rate_hz = mujoco["sim_tick_rate_hz"].as<float>(-1.0f);
@@ -371,9 +374,6 @@ namespace robotick
 		}
 
 		// --- Blackboard <-> MuJoCo ---
-
-		static float rad_to_deg(float rad) { return rad * (180.0f / static_cast<float>(M_PI)); }
-		static float deg_to_rad(float deg) { return deg * (static_cast<float>(M_PI) / 180.0f); }
 
 		void assign_blackboard_from_mujoco(const MuJoCoBinding& b, Blackboard& bb)
 		{
@@ -560,7 +560,9 @@ namespace robotick
 
 			// hard-reset all controls this tick
 			if (m->nu > 0)
-				std::fill(d->ctrl, d->ctrl + m->nu, 0.0);
+			{
+				robotick::fill(d->ctrl, d->ctrl + m->nu, 0.0);
+			}
 
 			// Initialize blackboards from sim snapshots
 			initialize_blackboard_from_mujoco(state->output_bindings, outputs.mujoco);
@@ -570,9 +572,11 @@ namespace robotick
 		{
 			// Decide physics sub-stepping
 			float sim_rate = (config.sim_tick_rate_hz > 0.0f) ? config.sim_tick_rate_hz : tick_rate_hz;
-			state->sim_num_sub_ticks = static_cast<uint32_t>(std::round(sim_rate / tick_rate_hz));
+			state->sim_num_sub_ticks = static_cast<uint32_t>(roundf(sim_rate / tick_rate_hz));
 			if (state->sim_num_sub_ticks == 0)
+			{
 				state->sim_num_sub_ticks = 1;
+			}
 
 			// MuJoCo uses dt in the model; you can override it by scaling mujoco_model->opt.timestep if needed
 			const float final_sim_rate = tick_rate_hz * static_cast<float>(state->sim_num_sub_ticks);
@@ -612,3 +616,5 @@ namespace robotick
 	};
 
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

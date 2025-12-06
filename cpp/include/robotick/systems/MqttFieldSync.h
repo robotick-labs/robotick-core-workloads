@@ -1,36 +1,61 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#if defined(ROBOTICK_PLATFORM_DESKTOP)
-
 #include "robotick/framework/Engine.h"
+#include "robotick/framework/containers/Map.h"
 #include "robotick/framework/data/WorkloadsBuffer.h"
+#include "robotick/framework/strings/FixedString.h"
+#include "robotick/framework/utility/Function.h"
 #include "robotick/framework/utils/WorkloadFieldsIterator.h"
 #include "robotick/systems/MqttClient.h"
 
-#include <functional>
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 #include <nlohmann/json.hpp>
-#include <string>
-#include <unordered_map>
+#else
+namespace nlohmann
+{
+	class json
+	{
+	  public:
+		json() = default;
+	};
+}
+#endif
 
 namespace robotick
 {
+#if !(defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX))
+	enum class MqttOpResult
+	{
+		Success,
+		Dropped,
+		Error,
+	};
+
+	class IMqttClient
+	{
+	  public:
+		virtual ~IMqttClient() = default;
+	};
+#endif
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 	class MqttFieldSync
 	{
 	  public:
 		// For unit tests: only a publisher lambda
-		using PublisherFn = std::function<void(const std::string&, const std::string&, bool)>;
+		using PublisherFn = Function<void(const char*, const char*, bool)>;
+		using TopicMap = Map<FixedString256, nlohmann::json, 128>;
 
 		/** Constructor for tests (no Engine/IMqttClient) */
-		MqttFieldSync(const std::string& root_ns, PublisherFn publisher);
+		MqttFieldSync(const char* root_ns, PublisherFn publisher);
 
 		/** Constructor for real use: links to Engine and an existing IMqttClient */
-		MqttFieldSync(Engine& engine, const std::string& root_ns, IMqttClient& mqtt_client);
+		MqttFieldSync(Engine& engine, const char* root_ns, IMqttClient& mqtt_client);
 
 		/** Subscribe to "<root>/control/#" and publish initial fields (state+control) */
-		void subscribe_and_sync_startup();
+		MqttOpResult subscribe_and_sync_startup();
 
 		/** Apply any queued control updates into the Engine’s main buffer */
 		void apply_control_updates();
@@ -46,60 +71,75 @@ namespace robotick
 		 */
 		void publish_fields(const Engine& engine, const WorkloadsBuffer& buffer, bool publish_control);
 
-		std::unordered_map<std::string, nlohmann::json>& get_updated_topics() { return updated_topics; };
+		void queue_control_topic(const char* topic, const nlohmann::json& value);
+		struct Metrics
+		{
+			uint32_t state_publish_failures = 0;
+			uint32_t control_publish_failures = 0;
+			uint32_t subscribe_failures = 0;
+			MqttOpResult last_subscribe_result = MqttOpResult::Success;
+			MqttOpResult last_state_result = MqttOpResult::Success;
+			MqttOpResult last_control_result = MqttOpResult::Success;
+		};
+		const Metrics& get_metrics() const { return metrics; }
+		void reset_metrics() { metrics = {}; }
 
 	  private:
-		std::string root;	   // e.g. "robotick"
-		PublisherFn publisher; // for unit tests only
-		IMqttClient* mqtt_ptr; // null in test-mode
+		FixedString256 root;
+		PublisherFn publisher;
+		IMqttClient* mqtt_ptr;
 		Engine* engine_ptr = nullptr;
-		std::unordered_map<std::string, nlohmann::json> last_published; // topic → last JSON value sent
-		std::unordered_map<std::string, nlohmann::json> updated_topics; // control updates received
+		TopicMap last_published;
+		TopicMap updated_topics;
+		Metrics metrics;
 
 		/** Serialize a single field (by pointer and TypeId) into JSON */
 		nlohmann::json serialize(void* ptr, TypeId type);
+		void store_topic(TopicMap& table, const char* topic, const nlohmann::json& value);
+		bool topic_starts_with(const char* topic, const char* prefix) const;
 	};
-} // namespace robotick
-
-#else // !defined(ROBOTICK_PLATFORM_DESKTOP)
-
-#include <string>
-#include <unordered_map>
-
-namespace nlohmann
-{
-	struct json
-	{
-	}; // stub implementation for now
-} // namespace nlohmann
-
-namespace robotick
-{
-
-	class Engine;
-	class WorkloadsBuffer;
-	class IMqttClient;
-
+#else
 	class MqttFieldSync
 	{
 	  public:
-		using PublisherFn = std::function<void(const std::string&, const std::string&, bool)>;
-
-		inline MqttFieldSync(const std::string& /*root_ns*/, PublisherFn /*publisher*/) {}
-		inline MqttFieldSync(Engine& /*engine*/, const std::string& /*root_ns*/, IMqttClient& /*mqtt_client*/) {}
-
-		inline void subscribe_and_sync_startup() {}
-		inline void apply_control_updates() {}
-		inline void publish_state_fields() {}
-		inline void publish_fields(const Engine& /*engine*/, const WorkloadsBuffer& /*buffer*/, bool /*publish_control*/) {}
-
-		inline std::unordered_map<std::string, nlohmann::json>& get_updated_topics()
+		using PublisherFn = Function<void(const char*, const char*, bool)>;
+		struct TopicMap
 		{
-			static std::unordered_map<std::string, nlohmann::json> dummy;
-			return dummy;
-		}
+			void clear() {}
+		};
+
+		MqttFieldSync(const char* root_ns, PublisherFn publisher);
+		MqttFieldSync(Engine& engine, const char* root_ns, IMqttClient& mqtt_client);
+
+		MqttOpResult subscribe_and_sync_startup();
+		void apply_control_updates();
+		void publish_state_fields();
+		void publish_fields(const Engine& engine, const WorkloadsBuffer& buffer, bool publish_control);
+		void queue_control_topic(const char* topic, const nlohmann::json& value);
+		struct Metrics
+		{
+			uint32_t state_publish_failures = 0;
+			uint32_t control_publish_failures = 0;
+			uint32_t subscribe_failures = 0;
+			MqttOpResult last_subscribe_result = MqttOpResult::Success;
+			MqttOpResult last_state_result = MqttOpResult::Success;
+			MqttOpResult last_control_result = MqttOpResult::Success;
+		};
+		const Metrics& get_metrics() const { return metrics; }
+		void reset_metrics() { metrics = {}; }
+
+	  private:
+		FixedString256 root;
+		PublisherFn publisher;
+		IMqttClient* mqtt_ptr;
+		Engine* engine_ptr = nullptr;
+		TopicMap last_published;
+		TopicMap updated_topics;
+		Metrics metrics;
+
+		nlohmann::json serialize(void* ptr, TypeId type);
+		void store_topic(TopicMap& table, const char* topic, const nlohmann::json& value);
+		bool topic_starts_with(const char* topic, const char* prefix) const;
 	};
-
+#endif
 } // namespace robotick
-
-#endif // #if defined(ROBOTICK_PLATFORM_DESKTOP)

@@ -1,4 +1,4 @@
-// Copyright Robotick
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // HarmonicPitchWorkload.cpp  (thin wrapper around robotick::HarmonicPitch)
@@ -8,7 +8,6 @@
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
-#include <cmath>
 #include <cstring>
 #include <fstream>
 

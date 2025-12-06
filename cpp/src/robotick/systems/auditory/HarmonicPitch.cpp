@@ -1,35 +1,21 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Abs.h"
+#include "robotick/framework/math/LogExp.h"
+#include "robotick/framework/math/Pow.h"
 
 namespace robotick
 {
+	ROBOTICK_REGISTER_FIXED_VECTOR(HarmonicAmplitudes, float);
+
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchSettings)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_amplitude)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_peak_falloff_norm)
 	ROBOTICK_REGISTER_STRUCT_END(HarmonicPitchSettings)
-
-	static bool harmonic_amplitudes_to_string(const void* data, char* out_buffer, size_t buffer_size)
-	{
-		const HarmonicAmplitudes* buf = static_cast<const HarmonicAmplitudes*>(data);
-		if (!buf || !out_buffer || buffer_size < 32)
-			return false;
-
-		// Format: <HarmonicAmplitudes(size/capacity)>
-		int written = snprintf(out_buffer, buffer_size, "<HarmonicAmplitudes(%zu/%zu)>", buf->size(), buf->capacity());
-		return written > 0 && static_cast<size_t>(written) < buffer_size;
-	}
-
-	static bool harmonic_amplitudes_from_string(const char*, void*)
-	{
-		// Read-only string representation, parsing not supported
-		return false;
-	}
-
-	ROBOTICK_REGISTER_PRIMITIVE(HarmonicAmplitudes, harmonic_amplitudes_to_string, harmonic_amplitudes_from_string);
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchResult)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchResult, float, h1_f0_hz)
@@ -212,7 +198,7 @@ namespace robotick
 
 		const int min_stack_matches = 3; // we can't declare a clear harmonic pattern without at least 3 matches
 		const float cents_tolerance = settings.harmonic_tolerance_cents;
-		const float ratio_tolerance = std::pow(2.0f, cents_tolerance / 1200.0f);
+		const float ratio_tolerance = robotick::pow(2.0f, cents_tolerance / 1200.0f);
 
 		float best_score = -1.0f;
 		float best_f0 = 0.0f;
@@ -247,7 +233,7 @@ namespace robotick
 						continue;
 
 					// Convert ratio to musical 'cents' error (1 semitone = 100 cents)
-					const float cents_error = 1200.0f * std::abs(std::log2(ratio));
+					const float cents_error = 1200.0f * robotick::abs(robotick::log2(ratio));
 
 					// Keep the closest (in cents) peak within tolerance
 					if (cents_error < best_cents_error)
@@ -319,7 +305,7 @@ namespace robotick
 
 			for (size_t band_id = 0; band_id < centers.size(); ++band_id)
 			{
-				const float dist = std::abs(centers[band_id] - harmonic_freq);
+				const float dist = robotick::abs(centers[band_id] - harmonic_freq);
 				if (dist < closest_distance)
 				{
 					closest_distance = dist;
@@ -352,7 +338,7 @@ namespace robotick
 
 		for (size_t i = 0; i < num_bands; ++i)
 		{
-			const float dist = std::abs(centers[i] - prev_result.h1_f0_hz);
+			const float dist = robotick::abs(centers[i] - prev_result.h1_f0_hz);
 			if (dist < min_dist)
 			{
 				min_dist = dist;
@@ -406,7 +392,7 @@ namespace robotick
 			float min_distance = 1e9f;
 			for (size_t i = 0; i < num_bands; ++i)
 			{
-				const float dist = std::abs(centers[i] - harmonic_freq);
+				const float dist = robotick::abs(centers[i] - harmonic_freq);
 				if (dist < min_distance)
 				{
 					min_distance = dist;
@@ -467,7 +453,7 @@ namespace robotick
 		else
 		{
 			// Both succeeded — check if their f0 values are similar (within cents threshold)
-			const float cents_diff = 1200.0f * std::fabs(std::log2(fresh.h1_f0_hz / continued.h1_f0_hz));
+			const float cents_diff = 1200.0f * robotick::abs(robotick::log2(fresh.h1_f0_hz / continued.h1_f0_hz));
 
 			if (cents_diff < settings.harmonic_tolerance_cents)
 			{

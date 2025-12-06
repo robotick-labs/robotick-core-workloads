@@ -1,12 +1,13 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/math/Pow.h"
+#include "robotick/framework/math/Trig.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
 namespace robotick
@@ -67,7 +68,7 @@ namespace robotick
 			const float target_freq = clamp(inputs.frequency_hz, 0.0f, (float)(nyquist - 1.0));
 
 			// Apply global gain factor from config
-			const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			const float gain = robotick::pow(10.0f, config.amplitude_gain_db / 20.0f);
 			const float scaled_a0 = state->prev_amplitude * gain;
 			const float scaled_a1 = target_amp * gain;
 
@@ -104,7 +105,7 @@ namespace robotick
 			if (emit_samples == 1)
 			{
 				const double step = two_pi * (double)f1 / (double)fs;
-				outputs.mono.samples[0] = (float)(scaled_a1 * std::sin(phase));
+				outputs.mono.samples[0] = (float)(scaled_a1 * robotick::sin(phase));
 				phase += step;
 				if (phase >= two_pi)
 					phase -= two_pi;
@@ -118,7 +119,7 @@ namespace robotick
 					const double freq = (double)f0 + (double)(f1 - f0) * t;
 					const double step = two_pi * freq / (double)fs;
 
-					outputs.mono.samples[i] = (float)(amp * std::sin(phase));
+					outputs.mono.samples[i] = (float)(amp * robotick::sin(phase));
 					phase += step;
 
 					if (phase >= two_pi)

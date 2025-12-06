@@ -1,9 +1,9 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include "robotick/framework/common/HeapVector.h"
+#include "robotick/framework/containers/HeapVector.h"
 
 #include <cstdint>
 #include <cstdio>

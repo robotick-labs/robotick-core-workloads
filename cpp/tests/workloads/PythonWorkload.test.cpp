@@ -1,12 +1,14 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/framework/Engine.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/utils/TypeId.h"
+#include "robotick/systems/PythonRuntime.h"
 
 #include <cstdlib>
-#include <filesystem>
+#include <cstring>
 
 #include <catch2/catch_all.hpp>
 
@@ -20,6 +22,44 @@ namespace robotick
 } // namespace robotick
 
 using namespace robotick;
+
+namespace
+{
+	static FixedString1024 g_python_module_path;
+	static const char* g_python_path_array[1] = {nullptr};
+	static bool g_runtime_configured = false;
+
+	static void trim_to_parent(FixedString1024& path)
+	{
+		char* data = path.str();
+		size_t len = path.length();
+		while (len > 0)
+		{
+			--len;
+			if (data[len] == '/' || data[len] == '\\')
+			{
+				data[len] = '\0';
+				return;
+			}
+			data[len] = '\0';
+		}
+	}
+
+	static FixedString1024 compute_python_path()
+	{
+		// Derive the path to the test python package by walking up from this
+		// test source file (…/tests/workloads/) to the repository root and
+		// then appending the fixed "python" folder. This mirrors the repo
+		// layout so tests can set PYTHONPATH without hard‑coding absolute
+		// paths that would break on other machines or CI agents.
+		FixedString1024 result(__FILE__);
+		trim_to_parent(result); // remove filename
+		for (int i = 0; i < 3; ++i)
+			trim_to_parent(result);
+		result.append("/python");
+		return result;
+	}
+} // namespace
 
 #ifndef ROBOTICK_ENABLE_PYTHON
 #error "ROBOTICK_ENABLE_PYTHON must be defined (expected value: 1)"
@@ -38,12 +78,18 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 
 	// ensure we can access our hello_workload.py as a Python module:
 	{
-		std::filesystem::path source_file_path = __FILE__;
-		std::filesystem::path abs_python_path = source_file_path.parent_path() / "../../../python";
-		abs_python_path = std::filesystem::absolute(abs_python_path);
-		setenv("PYTHONPATH", abs_python_path.string().c_str(), 1);
-
-		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", abs_python_path.string().c_str());
+		g_python_module_path = compute_python_path();
+		g_python_path_array[0] = g_python_module_path.c_str();
+		setenv("PYTHONPATH", g_python_module_path.c_str(), 1);
+		ROBOTICK_INFO("🧪 PYTHONPATH set for test: %s", g_python_module_path.c_str());
+		if (!g_runtime_configured && !python_runtime_is_initialized())
+		{
+			PythonRuntimeConfig runtime_config;
+			runtime_config.extra_module_paths = g_python_path_array;
+			runtime_config.extra_module_path_count = 1;
+			set_python_runtime_config(runtime_config);
+			g_runtime_configured = true;
+		}
 	}
 
 	// ============================
@@ -75,11 +121,11 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 	SECTION("Output reflects Python computation")
 	{
 		Model model;
-		const WorkloadSeed& root =
-			model.add("PythonWorkload", "py")
-				.set_tick_rate_hz(1.0f)
-				.set_config(
-					{{"script_name", "robotick.workloads.optional.test.hello_workload"}, {"class_name", "HelloWorkload"}, {"example_in", "21.0"}});
+		const WorkloadSeed& root = model.add("PythonWorkload", "py")
+									   .set_tick_rate_hz(1.0f)
+									   .set_config({{"script_name", "robotick.workloads.optional.test.hello_workload"},
+										   {"class_name", "HelloWorkload"},
+										   {"script.example_in", "21.0"}});
 		model.set_root_workload(root);
 
 		Engine engine;
@@ -117,7 +163,7 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 
 		REQUIRE(output_blackboard->has("greeting"));
 		const FixedString64 greeting = output_blackboard->get<FixedString64>("greeting");
-		REQUIRE(std::string(greeting).substr(0, 15) == "[Python] Hello!");
+		REQUIRE(::strncmp(greeting.c_str(), "[Python] Hello!", 15) == 0);
 
 		REQUIRE(output_blackboard->has("val_double"));
 		const double val_double = output_blackboard->get<double>("val_double");

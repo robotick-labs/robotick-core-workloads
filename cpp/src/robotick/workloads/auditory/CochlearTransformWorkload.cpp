@@ -1,7 +1,9 @@
-// Copyright Robotick
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // CochlearTransformWorkload.cpp  (thin wrapper around robotick::CochlearTransform)
+
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioSystem.h"
@@ -24,18 +26,19 @@ namespace robotick
 		CochlearTransformConfig config;
 		CochlearTransformInputs inputs;
 		CochlearTransformOutputs outputs;
-		State<CochlearTransformState> state;
+		StatePtr<CochlearTransformState> state;
 
 		void load()
 		{
 			AudioSystem::init();
-			state->sample_rate = AudioSystem::get_sample_rate();
+			const uint32_t input_rate = AudioSystem::get_input_sample_rate();
+			state->sample_rate = (input_rate != 0) ? input_rate : AudioSystem::get_sample_rate();
 
 			// Derived rate for envelope/filter math.
 			state->frame_rate_hz = static_cast<double>(state->sample_rate) / static_cast<double>(CochlearTransformState::hop_size);
 
 			// Respect AudioBuffer128 capacity.
-			config.num_bands = std::min(config.num_bands, static_cast<uint16_t>(AudioBuffer128::capacity()));
+			config.num_bands = robotick::min(config.num_bands, static_cast<uint16_t>(AudioBuffer128::capacity()));
 
 			// Prepare outputs to the configured band count.
 			outputs.cochlear_frame.envelope.set_size(config.num_bands);
@@ -72,3 +75,5 @@ namespace robotick
 		}
 	};
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

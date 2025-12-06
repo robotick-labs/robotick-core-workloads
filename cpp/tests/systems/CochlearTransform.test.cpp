@@ -1,21 +1,25 @@
-// Copyright Robotick
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // CochlearTransform.test.cpp
 
 #include "robotick/systems/auditory/CochlearTransform.h"
 
+#include "robotick/framework/containers/HeapVector.h"
+
+#include "robotick/framework/math/Abs.h"
+#include "robotick/framework/math/Trig.h"
+
 #include <catch2/catch_all.hpp>
 
 #include <cmath>
-#include <vector>
 
 namespace robotick::test
 {
 	static float generate_sine_sample(float frequency_hz, float sample_rate, size_t sample_index)
 	{
 		const float two_pi = 2.0f * static_cast<float>(M_PI);
-		return std::sin(two_pi * frequency_hz * (static_cast<float>(sample_index) / sample_rate));
+		return robotick::sin(two_pi * frequency_hz * (static_cast<float>(sample_index) / sample_rate));
 	}
 
 	static size_t index_of_max_value(const AudioBuffer128& buffer)
@@ -156,14 +160,14 @@ namespace robotick::test
 			bool have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK_FALSE(have_frame);
 
-			std::vector<float> silence(CochlearTransformState::frame_size, 0.0f);
-			CochlearTransform::push_samples(silence.data(), silence.size(), config, state);
+			float silence[CochlearTransformState::frame_size] = {};
+			CochlearTransform::push_samples(silence, CochlearTransformState::frame_size, config, state);
 
 			have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK(have_frame); // first frame now available
 
-			std::vector<float> more_silence(CochlearTransformState::hop_size, 0.0f);
-			CochlearTransform::push_samples(more_silence.data(), more_silence.size(), config, state);
+			float more_silence[CochlearTransformState::hop_size] = {};
+			CochlearTransform::push_samples(more_silence, CochlearTransformState::hop_size, config, state);
 			have_frame = CochlearTransform::make_frame_from_ring(state);
 			CHECK(have_frame); // second frame available
 		}
@@ -203,13 +207,13 @@ namespace robotick::test
 			const float target_tone_hz = 1200.0f;
 			const size_t total_samples = CochlearTransformState::frame_size + CochlearTransformState::hop_size;
 
-			std::vector<float> tone_buffer(total_samples, 0.0f);
+			float tone_buffer[CochlearTransformState::frame_size + CochlearTransformState::hop_size] = {};
 			for (size_t sample_index = 0; sample_index < total_samples; ++sample_index)
 			{
 				tone_buffer[sample_index] = generate_sine_sample(target_tone_hz, static_cast<float>(sample_rate_hz), sample_index);
 			}
 
-			CochlearTransform::push_samples(tone_buffer.data(), tone_buffer.size(), config, state);
+			CochlearTransform::push_samples(tone_buffer, total_samples, config, state);
 
 			REQUIRE(CochlearTransform::make_frame_from_ring(state));
 
@@ -236,7 +240,7 @@ namespace robotick::test
 
 			const float detected_center_hz = frame_b.band_center_hz[max_band_index];
 
-			CHECK(std::fabs(detected_center_hz - target_tone_hz) < 100.0f);
+			CHECK(robotick::abs(detected_center_hz - target_tone_hz) < 100.0f);
 			CHECK(frame_b.envelope[max_band_index] > 0.05f);
 		}
 	}

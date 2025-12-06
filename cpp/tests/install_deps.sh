@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "📦 Installing robotick_core_workloads_tests dependencies..."
+echo "Installing robotick_core_workloads_tests dependencies..."
 
 # Silence apt UI and change list handling to non-interactive
 export DEBIAN_FRONTEND=noninteractive
@@ -40,9 +40,9 @@ if [ ! -f "${WHISPER_MODEL_PATH}" ]; then
   echo "⬇️  Downloading Whisper model (ggml-base.en.bin)..."
   curl -L "${WHISPER_MODEL_URL}" -o "${WHISPER_MODEL_PATH}" || { echo "Download failed"; exit 1; }
 else
-  echo "✅ Whisper model already present at ${WHISPER_MODEL_PATH}"
+  echo "Whisper model already present at ${WHISPER_MODEL_PATH}"
 fi
 
 # ---------------------------------------------------------
 
-echo "✅ Done."
+echo "Done."

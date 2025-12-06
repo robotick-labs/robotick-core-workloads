@@ -1,12 +1,10 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/audio/AudioSystem.h"
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -25,6 +23,9 @@ namespace robotick
 	struct MicOutputs
 	{
 		AudioFrame mono; // most recent captured block (mono, float32)
+		bool success = false;
+		FixedString32 last_read_status = "Unknown";
+		uint32_t dropped_reads = 0;
 	};
 
 	struct MicWorkload
@@ -36,7 +37,25 @@ namespace robotick
 		void load()
 		{
 			AudioSystem::init();
-			outputs.mono.sample_rate = AudioSystem::get_sample_rate(); // constant once init'd
+			const uint32_t input_rate = AudioSystem::get_input_sample_rate();
+			outputs.mono.sample_rate = (input_rate != 0) ? input_rate : AudioSystem::get_sample_rate();
+		}
+
+		static const char* describe_queue_result(const AudioQueueResult status)
+		{
+			switch (status)
+			{
+			case AudioQueueResult::Success:
+				return "Success";
+			case AudioQueueResult::Dropped:
+				return "Dropped";
+			case AudioQueueResult::NoData:
+				return "NoData";
+			case AudioQueueResult::Error:
+				return "Error";
+			default:
+				return "Unknown";
+			}
 		}
 
 		// Pull a chunk from the mic and publish to outputs.
@@ -46,13 +65,37 @@ namespace robotick
 			outputs.mono.timestamp = ns_to_sec * (double)tick_info.time_now_ns;
 
 			// Read up to the buffer capacity from the mic.
-			const size_t num_samples_read = AudioSystem::read(outputs.mono.samples.data(), outputs.mono.samples.capacity());
-			outputs.mono.samples.set_size(num_samples_read);
+			const AudioReadResult read_result = AudioSystem::read(outputs.mono.samples.data(), outputs.mono.samples.capacity());
+			outputs.success = (read_result.status == AudioQueueResult::Success);
+			outputs.last_read_status = describe_queue_result(read_result.status);
+			outputs.mono.samples.set_size(read_result.samples_read);
+
+			if (read_result.status == AudioQueueResult::NoData)
+			{
+				// Queue empty; surface telemetry and keep output empty for this tick
+				// No data available - not a drop, just empty queue
+				return;
+			}
+			if (read_result.status == AudioQueueResult::Dropped)
+			{
+				// Backpressure or drop; treat as a failed read as well
+				outputs.dropped_reads++;
+				return;
+			}
+			if (read_result.status == AudioQueueResult::Error)
+			{
+				ROBOTICK_WARNING("MicWorkload failed to read from AudioSystem input");
+				outputs.dropped_reads++;
+				outputs.mono.samples.set_size(0);
+				return;
+			}
+
+			const size_t num_samples_read = read_result.samples_read;
 
 			const float gain_db = config.amplitude_gain_db;
-			if (std::fabs(gain_db) > 1e-6f)
+			if (fabsf(gain_db) > 1e-6f)
 			{
-				const float gain = std::pow(10.0f, gain_db / 20.0f);
+				const float gain = powf(10.0f, gain_db / 20.0f);
 				for (size_t i = 0; i < num_samples_read; ++i)
 				{
 					outputs.mono.samples[i] *= gain;

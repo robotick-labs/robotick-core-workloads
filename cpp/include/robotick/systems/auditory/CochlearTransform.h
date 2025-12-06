@@ -1,4 +1,4 @@
-// Copyright Robotick
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // CochlearTransform.h  (lean header: declarations only)
@@ -6,7 +6,7 @@
 #pragma once
 
 #include "robotick/api.h"
-#include "robotick/framework/common/FixedVector.h"
+#include "robotick/framework/containers/FixedVector.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 
@@ -144,7 +144,7 @@ namespace robotick
 		static int clamp_fft_bin_index(int bin_index);
 
 		// Denormal suppression for tiny floats.
-		static inline float zap_denorm(float value) { return (std::fabs(value) < 1e-30f) ? 0.0f : value; }
+		static inline float zap_denorm(float value) { return (fabsf(value) < 1e-30f) ? 0.0f : value; }
 	};
 
 } // namespace robotick

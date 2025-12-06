@@ -1,4 +1,4 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
 // HarmonicPitch.h  (lean header: declarations only)
@@ -6,7 +6,7 @@
 #pragma once
 
 #include "robotick/api.h"
-#include "robotick/framework/common/FixedVector.h"
+#include "robotick/framework/containers/FixedVector.h"
 #include "robotick/systems/audio/AudioFrame.h"
 
 #include <cstdint>

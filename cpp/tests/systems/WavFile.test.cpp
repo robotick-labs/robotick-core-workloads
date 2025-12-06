@@ -1,19 +1,15 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/audio/WavFile.h"
 
 #include <catch2/catch_all.hpp>
-#include <filesystem>
-#include <string>
 
 namespace robotick::test
 {
 
 	TEST_CASE("Unit/Systems/Audio/WavFile")
 	{
-		ROBOTICK_INFO("Current working dir: '%s'", std::filesystem::current_path().string().c_str());
-
 		SECTION("Loads valid mono WAV")
 		{
 			WavFile wav;

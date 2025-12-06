@@ -1,55 +1,139 @@
-// MqttClient.h (only the relevant part)
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
+#include "robotick/framework/concurrency/Sync.h"
+#include "robotick/framework/containers/HeapVector.h"
+#include "robotick/framework/strings/FixedString.h"
+#include "robotick/framework/utility/Function.h"
+
+#include <cstdint>
 #include <mqtt.h> // now available to tests because of PUBLIC link above
 
 namespace robotick
 {
+	struct BrokerAddress
+	{
+		FixedString256 host;
+		uint16_t port = 1883;
+	};
+
+	enum class MqttOpResult
+	{
+		Success,
+		Dropped,
+		Error,
+	};
 
 	class IMqttClient
 	{
 	  public:
 		virtual ~IMqttClient() = default;
-		virtual void connect() = 0;
-		virtual void subscribe(const std::string& topic, int qos = 1) = 0;
-		virtual void publish(const std::string& topic, const std::string& payload, bool retained = true) = 0;
-		virtual void set_callback(std::function<void(const std::string&, const std::string&)> on_message) = 0;
+		virtual bool connect() = 0;
+		virtual MqttOpResult subscribe(const char* topic, int qos = 1) = 0;
+		virtual MqttOpResult publish(const char* topic, const char* payload, bool retained = true) = 0;
+		virtual void set_callback(Function<void(const char*, const char*)> on_message) = 0;
+		virtual void set_tls_enabled(bool enabled) { (void)enabled; }
+		virtual void set_qos(uint8_t publish_qos, uint8_t subscribe_qos)
+		{
+			(void)publish_qos;
+			(void)subscribe_qos;
+		}
 	};
 
 	class MqttClient : public IMqttClient
 	{
 	  public:
-		MqttClient(const std::string& broker_uri, const std::string& client_id);
-		~MqttClient() override; // ✅ declare
+		MqttClient(const char* broker_uri, const char* client_id);
+		~MqttClient() override; // declare
 
-		void set_callback(std::function<void(const std::string&, const std::string&)>) override;
-		void connect() override;
-		void subscribe(const std::string& topic, int qos = 1) override;
-		void publish(const std::string& topic, const std::string& payload, bool retained = true) override;
+		void set_callback(Function<void(const char*, const char*)>) override;
+		bool connect() override;
+		MqttOpResult subscribe(const char* topic, int qos = 1) override;
+		MqttOpResult publish(const char* topic, const char* payload, bool retained = true) override;
+		void set_tls_enabled(bool enabled) override;
+		void set_qos(uint8_t publish_qos, uint8_t subscribe_qos) override;
+		void set_socket_timeout_ms(uint32_t milliseconds);
 
 		// Optional: drive mqtt-c from your engine tick
-		void poll();	   // ✅ declare
-		void disconnect(); // ✅ declare
+		void poll();	   // declare
+		void disconnect(); // declare
+
+		bool is_connected() const;
+		struct HealthMetrics
+		{
+			uint32_t reconnect_attempts = 0;
+			uint32_t consecutive_connect_failures = 0;
+			uint32_t total_connect_failures = 0;
+			uint32_t total_successful_connects = 0;
+			uint64_t last_success_timestamp_ms = 0;
+
+			bool healthy() const { return consecutive_connect_failures < 3; }
+		};
+		struct BackpressureStats
+		{
+			uint32_t publish_drops = 0;
+			uint32_t subscribe_drops = 0;
+			uint64_t last_drop_timestamp_ms = 0;
+		};
+		const HealthMetrics& get_health_metrics() const;
+		const BackpressureStats& get_backpressure_stats() const;
+
+		uint8_t get_publish_qos_for_test() const;
+		uint8_t get_subscribe_qos_for_test() const;
 
 	  private:
 		// exact mqtt-c types
 		struct mqtt_client mqtt;
 
 		int sockfd = -1;
-		std::function<void(const std::string&, const std::string&)> message_callback;
-		std::string broker_host;
-		int broker_port = 1883;
-		std::string client_id;
-		std::vector<uint8_t> sendbuf;
-		std::vector<uint8_t> recvbuf;
+		Function<void(const char*, const char*)> message_callback;
+		FixedString256 broker_host;
+		uint16_t broker_port = 1883;
+		FixedString128 client_id;
+		HeapVector<uint8_t> sendbuf;
+		HeapVector<uint8_t> recvbuf;
+		FixedString256 inbound_topic;
+		FixedString1024 inbound_payload;
 
 		// static publish callback with access to private members
 		static void on_publish(void** state, struct mqtt_response_publish* published);
+
+		void initialize_buffers();
+		bool assign_topic_payload(const mqtt_response_publish& published, FixedString256& topic_out, FixedString1024& payload_out);
+		bool ensure_socket_timeout(uint32_t milliseconds);
+		bool check_result(int rc, const char* tag);
+		bool attempt_connect(bool fatal);
+		void cleanup_socket();
+		bool should_attempt_reconnect(uint64_t now) const;
+		uint64_t now_ms() const;
+		uint32_t compute_backoff_ms() const;
+		void schedule_backoff(uint64_t now);
+		bool ensure_connected_or_drop(bool publish);
+		void record_backpressure(bool publish);
+
+		Mutex operation_mutex;
+		bool tls_enabled = false;
+		uint8_t current_publish_qos = 0;
+		uint8_t current_subscribe_qos = 0;
+		uint32_t socket_timeout_ms = 5000;
+		bool mqtt_initialized = false;
+		uint64_t next_connect_attempt_ms = 0;
+		uint32_t base_backoff_ms = 500;
+		uint32_t max_backoff_ms = 30000;
+		HealthMetrics health_metrics;
+		BackpressureStats backpressure_stats;
 	};
 
+	namespace mqtt_detail
+	{
+		bool parse_broker_uri(const char* uri, BrokerAddress& out);
+		bool set_socket_timeout(int sockfd, uint32_t milliseconds);
+	} // namespace mqtt_detail
+
 } // namespace robotick
+
+#endif // desktop/linux

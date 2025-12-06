@@ -1,19 +1,24 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
+
 #include "robotick/systems/auditory/SpeechToText.h"
+
 #include "robotick/api.h"
+#include "robotick/framework/concurrency/Thread.h"
 
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <thread>
 
 namespace robotick
 {
 	ROBOTICK_REGISTER_STRUCT_BEGIN(SpeechToTextSettings)
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, FixedString256, model_path)
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, uint16_t, num_threads)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, min_voiced_duration_sec)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, silence_hangover_sec)
 	ROBOTICK_REGISTER_STRUCT_END(SpeechToTextSettings)
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(TranscribedWord)
@@ -22,27 +27,28 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(TranscribedWord, float, end_time_sec)
 	ROBOTICK_REGISTER_STRUCT_END(TranscribedWord)
 
-	static bool transcribed_words_to_string(const void* data, char* out_buffer, size_t buffer_size)
+	ROBOTICK_REGISTER_FIXED_VECTOR(TranscribedWords, TranscribedWord);
+
+	void whisper_log_handler(enum ggml_log_level level, const char* text, void* user_data)
 	{
-		const TranscribedWords* buf = static_cast<const TranscribedWords*>(data);
-		if (!buf || !out_buffer || buffer_size < 32)
-			return false;
+		(void)user_data;
 
-		// Format: <TranscribedWords(size/capacity)>
-		int written = snprintf(out_buffer, buffer_size, "<TranscribedWords(%zu/%zu)>", buf->size(), buf->capacity());
-		return written > 0 && static_cast<size_t>(written) < buffer_size;
+		if (level == GGML_LOG_LEVEL_ERROR)
+		{
+			ROBOTICK_WARNING("[WHISPER ERROR] %s", text);
+		}
+		else if (level == GGML_LOG_LEVEL_WARN)
+		{
+			ROBOTICK_WARNING("[WHISPER WARN] %s", text);
+		}
+		// else ignore all other logs
 	}
-
-	static bool transcribed_words_from_string(const char*, void*)
-	{
-		// Read-only string representation, parsing not supported
-		return false;
-	}
-
-	ROBOTICK_REGISTER_PRIMITIVE(TranscribedWords, transcribed_words_to_string, transcribed_words_from_string);
 
 	void SpeechToText::initialize(const SpeechToTextSettings& settings, SpeechToTextInternalState& state)
 	{
+		// silence all logs but errors and warnings
+		whisper_log_set(whisper_log_handler, nullptr);
+
 		const char* model_path = settings.model_path.c_str();
 
 		// --- Init Whisper context (like CLI) ---
@@ -57,7 +63,7 @@ namespace robotick
 		// --- Full params: mirror CLI defaults (beam=5, best_of=5 seen in your log) ---
 		whisper_full_params& wparams = state.whisper_params;
 		wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-		wparams.n_threads = clamp<int>(settings.num_threads, 1, std::thread::hardware_concurrency());
+		wparams.n_threads = clamp<int>(settings.num_threads, 1, Thread::get_hardware_concurrency());
 		wparams.offset_ms = 0;
 		wparams.duration_ms = 0;
 		wparams.translate = false;
@@ -93,7 +99,7 @@ namespace robotick
 
 		ROBOTICK_INFO(" Initializing Speech to Text - System Info: n_threads = %d / %d | %s\n",
 			wparams.n_threads,
-			(int)std::thread::hardware_concurrency(),
+			(int)Thread::get_hardware_concurrency(),
 			whisper_print_system_info());
 	}
 
@@ -117,11 +123,12 @@ namespace robotick
 			return false;
 		}
 
+		bool is_at_capacity = false;
 		const int num_segments = whisper_full_n_segments_from_state(wstate);
-		for (int seg = 0; seg < num_segments; ++seg)
+		for (int seg = 0; seg < num_segments && !is_at_capacity; ++seg)
 		{
 			const int num_tokens = whisper_full_n_tokens_from_state(wstate, seg);
-			for (int tok = 0; tok < num_tokens; ++tok)
+			for (int tok = 0; tok < num_tokens && !is_at_capacity; ++tok)
 			{
 				const whisper_token token = whisper_full_get_token_id_from_state(wstate, seg, tok);
 				const whisper_token_data data = whisper_full_get_token_data_from_state(wstate, seg, tok);
@@ -129,6 +136,7 @@ namespace robotick
 				if (data.t0 >= 0 && data.t1 >= data.t0)
 				{
 					out_words.add({text, 0.01f * data.t0, 0.01f * data.t1, data.p});
+					is_at_capacity = (out_words.size() >= out_words.capacity());
 				}
 			}
 		}
@@ -147,3 +155,5 @@ namespace robotick
 	}
 
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

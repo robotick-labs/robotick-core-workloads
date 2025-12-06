@@ -1,7 +1,11 @@
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include "robotick/framework/math/Vec2.h"
 
+#include <cstddef>
 #include <stdint.h>
 
 namespace robotick
@@ -36,9 +40,17 @@ namespace robotick
 		// Lifecycle
 		void init(bool texture_only);
 		void clear(const Color& color = Colors::Black);
-		std::vector<uint8_t> capture_as_png();
+		bool capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size);
 		void present();
 		void cleanup();
+
+		// Render-to-texture target size
+		void set_texture_only_size(float w, float h)
+		{
+			physical_w = static_cast<int>(w);
+			physical_h = static_cast<int>(h);
+			update_scale();
+		}
 
 		// Viewport
 		void set_viewport(float w, float h)
@@ -53,12 +65,17 @@ namespace robotick
 		void draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color);
 		void draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color);
 
+		// New: blit an RGBA8888 image and scale to the current viewport
+		// pixels.size() must be == w*h*4
+		void draw_image_rgba8888_fit(const uint8_t* pixels, int w, int h);
+
 	  protected:
 		void update_scale()
 		{
 			const float scale_x = static_cast<float>(physical_w) / logical_w;
 			const float scale_y = static_cast<float>(physical_h) / logical_h;
-			scale = min(scale_x, scale_y);
+			const float s = (scale_x < scale_y) ? scale_x : scale_y;
+			scale = s;
 
 			offset_x = (physical_w - static_cast<int>(logical_w * scale)) / 2;
 			offset_y = (physical_h - static_cast<int>(logical_h * scale)) / 2;
@@ -77,5 +94,9 @@ namespace robotick
 		float scale = 1.0f;
 		int offset_x = 0;
 		int offset_y = 0;
+
+		bool initialized = false;
+		struct RendererImpl;
+		RendererImpl* impl = nullptr;
 	};
 } // namespace robotick

@@ -1,9 +1,10 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-#include "robotick/framework/common/FixedVector.h"
+#include "robotick/framework/containers/FixedVector.h"
 #include "robotick/systems/Camera.h"
+#include "robotick/systems/Image.h"
 
 namespace robotick
 {
@@ -23,7 +24,7 @@ namespace robotick
 
 	struct CameraOutputs
 	{
-		FixedVector128k jpeg_data;
+		ImageJpeg128k jpeg_data;
 	};
 
 	//------------------------------------------------------------------------------

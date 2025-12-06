@@ -1,3 +1,6 @@
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 namespace robotick

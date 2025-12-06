@@ -1,11 +1,8 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-
-#include <chrono>
-#include <cmath>
-#include <iostream>
+#include "robotick/framework/math/Sqrt.h"
 
 namespace robotick
 {
@@ -77,16 +74,15 @@ namespace robotick
 				float mean_dt = internal_state.sum_dt / (float)internal_state.count;
 				float mean_dt2 = internal_state.sum_dt2 / (float)internal_state.count;
 				const float variance = max(0.0f, mean_dt2 - mean_dt * mean_dt);
-				const float stddev = std::sqrt(variance);
+				const float stddev = robotick::sqrt(variance);
 
 				outputs.avg_tick_rate = 1.0f / mean_dt;
 				outputs.tick_stddev = stddev;
 
 				static constexpr float seconds_to_microseconds = 1e6f;
 
-				std::cerr << std::fixed;
-				std::cerr << "[TimingDiagnostics] avg: " << outputs.avg_tick_rate << " Hz, stddev: " << outputs.tick_stddev * seconds_to_microseconds
-						  << " µs\n";
+				ROBOTICK_INFO(
+					"[TimingDiagnostics] avg: %.2f Hz, stddev: %.2f us", outputs.avg_tick_rate, outputs.tick_stddev * seconds_to_microseconds);
 
 				internal_state.count = 0;
 				internal_state.sum_dt = 0.0f;

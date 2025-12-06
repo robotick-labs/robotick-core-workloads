@@ -1,3 +1,5 @@
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/auditory/ProsodyState.h"
 

@@ -1,4 +1,4 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
@@ -6,8 +6,6 @@
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstring>
 
 namespace robotick
@@ -54,7 +52,7 @@ namespace robotick
 			const int fs = outputs.mono.sample_rate;
 			const double nyquist = 0.5 * fs;
 			const double two_pi = 6.28318530717958647692;
-			const float gain = std::pow(10.0f, config.amplitude_gain_db / 20.0f);
+			const float gain = powf(10.0f, config.amplitude_gain_db / 20.0f);
 
 			const double exact_samples = static_cast<double>(fs) * tick_info.delta_time;
 			state->sample_accumulator += exact_samples;
@@ -67,7 +65,7 @@ namespace robotick
 				return;
 			}
 
-			emit_samples = std::min(emit_samples, static_cast<int>(outputs.mono.samples.capacity()));
+			emit_samples = robotick::min(emit_samples, static_cast<int>(outputs.mono.samples.capacity()));
 			outputs.mono.samples.set_size(emit_samples);
 			outputs.mono.samples.fill(0.0f);
 
@@ -79,8 +77,8 @@ namespace robotick
 				return;
 			}
 
-			const int max_partials = std::clamp(config.max_num_partials, 0, HarmonicWaveGeneratorState::MaxOscillators - 1);
-			const int num_partials = std::min(static_cast<int>(pitch_info.harmonic_amplitudes.size()), max_partials);
+			const int max_partials = robotick::clamp(config.max_num_partials, 0, HarmonicWaveGeneratorState::MaxOscillators - 1);
+			const int num_partials = robotick::min(static_cast<int>(pitch_info.harmonic_amplitudes.size()), max_partials);
 
 			for (int harmonic_index = 0; harmonic_index < num_partials; ++harmonic_index)
 			{
@@ -103,7 +101,7 @@ namespace robotick
 					const float t = (emit_samples > 1) ? static_cast<float>(i) / static_cast<float>(emit_samples - 1) : 0.0f;
 					const float freq = f0_prev + t * (frequency - f0_prev);
 					const float amp = a0_prev + t * (amplitude - a0_prev);
-					outputs.mono.samples[i] += amp * std::sin(phase);
+					outputs.mono.samples[i] += amp * sin(phase);
 					phase += two_pi * freq / fs;
 					if (phase >= two_pi)
 					{
