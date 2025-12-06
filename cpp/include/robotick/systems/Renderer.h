@@ -44,11 +44,12 @@ namespace robotick
 		void present();
 		void cleanup();
 
-		// Render-to-texture traget size
+		// Render-to-texture target size
 		void set_texture_only_size(float w, float h)
 		{
-			physical_w = w;
-			physical_h = h;
+			physical_w = static_cast<int>(w);
+			physical_h = static_cast<int>(h);
+			update_scale();
 		}
 
 		// Viewport
