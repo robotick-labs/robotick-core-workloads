@@ -73,7 +73,7 @@ namespace robotick
 			if (read_result.status == AudioQueueResult::NoData)
 			{
 				// Queue empty; surface telemetry and keep output empty for this tick
-				outputs.dropped_reads++;
+				// No data available - not a drop, just empty queue
 				return;
 			}
 			if (read_result.status == AudioQueueResult::Dropped)
