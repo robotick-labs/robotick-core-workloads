@@ -60,9 +60,34 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 		DummyTickingWorkload::reset();
 
 		Model model;
-		const WorkloadSeed& child1 = model.add("DummyTickingWorkload", "child1").set_tick_rate_hz(50.0);
-		const WorkloadSeed& child2 = model.add("DummyTickingWorkload", "child2").set_tick_rate_hz(50.0);
-		const WorkloadSeed& group = model.add("SequencedGroupWorkload", "group").set_children({&child1, &child2}).set_tick_rate_hz(50.0f);
+		static const float tick_rate = 50.0f;
+		static const WorkloadSeed child1{
+			TypeId("DummyTickingWorkload"),
+			StringView("child1"),
+			tick_rate,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed child2{
+			TypeId("DummyTickingWorkload"),
+			StringView("child2"),
+			tick_rate,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* const children[] = {&child1, &child2};
+		static const WorkloadSeed group{
+			TypeId("SequencedGroupWorkload"),
+			StringView("group"),
+			tick_rate,
+			children,
+			{},
+			{}
+		};
+		static const WorkloadSeed* const workloads[] = {&child1, &child2, &group};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group);
 
 		Engine engine;
@@ -81,11 +106,28 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 		CHECK(DummyTickingWorkload::tick_count == 2);
 	}
 
-	SECTION("Overrun logs if exceeded")
+		SECTION("Overrun logs if exceeded")
 	{
 		Model model;
-		const WorkloadSeed& workload_seed = model.add("SlowTickWorkload", "slow").set_tick_rate_hz(50.0f);
-		const WorkloadSeed& group_seed = model.add("SequencedGroupWorkload", "group").set_children({&workload_seed}).set_tick_rate_hz(1000.0f);
+		static const WorkloadSeed workload_seed{
+			TypeId("SlowTickWorkload"),
+			StringView("slow"),
+			50.0f,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* const children[] = {&workload_seed};
+		static const WorkloadSeed group_seed{
+			TypeId("SequencedGroupWorkload"),
+			StringView("group"),
+			1000.0f,
+			children,
+			{},
+			{}
+		};
+		static const WorkloadSeed* const workloads[] = {&workload_seed, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;
@@ -97,11 +139,28 @@ TEST_CASE("Unit/Workloads/SequencedGroupWorkload")
 			group_info->type->get_workload_desc()->tick_fn(group_info->get_ptr(engine), TICK_INFO_FIRST_1MS_1KHZ)); // 1ms budget, expect warning log
 	}
 
-	SECTION("Child start executes on same thread as child tick")
+		SECTION("Child start executes on same thread as child tick")
 	{
 		Model model;
-		const WorkloadSeed& child_seed = model.add("ThreadAwareSequencedChild", "child").set_tick_rate_hz(50.0f);
-		const WorkloadSeed& group_seed = model.add("SequencedGroupWorkload", "group").set_children({&child_seed}).set_tick_rate_hz(50.0f);
+		static const WorkloadSeed child_seed{
+			TypeId("ThreadAwareSequencedChild"),
+			StringView("child"),
+			50.0f,
+			{},
+			{},
+			{}
+		};
+		static const WorkloadSeed* const children[] = {&child_seed};
+		static const WorkloadSeed group_seed{
+			TypeId("SequencedGroupWorkload"),
+			StringView("group"),
+			50.0f,
+			children,
+			{},
+			{}
+		};
+		static const WorkloadSeed* const workloads[] = {&child_seed, &group_seed};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(group_seed);
 
 		Engine engine;

@@ -36,12 +36,12 @@ void populate_model(robotick::Model& model)
 	static const robotick::WorkloadSeed basex{robotick::TypeId("BaseXWorkload"), robotick::StringView("basex"), tick_rate_hz_main};
 
 	// Root group
-	static const robotick::WorkloadSeed* root_children[] = {&heart_display, &imu, &steering, &basex};
+	static const robotick::WorkloadSeed* const root_children[] = {&heart_display, &imu, &steering, &basex};
 	static const robotick::WorkloadSeed root{
 		robotick::TypeId("SequencedGroupWorkload"), robotick::StringView("root"), tick_rate_hz_main, root_children};
 
 	// All workloads
-	static const robotick::WorkloadSeed* all[] = {&heart_display, &imu, &steering, &basex, &root};
+	static const robotick::WorkloadSeed* const all[] = {&heart_display, &imu, &steering, &basex, &root};
 
 	// Final registration
 	model.use_workload_seeds(all);

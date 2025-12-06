@@ -99,10 +99,20 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 	SECTION("Python tick executes")
 	{
 		Model model;
-		const WorkloadSeed& python_workload =
-			model.add("PythonWorkload", "test2")
-				.set_tick_rate_hz(1.0f)
-				.set_config({{"script_name", "robotick.workloads.optional.test.hello_workload"}, {"class_name", "HelloWorkload"}});
+		static const FieldConfigEntry python_config[] = {
+			{"script_name", "robotick.workloads.optional.test.hello_workload"},
+			{"class_name", "HelloWorkload"}
+		};
+		static const WorkloadSeed python_workload{
+			TypeId("PythonWorkload"),
+			StringView("test2"),
+			1.0f,
+			{},
+			python_config,
+			{}
+		};
+		static const WorkloadSeed* const workloads[] = {&python_workload};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(python_workload);
 
 		Engine engine;
@@ -121,11 +131,21 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 	SECTION("Output reflects Python computation")
 	{
 		Model model;
-		const WorkloadSeed& root = model.add("PythonWorkload", "py")
-									   .set_tick_rate_hz(1.0f)
-									   .set_config({{"script_name", "robotick.workloads.optional.test.hello_workload"},
-										   {"class_name", "HelloWorkload"},
-										   {"script.example_in", "21.0"}});
+		static const FieldConfigEntry python_config[] = {
+			{"script_name", "robotick.workloads.optional.test.hello_workload"},
+			{"class_name", "HelloWorkload"},
+			{"script.example_in", "21.0"}
+		};
+		static const WorkloadSeed root{
+			TypeId("PythonWorkload"),
+			StringView("py"),
+			1.0f,
+			{},
+			python_config,
+			{}
+		};
+		static const WorkloadSeed* const workloads[] = {&root};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(root);
 
 		Engine engine;
@@ -177,10 +197,20 @@ TEST_CASE("Unit/Workloads/PythonWorkload")
 	SECTION("start/stop hooks are optional and safe")
 	{
 		Model model;
-		const WorkloadSeed& root =
-			model.add("PythonWorkload", "test")
-				.set_tick_rate_hz(10.0f)
-				.set_config({{"script_name", "robotick.workloads.optional.test.hello_workload"}, {"class_name", "HelloWorkload"}});
+		static const FieldConfigEntry python_config[] = {
+			{"script_name", "robotick.workloads.optional.test.hello_workload"},
+			{"class_name", "HelloWorkload"}
+		};
+		static const WorkloadSeed root{
+			TypeId("PythonWorkload"),
+			StringView("test"),
+			10.0f,
+			{},
+			python_config,
+			{}
+		};
+		static const WorkloadSeed* const workloads[] = {&root};
+		model.use_workload_seeds(workloads);
 		model.set_root_workload(root);
 
 		Engine engine;
