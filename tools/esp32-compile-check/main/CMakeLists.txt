@@ -1,4 +1,4 @@
-# robotick-engine/examples/cpp/esp32-testbed/main/CMakeLists.txt
+# tools/esp32-compile-check/main/CMakeLists.txt
 
 if(NOT DEFINED ROBOTICK_PLATFORM_ESP32S3)
     option(ROBOTICK_PLATFORM_ESP32S3 "Build Robotick workloads for ESP32-S3" ON)
