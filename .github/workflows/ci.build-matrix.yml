@@ -54,12 +54,13 @@ jobs:
           echo "🔄 Trying robotick-engine branch: $BRANCH"
 
           ENGINE_URL="https://github.com/robotick-labs/robotick-engine.git"
+          FALLBACK_BRANCH="dev"
 
           if git ls-remote --exit-code --heads "$ENGINE_URL" "$BRANCH" >/dev/null 2>&1; then
             git clone --depth=1 --branch "$BRANCH" "$ENGINE_URL" ../robotick-engine
           else
-            echo "'$BRANCH' not found in robotick-engine — using 'main'"
-            git clone --depth=1 --branch main "$ENGINE_URL" ../robotick-engine
+            echo "'$BRANCH' not found in robotick-engine — using '$FALLBACK_BRANCH'"
+            git clone --depth=1 --branch "$FALLBACK_BRANCH" "$ENGINE_URL" ../robotick-engine
           fi
 
           echo "Fetching submodules for robotick-engine..."
