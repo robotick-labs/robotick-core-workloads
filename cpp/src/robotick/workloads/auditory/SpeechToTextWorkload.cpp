@@ -220,9 +220,31 @@ namespace robotick
 		SpeechToTextInputs inputs;
 		SpeechToTextOutputs outputs;
 		StatePtr<SpeechToTextState> state;
+		bool is_enabled = false;
+
+		void reset_outputs()
+		{
+			outputs.words.clear();
+			outputs.transcript.clear();
+			outputs.transcribe_duration_sec = 0.0f;
+			outputs.transcript_mean_confidence = 0.0f;
+			outputs.accumulator_duration_sec = 0.0f;
+			outputs.accumulator_capacity_sec = AudioAccumulator::get_capacity_sec();
+			outputs.is_transcribe_thread_active = false;
+			outputs.transcribe_session_count = 0;
+		}
 
 		void load()
 		{
+			reset_outputs();
+
+			if (config.settings.model_path.empty())
+			{
+				ROBOTICK_WARNING("SpeechToTextWorkload disabled: SpeechToTextSettings.model_path is empty.");
+				is_enabled = false;
+				return;
+			}
+
 			SpeechToText::initialize(config.settings, state->internal_state);
 			state->thread_should_exit = false;
 			state->thread_has_work = false;
@@ -231,10 +253,17 @@ namespace robotick
 			state->is_buffer_swapped.set(false);
 
 			state->bg_thread = Thread(speech_to_text_thread, static_cast<void*>(&state.get()), "SpeechToTextThread");
+			is_enabled = true;
 		}
 
 		void tick(const TickInfo& tick_info)
 		{
+			if (!is_enabled)
+			{
+				outputs.is_transcribe_thread_active = false;
+				return;
+			}
+
 			// Downsample and append new samples
 			{
 				AudioBuffer512 downsampled;
@@ -322,6 +351,11 @@ namespace robotick
 
 		void stop()
 		{
+			if (!is_enabled)
+			{
+				return;
+			}
+
 			{
 				LockGuard lock(state->mutex);
 				state->thread_should_exit = true;
@@ -334,6 +368,7 @@ namespace robotick
 			}
 
 			SpeechToText::uninitialize(state->internal_state);
+			is_enabled = false;
 		}
 	};
 
