@@ -1,6 +1,7 @@
 platforms:
   linux:
     files:
+      - robotick/systems/audio/AudioFrame.cpp
       - robotick/systems/auditory/SpeechToText.cpp
 
     deps:

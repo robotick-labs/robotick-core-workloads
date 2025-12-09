@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
 
 namespace
@@ -26,6 +27,8 @@ namespace robotick
 	struct HeartbeatDisplayConfig
 	{
 		float rest_heart_rate = 60.0f;
+		// if true, render off-screen and expose PNG data instead of an on-screen window
+		bool render_to_texture = false;
 	};
 
 	struct HeartbeatDisplayInputs
@@ -45,6 +48,7 @@ namespace robotick
 	struct HeartbeatDisplayOutputs
 	{
 		float activation_amount = 1.0f;
+		ImagePng64k display_png;
 	};
 
 	struct HeartbeatState
@@ -66,8 +70,9 @@ namespace robotick
 			if (s.has_init_renderer)
 				return;
 
-			const bool render_to_texture = false;
-			s.renderer.init(render_to_texture);
+			s.renderer.set_texture_only_size(800, 480);
+			s.renderer.set_viewport(320, 240);
+			s.renderer.init(config.render_to_texture);
 			s.has_init_renderer = true;
 		}
 
@@ -89,7 +94,23 @@ namespace robotick
 			draw_stats(s.renderer, inputs);
 
 			// present ui:
-			s.renderer.present();
+			if (config.render_to_texture)
+			{
+				size_t png_size = 0;
+				if (s.renderer.capture_as_png(outputs.display_png.data(), outputs.display_png.capacity(), png_size))
+				{
+					outputs.display_png.set_size(png_size);
+				}
+				else
+				{
+					outputs.display_png.set_size(0);
+				}
+			}
+			else
+			{
+				outputs.display_png.set_size(0);
+				s.renderer.present();
+			}
 		}
 
 		void update_heart(const float beat_phase)
