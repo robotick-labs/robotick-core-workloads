@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/systems/auditory/SpeechToText.h"
-#include "robotick/framework/containers/HeapVector.h"
 #include "robotick/framework/concurrency/Thread.h"
+#include "robotick/framework/containers/HeapVector.h"
 #include "robotick/systems/audio/WavFile.h"
 
 #include "whisper.h"
@@ -27,8 +27,14 @@ namespace robotick::test
 				return false;
 			}
 
-			auto rd32 = [&](uint32_t& v) { return ::fread(&v, 1, 4, f) == 4; };
-			auto rd16 = [&](uint16_t& v) { return ::fread(&v, 1, 2, f) == 2; };
+			auto rd32 = [&](uint32_t& v)
+			{
+				return ::fread(&v, 1, 4, f) == 4;
+			};
+			auto rd16 = [&](uint16_t& v)
+			{
+				return ::fread(&v, 1, 2, f) == 2;
+			};
 
 			uint32_t riff = 0, riff_size = 0, wave = 0;
 			if (!rd32(riff) || !rd32(riff_size) || !rd32(wave))
@@ -173,6 +179,14 @@ namespace robotick::test
 
 		SECTION("SpeechToText transcribes JFK WAV correctly")
 		{
+			FILE* model_file = ::fopen(model_path, "rb");
+			if (!model_file)
+			{
+				WARN("Skipping SpeechToText transcription test because Whisper model is not available");
+				return;
+			}
+			::fclose(model_file);
+
 			// load our wav-file in required format
 			HeapVector<float> pcmf32;
 			REQUIRE(utils::load_wav_s16_mono_16k(wav_path_jfk, pcmf32));
