@@ -1,9 +1,25 @@
 // Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
-#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
-
 #include "robotick/systems/audio/AudioSystem.h"
+#include "robotick/framework/registry/TypeMacros.h"
+
+namespace robotick
+{
+	ROBOTICK_REGISTER_ENUM_BEGIN(AudioBackpressureStrategy)
+	ROBOTICK_ENUM_VALUE("DropNewest", AudioBackpressureStrategy::DropNewest)
+	ROBOTICK_ENUM_VALUE("DropOldest", AudioBackpressureStrategy::DropOldest)
+	ROBOTICK_REGISTER_ENUM_END(AudioBackpressureStrategy)
+
+	ROBOTICK_REGISTER_ENUM_BEGIN(AudioQueueResult)
+	ROBOTICK_ENUM_VALUE("Success", AudioQueueResult::Success)
+	ROBOTICK_ENUM_VALUE("Dropped", AudioQueueResult::Dropped)
+	ROBOTICK_ENUM_VALUE("NoData", AudioQueueResult::NoData)
+	ROBOTICK_ENUM_VALUE("Error", AudioQueueResult::Error)
+	ROBOTICK_REGISTER_ENUM_END(AudioQueueResult)
+} // namespace robotick
+
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/api.h"
 #include "robotick/framework/concurrency/Sync.h"
@@ -23,9 +39,9 @@ namespace robotick
 	static constexpr size_t kScratchChunkFrames = 2048;
 	static Mutex g_audio_mutex;
 
-class AudioSystemImpl
-{
-  public:
+	class AudioSystemImpl
+	{
+	  public:
 		bool initialized = false;
 		bool owns_sdl_audio = false;
 		SDL_AudioDeviceID output_device = 0;
@@ -108,7 +124,8 @@ class AudioSystemImpl
 
 			if (obtained_output_spec.channels != 1 && obtained_output_spec.channels != 2)
 			{
-				ROBOTICK_WARNING("AudioSystem::open_devices - unsupported output channel count (%u); only mono/stereo supported", static_cast<unsigned int>(obtained_output_spec.channels));
+				ROBOTICK_WARNING("AudioSystem::open_devices - unsupported output channel count (%u); only mono/stereo supported",
+					static_cast<unsigned int>(obtained_output_spec.channels));
 				return false;
 			}
 
@@ -128,7 +145,8 @@ class AudioSystemImpl
 
 			if (obtained_input_spec.channels != 1)
 			{
-				ROBOTICK_WARNING("AudioSystem::open_devices - unsupported input channel count (%u); only mono supported", static_cast<unsigned int>(obtained_input_spec.channels));
+				ROBOTICK_WARNING("AudioSystem::open_devices - unsupported input channel count (%u); only mono supported",
+					static_cast<unsigned int>(obtained_input_spec.channels));
 				return false;
 			}
 
@@ -484,10 +502,10 @@ class AudioSystemImpl
 		g_audio_impl.stats = {};
 	}
 
-void AudioSystem::record_drop_for_test(uint32_t bytes)
-{
-	g_audio_impl.record_drop(bytes);
-}
+	void AudioSystem::record_drop_for_test(uint32_t bytes)
+	{
+		g_audio_impl.record_drop(bytes);
+	}
 
 	void AudioSystem::set_output_spec_for_test(uint32_t sample_rate, uint8_t channels)
 	{
@@ -499,8 +517,6 @@ void AudioSystem::record_drop_for_test(uint32_t bytes)
 } // namespace robotick
 
 #else
-
-#include "robotick/systems/audio/AudioSystem.h"
 
 namespace robotick
 {

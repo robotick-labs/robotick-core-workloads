@@ -207,8 +207,8 @@ namespace robotick
 				const auto now_post = Clock::now();
 				const uint32_t duration_ns = detail::clamp_to_uint32(Clock::to_nanoseconds(now_post - now).count());
 
-				child.workload_stats->last_time_delta_ns = static_cast<uint32_t>(tick_info.delta_time * 1e9f);
-				child.workload_stats->record_tick_duration_ns(duration_ns, budget_ns);
+				const uint32_t delta_ns = detail::clamp_to_uint32(ns_since_last);
+				child.workload_stats->record_tick_sample(duration_ns, delta_ns, budget_ns);
 
 				Thread::hybrid_sleep_until(next_tick_time);
 			}

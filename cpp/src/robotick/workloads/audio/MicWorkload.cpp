@@ -24,7 +24,7 @@ namespace robotick
 	{
 		AudioFrame mono; // most recent captured block (mono, float32)
 		bool success = false;
-		FixedString32 last_read_status = "Unknown";
+		AudioQueueResult last_read_status = AudioQueueResult::Success;
 		uint32_t dropped_reads = 0;
 	};
 
@@ -41,23 +41,6 @@ namespace robotick
 			outputs.mono.sample_rate = (input_rate != 0) ? input_rate : AudioSystem::get_sample_rate();
 		}
 
-		static const char* describe_queue_result(const AudioQueueResult status)
-		{
-			switch (status)
-			{
-			case AudioQueueResult::Success:
-				return "Success";
-			case AudioQueueResult::Dropped:
-				return "Dropped";
-			case AudioQueueResult::NoData:
-				return "NoData";
-			case AudioQueueResult::Error:
-				return "Error";
-			default:
-				return "Unknown";
-			}
-		}
-
 		// Pull a chunk from the mic and publish to outputs.
 		void tick(const TickInfo& tick_info)
 		{
@@ -67,7 +50,7 @@ namespace robotick
 			// Read up to the buffer capacity from the mic.
 			const AudioReadResult read_result = AudioSystem::read(outputs.mono.samples.data(), outputs.mono.samples.capacity());
 			outputs.success = (read_result.status == AudioQueueResult::Success);
-			outputs.last_read_status = describe_queue_result(read_result.status);
+			outputs.last_read_status = read_result.status;
 			outputs.mono.samples.set_size(read_result.samples_read);
 
 			if (read_result.status == AudioQueueResult::NoData)
