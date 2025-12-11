@@ -271,9 +271,9 @@ namespace robotick
 		return robotick::max(0.0f, current_confidence - decay);
 	}
 
-	inline float update_speaking_rate_sps(float current_tracker, float instant_rate, float decay, float silence_duration_sec)
-	{
-		if (silence_duration_sec <= 0.0f)
+inline float update_speaking_rate_sps(float current_tracker, float instant_rate, float decay, float silence_duration_sec)
+{
+	if (silence_duration_sec <= 0.0f)
 		{
 			return current_tracker;
 		}
@@ -281,8 +281,35 @@ namespace robotick
 		// Convert the configured decay into a clamp-safe smoothing factor for the EMA
 		const float alpha = robotick::clamp(decay, 0.0f, 0.999f);
 		// For long pauses, fall back to using the actual pause duration (so rate never sticks at zero).
-		const float effective_rate = (silence_duration_sec > 2.0f) ? (1.0f / silence_duration_sec) : instant_rate;
-		return alpha * current_tracker + (1.0f - alpha) * effective_rate;
+	const float effective_rate = (silence_duration_sec > 2.0f) ? (1.0f / silence_duration_sec) : instant_rate;
+	return alpha * current_tracker + (1.0f - alpha) * effective_rate;
+}
+
+struct SpeakingRateTracker
+{
+	float tracker = 0.0f;
+	float last_voiced_onset_time = 0.0f;
+	bool was_voiced = false;
+};
+
+inline void decay_speaking_rate_tracker(SpeakingRateTracker& state, float speaking_rate_decay)
+{
+	state.tracker *= speaking_rate_decay;
+	state.was_voiced = false;
+}
+
+inline float update_speaking_rate_on_voiced(SpeakingRateTracker& state, float time_now, float speaking_rate_decay)
+{
+	if (!state.was_voiced)
+	{
+		const float gap_seconds = robotick::max(1e-6f, time_now - state.last_voiced_onset_time);
+		const float instant_rate = (gap_seconds > 0.05f) ? (1.0f / gap_seconds) : 0.0f;
+		state.tracker = update_speaking_rate_sps(state.tracker, instant_rate, speaking_rate_decay, gap_seconds);
+		state.last_voiced_onset_time = time_now;
 	}
+
+	state.was_voiced = true;
+	return state.tracker;
+}
 
 } // namespace robotick

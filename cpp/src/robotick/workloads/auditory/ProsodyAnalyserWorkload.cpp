@@ -39,13 +39,11 @@ namespace robotick
 	struct ProsodyAnalyserState
 	{
 		float previous_pitch_hz = 0.0f;
-		bool was_voiced = false;
 
 		float smoothed_pitch_hz = 0.0f;
 		float smoothed_rms = 0.0f;
 
-		float speaking_rate_tracker = 0.0f;
-		float last_voiced_onset_time = 0.0f;
+		SpeakingRateTracker speaking_rate_state;
 
 		RelativeVariationTracker pitch_variation_tracker;
 		RelativeVariationTracker rms_variation_tracker;
@@ -99,7 +97,6 @@ namespace robotick
 			{
 				state->previous_pitch_hz = 0.0f;
 				state->smoothed_pitch_hz = 0.0f;
-				state->was_voiced = false;
 				state->pitch_variation_tracker.reset();
 				state->rms_variation_tracker.reset();
 
@@ -109,7 +106,7 @@ namespace robotick
 				prosody.voiced_confidence = 0.0f;
 
 				// Keep the multi-second EMA slowly fading
-				state->speaking_rate_tracker *= config.speaking_rate_decay;
+				decay_speaking_rate_tracker(state->speaking_rate_state, config.speaking_rate_decay);
 
 				return;
 			}
@@ -174,18 +171,7 @@ namespace robotick
 			prosody.shimmer = update_relative_variation(state->rms_variation_tracker, rms);
 
 			// --- Speaking rate (EMA of voiced segment starts/sec) ---
-			if (!state->was_voiced)
-			{
-				const float gap_seconds = info.time_now - state->last_voiced_onset_time;
-				// gap_seconds captures the length of the silence leading up to this voiced onset.
-				const float instant_rate = (gap_seconds > 0.05f) ? (1.0f / gap_seconds) : 0.0f;
-				state->speaking_rate_tracker =
-					update_speaking_rate_sps(state->speaking_rate_tracker, instant_rate, config.speaking_rate_decay, gap_seconds);
-				state->last_voiced_onset_time = info.time_now;
-			}
-
-			state->was_voiced = voiced_now;
-			prosody.speaking_rate_sps = state->speaking_rate_tracker;
+			prosody.speaking_rate_sps = update_speaking_rate_on_voiced(state->speaking_rate_state, info.time_now, config.speaking_rate_decay);
 		}
 	};
 

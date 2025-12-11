@@ -213,6 +213,87 @@ namespace robotick::test
 		}
 	}
 
+	TEST_CASE("Unit/Workloads/ProsodyAnalyser/SpeakingTimeline")
+	{
+		SECTION("Voiced confidence decays linearly during silence")
+		{
+			const float falloff_rate = 1.0f;
+			const float delta_time = 0.1f;
+
+			float confidence = update_voiced_confidence(true, 0.0f, delta_time, falloff_rate);
+			REQUIRE(confidence == Catch::Approx(1.0f));
+
+			for (int i = 0; i < 5; ++i)
+			{
+				confidence = update_voiced_confidence(false, confidence, delta_time, falloff_rate);
+			}
+
+			CHECK(confidence == Catch::Approx(0.5f).margin(1e-3f));
+		}
+
+		SECTION("Speaking-rate tracker matches reference timeline model")
+		{
+			SpeakingRateTracker tracker;
+			const float decay = 0.95f;
+			float current_time = 0.0f;
+			float latest_rate = 0.0f;
+
+			float reference_rate = 0.0f;
+			float reference_last_onset_time = 0.0f;
+			bool reference_was_voiced = false;
+
+			const auto reference_voiced = [&](float time_now) {
+				if (!reference_was_voiced)
+				{
+					const float gap_seconds = robotick::max(0.0f, time_now - reference_last_onset_time);
+					const float instant_rate = (gap_seconds > 0.05f) ? (1.0f / gap_seconds) : 0.0f;
+					reference_rate = update_speaking_rate_sps(reference_rate, instant_rate, decay, gap_seconds);
+					reference_last_onset_time = time_now;
+				}
+				reference_was_voiced = true;
+			};
+
+			const auto reference_silence = [&]() {
+				reference_rate *= decay;
+				reference_was_voiced = false;
+			};
+
+			const auto simulate_voiced_segment = [&](float duration) {
+				latest_rate = update_speaking_rate_on_voiced(tracker, current_time, decay);
+				reference_voiced(current_time);
+				current_time += duration;
+			};
+
+			const auto simulate_silence = [&](float duration, int steps) {
+				const float step = duration / static_cast<float>(steps);
+				for (int i = 0; i < steps; ++i)
+				{
+					decay_speaking_rate_tracker(tracker, decay);
+					reference_silence();
+					current_time += step;
+				}
+			};
+
+			// Initial voiced burst with no prior silence.
+			simulate_voiced_segment(0.5f);
+
+			// Repeat [0.5 s silence, 0.5 s voiced] to build cadence.
+			for (int i = 0; i < 4; ++i)
+			{
+				simulate_silence(0.5f, 10);
+				simulate_voiced_segment(0.5f);
+			}
+
+			CHECK(latest_rate == Catch::Approx(reference_rate).margin(1e-4f));
+
+			// Long pause (3 s) followed by another onset should still align with the reference model.
+			simulate_silence(3.0f, 30);
+			simulate_voiced_segment(0.5f);
+
+			CHECK(latest_rate == Catch::Approx(reference_rate).margin(1e-4f));
+		}
+	}
+
 	TEST_CASE("Unit/Workloads/ProsodyAnalyser/SpectralBrightness")
 	{
 		SECTION("Flat spectrum reports near-zero slope")
