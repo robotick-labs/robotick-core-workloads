@@ -199,21 +199,29 @@ namespace robotick
 		const int min_stack_matches = 3; // we can't declare a clear harmonic pattern without at least 3 matches
 		const float cents_tolerance = settings.harmonic_tolerance_cents;
 		const float ratio_tolerance = robotick::pow(2.0f, cents_tolerance / 1200.0f);
+		const float min_candidate_f0 = (centers.size() > 0) ? max(0.0f, centers[0] * 0.5f) : 0.0f;
+		const size_t max_subharmonic = 3;
 
-		float best_score = -1.0f;
-		float best_f0 = 0.0f;
-		int best_match_count = 0;
-		FixedVector<float, harmonic_pitch::MaxHarmonics> best_amplitudes;
-
-		// For each peak in the spectrum, consider it as a possible fundamental frequency (f0)
-		for (const Peak& candidate : peaks)
+		struct CandidateEvaluation
 		{
-			const float candidate_f0 = candidate.frequency;
+			float f0 = 0.0f;
+			float score = 0.0f;
+			int match_count = 0;
+			int max_non_zero_harmonic_id = 0;
+			bool low_order_supported = false;
+			FixedVector<float, harmonic_pitch::MaxHarmonics> amplitudes;
+		};
+
+		const auto evaluate_candidate = [&](float candidate_f0, CandidateEvaluation& out_eval) -> bool {
+			if (candidate_f0 <= min_candidate_f0)
+				return false;
+
 			FixedVector<float, harmonic_pitch::MaxHarmonics> harmonics;
 
 			int max_non_zero_harmonic_id = 0;
 			int match_count = 0;
 			float score = 0.0f;
+			bool low_order_supported = false;
 
 			// Try to find matching harmonic peaks at integer multiples of this candidate f0
 			for (size_t harmonic_id = 1; harmonic_id <= harmonics.capacity(); ++harmonic_id)
@@ -248,9 +256,14 @@ namespace robotick
 
 				if (best_amp > 0.0f)
 				{
-					match_count++;							// Count how many harmonics were matched
-					score += best_amp;						// Accumulate score (favor stronger matches)
-					max_non_zero_harmonic_id = harmonic_id; // Track furthest matched harmonic
+					match_count++; // Count how many harmonics were matched
+					const float harmonic_bias = (harmonic_id == 1) ? 1.5f : (harmonic_id == 2 ? 1.2f : 1.0f);
+					score += best_amp * harmonic_bias;			// Accumulate score (favor stronger + low-order matches)
+					max_non_zero_harmonic_id = harmonic_id;		// Track furthest matched harmonic
+					if (harmonic_id <= 2)
+					{
+						low_order_supported = true;
+					}
 				}
 			}
 
@@ -260,19 +273,56 @@ namespace robotick
 			const bool is_single_peak = (match_count == 1);
 			const bool is_valid_stack = (match_count >= min_stack_matches);
 
-			if (is_valid_stack || (is_single_peak && settings.allow_single_peak_mode))
+			if (!(is_valid_stack || (is_single_peak && settings.allow_single_peak_mode)))
+				return false;
+
+			if (!low_order_supported && match_count > 1)
 			{
-				// Prefer higher score, or equal score with more matched harmonics
-				const bool is_better = (score > best_score) || (score == best_score && match_count > best_match_count);
+				// Penalise candidates that only match higher-order harmonics; often these are octave errors.
+				score *= 0.6f;
+			}
+
+			score += 0.05f * match_count; // slight preference for more consistent stacks
+
+			out_eval.f0 = candidate_f0;
+			out_eval.score = score;
+			out_eval.match_count = match_count;
+			out_eval.max_non_zero_harmonic_id = max_non_zero_harmonic_id;
+			out_eval.low_order_supported = low_order_supported;
+			out_eval.amplitudes.clear();
+			if (max_non_zero_harmonic_id > 0)
+			{
+				out_eval.amplitudes.set(harmonics.data(), max_non_zero_harmonic_id);
+			}
+
+			return true;
+		};
+
+		float best_score = -1.0f;
+		float best_f0 = 0.0f;
+		int best_match_count = 0;
+		FixedVector<float, harmonic_pitch::MaxHarmonics> best_amplitudes;
+
+		// For each peak in the spectrum, consider it as a possible fundamental frequency (f0)
+		for (const Peak& candidate : peaks)
+		{
+			for (size_t divisor = 1; divisor <= max_subharmonic; ++divisor)
+			{
+				const float candidate_f0 = candidate.frequency / static_cast<float>(divisor);
+				CandidateEvaluation eval;
+				if (!evaluate_candidate(candidate_f0, eval))
+					continue;
+
+				const bool is_better = (eval.score > best_score)
+					|| (robotick::abs(eval.score - best_score) < 1e-5f && eval.match_count > best_match_count);
 
 				if (is_better)
 				{
-					best_score = score;
-					best_f0 = candidate_f0;
-
-					// Copy harmonic amplitudes up to last matched harmonic
-					best_amplitudes.set(harmonics.data(), max_non_zero_harmonic_id);
-					best_match_count = match_count;
+					best_score = eval.score;
+					best_f0 = eval.f0;
+					best_match_count = eval.match_count;
+					best_amplitudes.clear();
+					best_amplitudes.set(eval.amplitudes.data(), eval.amplitudes.size());
 				}
 			}
 		}
@@ -374,10 +424,15 @@ namespace robotick
 			total_weight += amp;
 		}
 
-		if (total_weight <= 0.0f)
+		if (total_weight <= 0.0f || total_weight < settings.min_total_continuation_amplitude)
 			return false;
 
 		const float new_f0 = weighted_sum / total_weight;
+
+		// Reject large instantaneous jumps — treat as a new detection instead.
+		const float cents_shift = 1200.0f * robotick::abs(robotick::log2(new_f0 / prev_result.h1_f0_hz));
+		if (cents_shift > settings.harmonic_tolerance_cents)
+			return false;
 
 		// Step 5: remeasure harmonic amplitudes using updated f0
 		FixedVector<float, harmonic_pitch::MaxHarmonics> harmonics;
@@ -476,14 +531,34 @@ namespace robotick
 			}
 			else
 			{
-				// If f0 values disagree, choose whichever has stronger cumulative amplitude
-				float fresh_score = 0.0f, continued_score = 0.0f;
-				for (float amp : fresh.harmonic_amplitudes)
-					fresh_score += amp;
-				for (float amp : continued.harmonic_amplitudes)
-					continued_score += amp;
+				bool prefer_continued = false;
+				if (prev_result.h1_f0_hz > 0.0f)
+				{
+					const float fresh_prev_diff = 1200.0f * robotick::abs(robotick::log2(fresh.h1_f0_hz / prev_result.h1_f0_hz));
+					const float continued_prev_diff =
+						1200.0f * robotick::abs(robotick::log2(continued.h1_f0_hz / prev_result.h1_f0_hz));
+					if (fresh_prev_diff > settings.harmonic_tolerance_cents && continued_prev_diff <= settings.harmonic_tolerance_cents)
+					{
+						// Fresh result is a large jump but continuation stayed locked — keep the track.
+						prefer_continued = true;
+					}
+				}
 
-				out_result = (fresh_score >= continued_score) ? fresh : continued;
+				if (prefer_continued)
+				{
+					out_result = continued;
+				}
+				else
+				{
+					// Fall back to whichever harmonic stack is stronger overall
+					float fresh_score = 0.0f, continued_score = 0.0f;
+					for (float amp : fresh.harmonic_amplitudes)
+						fresh_score += amp;
+					for (float amp : continued.harmonic_amplitudes)
+						continued_score += amp;
+
+					out_result = (fresh_score >= continued_score) ? fresh : continued;
+				}
 			}
 
 			return true;

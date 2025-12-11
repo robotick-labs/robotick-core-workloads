@@ -28,6 +28,7 @@ namespace robotick
 		bool allow_single_peak_mode = true;
 
 		float min_total_continuation_amplitude = 1.0f;
+		uint32_t max_hold_frames = 3; // how long we keep reporting the last valid pitch when frames go silent
 	};
 
 	using HarmonicAmplitudes = FixedVector<float, harmonic_pitch::MaxHarmonics>;

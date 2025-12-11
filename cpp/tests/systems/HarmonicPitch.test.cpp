@@ -36,6 +36,16 @@ namespace robotick::test
 		return best;
 	}
 
+	static void stamp_gaussian_peak(AudioBuffer128& envelope, const AudioBuffer128& centers, float peak_hz, float amplitude, float sigma_cents)
+	{
+		for (size_t i = 0; i < centers.size(); ++i)
+		{
+			const float cents = 1200.0f * robotick::log2(centers[i] / peak_hz);
+			const float gauss = robotick::exp(-0.5f * (cents * cents) / (sigma_cents * sigma_cents));
+			envelope[i] = robotick::max(envelope[i], amplitude * gauss);
+		}
+	}
+
 	TEST_CASE("Unit/Audio/HarmonicPitch")
 	{
 		SECTION("Detects only the true fundamental in real-world 1200Hz sine-wave envelope profile")
@@ -221,7 +231,67 @@ namespace robotick::test
 					CHECK(result.get_h1_amplitude() == Catch::Approx(0.0f).margin(0.01f));
 				}
 			}
+		SECTION("Finds true fundamental even when upper harmonics dominate")
+		{
+			HarmonicPitchSettings config;
+			config.min_amplitude = 0.05f;
+			config.allow_single_peak_mode = false;
+
+			const int num_bands = 128;
+			AudioBuffer128 centers(num_bands);
+			AudioBuffer128 envelope(num_bands);
+			const float fmin = 100.0f;
+			const float fmax = 4000.0f;
+			for (int i = 0; i < num_bands; ++i)
+			{
+				centers[i] = fmin + (fmax - fmin) * (float(i) / float(num_bands - 1));
+				envelope[i] = 0.0f;
+			}
+
+			const float fundamental = 220.0f;
+			stamp_gaussian_peak(envelope, centers, fundamental, 0.2f, 30.0f);
+			stamp_gaussian_peak(envelope, centers, fundamental * 2.0f, 1.0f, 25.0f);
+			stamp_gaussian_peak(envelope, centers, fundamental * 3.0f, 0.7f, 25.0f);
+
+			HarmonicPitchResult result{};
+			REQUIRE(HarmonicPitch::find_harmonic_features(config, centers, envelope, result));
+			CHECK(result.h1_f0_hz == Catch::Approx(fundamental).margin(5.0f));
+			CHECK(result.get_h1_amplitude() < 0.4f);
 		}
+
+		SECTION("Continuation rejects weak energy or large jumps")
+		{
+			const int num_bands = 128;
+			AudioBuffer128 centers(num_bands);
+			AudioBuffer128 envelope(num_bands);
+			const float fmin = 80.0f;
+			const float fmax = 3000.0f;
+			for (int i = 0; i < num_bands; ++i)
+			{
+				centers[i] = fmin + (fmax - fmin) * (float(i) / float(num_bands - 1));
+				envelope[i] = 0.0f;
+			}
+
+			HarmonicPitchSettings config;
+			config.min_amplitude = 0.05f;
+			config.min_total_continuation_amplitude = 0.8f;
+
+			HarmonicPitchResult prev{};
+			prev.h1_f0_hz = 250.0f;
+			prev.harmonic_amplitudes.add(0.6f);
+
+			stamp_gaussian_peak(envelope, centers, prev.h1_f0_hz, 0.2f, 20.0f);
+			HarmonicPitchResult continued{};
+			CHECK_FALSE(HarmonicPitch::try_continue_previous_result(config, centers, envelope, prev, continued));
+
+			for (size_t i = 0; i < envelope.size(); ++i)
+				envelope[i] = 0.0f;
+			config.min_total_continuation_amplitude = 0.2f;
+			stamp_gaussian_peak(envelope, centers, prev.h1_f0_hz * 2.0f, 1.0f, 15.0f);
+			CHECK_FALSE(HarmonicPitch::try_continue_previous_result(config, centers, envelope, prev, continued));
+		}
+
 	}
+}
 
 }; // namespace robotick::test
