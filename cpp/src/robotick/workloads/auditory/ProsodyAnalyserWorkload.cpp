@@ -6,8 +6,8 @@
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
+#include "robotick/systems/auditory/ProsodyMath.h"
 #include "robotick/systems/auditory/ProsodyState.h"
-
 
 namespace robotick
 {
@@ -194,6 +194,7 @@ namespace robotick
 				energy_sum += static_cast<double>(sample) * static_cast<double>(sample);
 			}
 
+			const float frame_energy = robotick::max(static_cast<float>(energy_sum), 1e-12f);
 			const float rms = (samples.empty()) ? 0.0f : static_cast<float>(sqrt(energy_sum / static_cast<double>(samples.size())));
 
 			// --- Smoothed RMS ---
@@ -258,14 +259,7 @@ namespace robotick
 				harmonic_energy += amplitude * amplitude;
 			}
 
-			const float total_energy = robotick::max(harmonic_energy, 1e-12f);
-			const float noise_energy = robotick::max(1e-12f, total_energy - harmonic_energy);
-			float harmonicity_db = 10.0f * log10f(harmonic_energy / noise_energy);
-			if (harmonicity_db < config.harmonic_floor_db)
-			{
-				harmonicity_db = config.harmonic_floor_db;
-			}
-			prosody.harmonicity_hnr_db = harmonicity_db;
+			prosody.harmonicity_hnr_db = compute_harmonicity_hnr_db(frame_energy, harmonic_energy, config.harmonic_floor_db);
 
 			// --- Spectral brightness from slope of log(freq) vs log(amplitude) ---
 			if (pitch_info.harmonic_amplitudes.size() >= 2)
