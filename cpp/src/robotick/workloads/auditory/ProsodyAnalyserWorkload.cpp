@@ -67,80 +67,6 @@ namespace robotick
 			return fallback;
 		}
 
-		static inline float db(float x) { return 20.0f * log10f(robotick::max(1e-12f, x)); }
-
-		void compute_harmonic_descriptors(const HarmonicPitchResult& hp, const float sample_rate_hz, ProsodyState& prosody)
-		{
-			const size_t H = hp.harmonic_amplitudes.size();
-			if (H == 0 || hp.h1_f0_hz <= 0.0f)
-			{
-				prosody.h1_to_h2_db = 0.0f;
-				prosody.harmonic_tilt_db_per_h = 0.0f;
-				prosody.even_odd_ratio = 1.0f;
-				prosody.harmonic_support_ratio = 0.0f;
-				prosody.centroid_ratio = 0.0f;
-				prosody.formant1_ratio = 0.0f;
-				prosody.formant2_ratio = 0.0f;
-				return;
-			}
-
-			// H1 vs H2 (in dB). If H2 missing, treat as very low.
-			const float h1 = hp.harmonic_amplitudes[0];
-			const float h2 = (H >= 2) ? hp.harmonic_amplitudes[1] : 1e-6f;
-			prosody.h1_to_h2_db = db(h1) - db(h2);
-
-			// Linear fit of dB(ampl) vs harmonic index -> simple tilt per harmonic
-			double sx = 0.0, sy = 0.0, sxy = 0.0, sx2 = 0.0;
-			double total = 0.0, weighted_index_sum = 0.0;
-			double even_sum = 0.0, odd_sum = 0.0;
-			int support_count = 0;
-
-			// Relative threshold vs H1 (e.g., 12 dB down)
-			const float rel_thresh = robotick::max(1e-6f, h1 * powf(10.0f, -12.0f / 20.0f));
-
-			for (size_t i = 0; i < H; ++i)
-			{
-				const double idx = static_cast<double>(i + 1); // harmonic number
-				const double a = static_cast<double>(robotick::max(1e-12f, hp.harmonic_amplitudes[i]));
-				const double adb = 20.0 * log10(a);
-
-				sx += idx;
-				sy += adb;
-				sxy += idx * adb;
-				sx2 += idx * idx;
-
-				total += a;
-				weighted_index_sum += idx * a;
-
-				if (((i + 1) % 2) == 0)
-				{
-					even_sum += a;
-				}
-				else
-				{
-					odd_sum += a;
-				}
-
-				if (a >= rel_thresh)
-				{
-					support_count++;
-				}
-			}
-
-			const double n = static_cast<double>(H);
-			const double denom = robotick::max(1e-9, (n * sx2 - sx * sx));
-			const double slope_db_per_h = (n * sxy - sx * sy) / denom; // dB per harmonic increase
-			prosody.harmonic_tilt_db_per_h = static_cast<float>(slope_db_per_h);
-
-			prosody.even_odd_ratio = (odd_sum > 0.0) ? static_cast<float>(even_sum / odd_sum) : 1.0f;
-			prosody.harmonic_support_ratio = static_cast<float>(support_count) / static_cast<float>(H);
-			prosody.centroid_ratio = (total > 0.0) ? static_cast<float>((weighted_index_sum / total) / n) : 0.0f;
-
-			const FormantRatios formant_ratios = compute_formant_ratios(hp, sample_rate_hz);
-			prosody.formant1_ratio = formant_ratios.first;
-			prosody.formant2_ratio = formant_ratios.second;
-		}
-
 		// ----------------------------------------------------------
 		// Main tick: compute expressive prosody from harmonics
 		// ----------------------------------------------------------
@@ -233,7 +159,14 @@ namespace robotick
 			prosody.spectral_brightness = compute_spectral_brightness(pitch_info);
 
 			// --- harmonic descriptors ---
-			compute_harmonic_descriptors(pitch_info, static_cast<float>(inputs.mono.sample_rate), prosody);
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(pitch_info, static_cast<float>(inputs.mono.sample_rate));
+			prosody.h1_to_h2_db = descriptors.h1_to_h2_db;
+			prosody.harmonic_tilt_db_per_h = descriptors.harmonic_tilt_db_per_h;
+			prosody.even_odd_ratio = descriptors.even_odd_ratio;
+			prosody.harmonic_support_ratio = descriptors.harmonic_support_ratio;
+			prosody.centroid_ratio = descriptors.centroid_ratio;
+			prosody.formant1_ratio = descriptors.formant1_ratio;
+			prosody.formant2_ratio = descriptors.formant2_ratio;
 
 			// --- Jitter & shimmer (rough proxies) ---
 			prosody.jitter = update_relative_variation(state->pitch_variation_tracker, current_pitch);

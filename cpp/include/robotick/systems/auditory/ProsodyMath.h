@@ -27,45 +27,6 @@ namespace robotick
 		float second = 0.0f;
 	};
 
-	struct RelativeVariationTracker
-	{
-		float previous_value = 0.0f;
-		bool has_previous_value = false;
-
-		inline void reset()
-		{
-			previous_value = 0.0f;
-			has_previous_value = false;
-		}
-	};
-
-	inline float update_relative_variation(RelativeVariationTracker& tracker, const float current_value)
-	{
-		if (current_value <= 0.0f)
-		{
-			tracker.reset();
-			return 0.0f;
-		}
-
-		if (!tracker.has_previous_value)
-		{
-			tracker.previous_value = current_value;
-			tracker.has_previous_value = true;
-			return 0.0f;
-		}
-
-		const float previous_value = tracker.previous_value;
-		tracker.previous_value = current_value;
-
-		if (previous_value <= 0.0f)
-		{
-			return 0.0f;
-		}
-
-		const float delta = fabsf(current_value - previous_value);
-		return delta / previous_value;
-	}
-
 	inline FormantRatios compute_formant_ratios(const HarmonicPitchResult& hp, const float sample_rate_hz)
 	{
 		FormantRatios result{};
@@ -122,6 +83,128 @@ namespace robotick
 		}
 
 		return result;
+	}
+
+	struct RelativeVariationTracker
+	{
+		float previous_value = 0.0f;
+		bool has_previous_value = false;
+
+		inline void reset()
+		{
+			previous_value = 0.0f;
+			has_previous_value = false;
+		}
+	};
+
+	inline float update_relative_variation(RelativeVariationTracker& tracker, const float current_value)
+	{
+		if (current_value <= 0.0f)
+		{
+			tracker.reset();
+			return 0.0f;
+		}
+
+		if (!tracker.has_previous_value)
+		{
+			tracker.previous_value = current_value;
+			tracker.has_previous_value = true;
+			return 0.0f;
+		}
+
+		const float previous_value = tracker.previous_value;
+		tracker.previous_value = current_value;
+
+		if (previous_value <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		const float delta = fabsf(current_value - previous_value);
+		return delta / previous_value;
+	}
+
+	struct HarmonicDescriptors
+	{
+		float h1_to_h2_db = 0.0f;
+		float harmonic_tilt_db_per_h = 0.0f;
+		float even_odd_ratio = 1.0f;
+		float harmonic_support_ratio = 0.0f;
+		float centroid_ratio = 0.0f;
+		float formant1_ratio = 0.0f;
+		float formant2_ratio = 0.0f;
+	};
+
+	inline HarmonicDescriptors compute_harmonic_descriptors(const HarmonicPitchResult& hp, const float sample_rate_hz)
+	{
+		HarmonicDescriptors descriptors{};
+
+		const size_t harmonic_count = hp.harmonic_amplitudes.size();
+		if (harmonic_count == 0 || hp.h1_f0_hz <= 0.0f)
+		{
+			return descriptors;
+		}
+
+		const float h1 = hp.harmonic_amplitudes[0];
+		const float h2 = (harmonic_count >= 2) ? hp.harmonic_amplitudes[1] : 1e-6f;
+		const auto db = [](float x) { return 20.0f * log10f(robotick::max(1e-12f, x)); };
+		descriptors.h1_to_h2_db = db(h1) - db(h2);
+
+		double sx = 0.0;
+		double sy = 0.0;
+		double sxy = 0.0;
+		double sx2 = 0.0;
+		double total = 0.0;
+		double weighted_index_sum = 0.0;
+		double even_sum = 0.0;
+		double odd_sum = 0.0;
+		int support_count = 0;
+
+		const float rel_thresh = robotick::max(1e-6f, h1 * powf(10.0f, -12.0f / 20.0f));
+
+		for (size_t i = 0; i < harmonic_count; ++i)
+		{
+			const double idx = static_cast<double>(i + 1);
+			const double amplitude = static_cast<double>(robotick::max(1e-12f, hp.harmonic_amplitudes[i]));
+			const double amplitude_db = 20.0 * log10(amplitude);
+
+			sx += idx;
+			sy += amplitude_db;
+			sxy += idx * amplitude_db;
+			sx2 += idx * idx;
+
+			total += amplitude;
+			weighted_index_sum += idx * amplitude;
+
+			if (((i + 1) % 2) == 0)
+			{
+				even_sum += amplitude;
+			}
+			else
+			{
+				odd_sum += amplitude;
+			}
+
+			if (amplitude >= rel_thresh)
+			{
+				support_count++;
+			}
+		}
+
+		const double n = static_cast<double>(harmonic_count);
+		const double denom = robotick::max(1e-9, (n * sx2 - sx * sx));
+		const double slope_db_per_h = (n * sxy - sx * sy) / denom;
+		descriptors.harmonic_tilt_db_per_h = static_cast<float>(slope_db_per_h);
+
+		descriptors.even_odd_ratio = (odd_sum > 0.0) ? static_cast<float>(even_sum / odd_sum) : 1.0f;
+		descriptors.harmonic_support_ratio = static_cast<float>(support_count) / static_cast<float>(harmonic_count);
+		descriptors.centroid_ratio = (total > 0.0) ? static_cast<float>((weighted_index_sum / total) / n) : 0.0f;
+
+		const FormantRatios formant_ratios = compute_formant_ratios(hp, sample_rate_hz);
+		descriptors.formant1_ratio = formant_ratios.first;
+		descriptors.formant2_ratio = formant_ratios.second;
+
+		return descriptors;
 	}
 
 	inline float compute_spectral_brightness(const HarmonicPitchResult& hp)

@@ -63,6 +63,96 @@ namespace robotick::test
 		}
 	}
 
+	TEST_CASE("Unit/Workloads/ProsodyAnalyser/HarmonicDescriptors")
+	{
+		const float sample_rate = 16000.0f;
+
+		SECTION("H1-to-H2 captures the dB gap between first two harmonics")
+		{
+			HarmonicPitchResult hp;
+			hp.h1_f0_hz = 100.0f;
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(0.5f);
+
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(hp, sample_rate);
+
+			CHECK(descriptors.h1_to_h2_db == Catch::Approx(6.02f).margin(0.05f));
+		}
+
+		SECTION("Harmonic tilt follows the slope of the harmonic envelope")
+		{
+			HarmonicPitchResult hp;
+			hp.h1_f0_hz = 120.0f;
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(0.5f);
+			hp.harmonic_amplitudes.add(0.25f);
+
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(hp, sample_rate);
+
+			CHECK(descriptors.harmonic_tilt_db_per_h == Catch::Approx(-6.0f).margin(0.2f));
+		}
+
+		SECTION("Even/odd ratio grows when even harmonics dominate")
+		{
+			HarmonicPitchResult hp;
+			hp.h1_f0_hz = 150.0f;
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(0.8f);
+			hp.harmonic_amplitudes.add(0.2f);
+			hp.harmonic_amplitudes.add(0.8f);
+
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(hp, sample_rate);
+
+			CHECK(descriptors.even_odd_ratio == Catch::Approx((0.8f + 0.8f) / (1.0f + 0.2f)).margin(1e-3f));
+		}
+
+		SECTION("Support ratio counts harmonics above the -12 dB threshold")
+		{
+			HarmonicPitchResult hp;
+			hp.h1_f0_hz = 160.0f;
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(0.4f);
+			hp.harmonic_amplitudes.add(0.2f);
+			hp.harmonic_amplitudes.add(0.26f);
+
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(hp, sample_rate);
+
+			CHECK(descriptors.harmonic_support_ratio == Catch::Approx(0.75f).margin(1e-3f));
+		}
+
+		SECTION("Centroid ratio normalizes the weighted harmonic index")
+		{
+			HarmonicPitchResult hp;
+			hp.h1_f0_hz = 200.0f;
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(1.0f);
+			hp.harmonic_amplitudes.add(1.0f);
+
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(hp, sample_rate);
+
+			CHECK(descriptors.centroid_ratio == Catch::Approx(0.625f).margin(1e-3f));
+		}
+
+		SECTION("Formants report normalized frequencies for the two strongest peaks")
+		{
+			HarmonicPitchResult hp;
+			hp.h1_f0_hz = 100.0f;
+			hp.harmonic_amplitudes.add(0.01f);
+			hp.harmonic_amplitudes.add(2.0f); // dominant second harmonic (~200 Hz)
+			hp.harmonic_amplitudes.add(0.05f);
+			hp.harmonic_amplitudes.add(0.001f);
+			hp.harmonic_amplitudes.add(0.0001f);
+			hp.harmonic_amplitudes.add(1.5f); // dominant sixth harmonic (~600 Hz)
+			hp.harmonic_amplitudes.add(0.0001f);
+
+			const HarmonicDescriptors descriptors = compute_harmonic_descriptors(hp, sample_rate);
+
+			CHECK(descriptors.formant1_ratio == Catch::Approx(200.0f / 8000.0f).margin(0.005f));
+			CHECK(descriptors.formant2_ratio == Catch::Approx(500.0f / 8000.0f).margin(0.005f));
+		}
+	}
+
 	TEST_CASE("Unit/Workloads/ProsodyAnalyser/RelativeVariation")
 	{
 		SECTION("Alternating pitch exhibits expected jitter ratio")
