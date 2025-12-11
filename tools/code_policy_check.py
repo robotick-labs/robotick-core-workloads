@@ -72,9 +72,14 @@ def main():
         )
 
     module = _load_canonical_module(script_path)
-    module.run_policy_check(
+    failures = module.run_policy_check(
         args.source_root, header_mode="exact", exclude_dirs=EXCLUDED_DIRS
     )
+    if failures:
+        print("Code policy violations detected:", file=sys.stderr)
+        for failure in failures:
+            print(f"  {failure}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

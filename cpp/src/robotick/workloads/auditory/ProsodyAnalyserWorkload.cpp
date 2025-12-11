@@ -67,7 +67,7 @@ namespace robotick
 
 		static inline float db(float x) { return 20.0f * log10f(robotick::max(1e-12f, x)); }
 
-		void compute_harmonic_descriptors(const HarmonicPitchResult& hp, ProsodyState& prosody)
+		void compute_harmonic_descriptors(const HarmonicPitchResult& hp, const float sample_rate_hz, ProsodyState& prosody)
 		{
 			const size_t H = hp.harmonic_amplitudes.size();
 			if (H == 0 || hp.h1_f0_hz <= 0.0f)
@@ -134,47 +134,9 @@ namespace robotick
 			prosody.harmonic_support_ratio = static_cast<float>(support_count) / static_cast<float>(H);
 			prosody.centroid_ratio = (total > 0.0) ? static_cast<float>((weighted_index_sum / total) / n) : 0.0f;
 
-			// Very rough “formant” peaks over the harmonic envelope: smooth + local maxima over dB
-			// Simple 3-point check after a tiny moving average in index domain
-			float smoothed_db[64]; // enough for your current MaxHarmonics
-			const size_t N = robotick::min(H, static_cast<size_t>(64));
-
-			// 3-tap moving average on dB amplitude
-			for (size_t i = 0; i < N; ++i)
-			{
-				const double a0 = 20.0 * log10(robotick::max(1e-12f, hp.harmonic_amplitudes[i]));
-				const double aL = 20.0 * log10(robotick::max(1e-12f, hp.harmonic_amplitudes[(i > 0) ? i - 1 : i]));
-				const double aR = 20.0 * log10(robotick::max(1e-12f, hp.harmonic_amplitudes[(i + 1 < N) ? i + 1 : i]));
-				smoothed_db[i] = static_cast<float>((aL + a0 + aR) / 3.0);
-			}
-
-			// Find top two local maxima indices (by dB)
-			int best_i = -1, second_i = -1;
-			float best_v = -1e9f, second_v = -1e9f;
-			for (size_t i = 1; i + 1 < N; ++i)
-			{
-				const float v = smoothed_db[i];
-				if (v > smoothed_db[i - 1] && v >= smoothed_db[i + 1])
-				{
-					if (v > best_v)
-					{
-						second_v = best_v;
-						second_i = best_i;
-						best_v = v;
-						best_i = static_cast<int>(i);
-					}
-					else if (v > second_v)
-					{
-						second_v = v;
-						second_i = static_cast<int>(i);
-					}
-				}
-			}
-
-			// Normalise to 0..1 by harmonic count
-			const float denom_idx = (N > 1) ? static_cast<float>(N - 1) : 1.0f;
-			prosody.formant1_ratio = (best_i >= 0) ? static_cast<float>(best_i) / denom_idx : 0.0f;
-			prosody.formant2_ratio = (second_i >= 0) ? static_cast<float>(second_i) / denom_idx : 0.0f;
+			const FormantRatios formant_ratios = compute_formant_ratios(hp, sample_rate_hz);
+			prosody.formant1_ratio = formant_ratios.first;
+			prosody.formant2_ratio = formant_ratios.second;
 		}
 
 		// ----------------------------------------------------------
@@ -297,7 +259,7 @@ namespace robotick
 			}
 
 			// --- harmonic descriptors ---
-			compute_harmonic_descriptors(pitch_info, prosody);
+			compute_harmonic_descriptors(pitch_info, static_cast<float>(inputs.mono.sample_rate), prosody);
 
 			// --- Jitter & shimmer (rough proxies) ---
 			const float pitch_delta = fabsf(current_pitch - previous_pitch);
