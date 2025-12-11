@@ -161,31 +161,34 @@ endif()
 # =========================
 
 if (ROBOTICK_PLATFORM_LINUX)
-    FetchContent_Declare(
-        mujoco
-        GIT_REPOSITORY https://github.com/deepmind/mujoco.git
-        GIT_TAG        3.1.5
-        CMAKE_ARGS
-            -DMJ_BUILD_EXAMPLES=OFF
-            -DMJ_BUILD_TESTS=OFF
-            -DMJ_BUILD_BENCHMARKS=OFF
-            -DMJ_BUILD_SIMULATE=OFF
-            -DBUILD_TESTING=OFF
-            -DMJ_USE_AVX_INTRINSICS=OFF
-            -DMJ_USE_CUDA=OFF
-    )
+    set(MUJOCO_VERSION "3.1.5")
+    set(MUJOCO_ARCHIVE_URL "https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VERSION}/mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz")
+    set(MUJOCO_SDK_ROOT "" CACHE PATH "Optional pre-downloaded MuJoCo SDK directory")
 
-    FetchContent_MakeAvailable(mujoco)
-
-    if (TARGET mujoco)
-        target_compile_options(mujoco PRIVATE -Wno-unused-parameter)
-
-        # For CMake >= 3.24, also disable Werror for mujoco if leaked from higher up
-        if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-            set_property(TARGET mujoco PROPERTY COMPILE_WARNING_AS_ERROR OFF)
+    if (MUJOCO_SDK_ROOT)
+        set(_MUJOCO_ROOT ${MUJOCO_SDK_ROOT})
+    else()
+        include(FetchContent)
+        FetchContent_Declare(
+            mujoco_sdk
+            URL ${MUJOCO_ARCHIVE_URL}
+        )
+        FetchContent_GetProperties(mujoco_sdk)
+        if (NOT mujoco_sdk_POPULATED)
+            FetchContent_Populate(mujoco_sdk)
         endif()
+        set(_MUJOCO_ROOT ${mujoco_sdk_SOURCE_DIR})
     endif()
 
+    if (NOT EXISTS "${_MUJOCO_ROOT}/lib/libmujoco.so")
+        message(FATAL_ERROR "MuJoCo SDK missing libmujoco.so under ${_MUJOCO_ROOT}. Set MUJOCO_SDK_ROOT to a valid install.")
+    endif()
+
+    add_library(mujoco SHARED IMPORTED)
+    set_target_properties(mujoco PROPERTIES
+        IMPORTED_LOCATION "${_MUJOCO_ROOT}/lib/libmujoco.so"
+        INTERFACE_INCLUDE_DIRECTORIES "${_MUJOCO_ROOT}/include"
+    )
 endif()
 
 # =========================
@@ -204,7 +207,7 @@ if(ROBOTICK_PLATFORM_LINUX)
     target_include_directories(robotick-core-workloads PRIVATE /usr/include/SDL2)
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_GFX_INCLUDE_DIRS})
     target_include_directories(robotick-core-workloads PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
-    target_include_directories(robotick-core-workloads PRIVATE ${mujoco_SOURCE_DIR}/include)
+    target_include_directories(robotick-core-workloads PRIVATE ${_MUJOCO_ROOT}/include)
 endif()
 
 # =========================
