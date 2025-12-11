@@ -39,7 +39,6 @@ namespace robotick
 	struct ProsodyAnalyserState
 	{
 		float previous_pitch_hz = 0.0f;
-		float previous_rms = 0.0f;
 		bool was_voiced = false;
 
 		float smoothed_pitch_hz = 0.0f;
@@ -47,6 +46,9 @@ namespace robotick
 
 		float speaking_rate_tracker = 0.0f;
 		float last_voiced_onset_time = 0.0f;
+
+		RelativeVariationTracker pitch_variation_tracker;
+		RelativeVariationTracker rms_variation_tracker;
 	};
 
 	struct ProsodyAnalyserWorkload
@@ -165,11 +167,15 @@ namespace robotick
 
 			// --- Determine voiced state ---
 			const bool voiced_now = (pitch_info.h1_f0_hz >= config.min_pitch_hz && pitch_info.h1_f0_hz <= config.max_pitch_hz);
+			prosody.voiced_confidence = update_voiced_confidence(voiced_now, prosody.voiced_confidence, delta_time, config.voiced_falloff_rate_hz);
+
 			if (!voiced_now)
 			{
 				state->previous_pitch_hz = 0.0f;
 				state->smoothed_pitch_hz = 0.0f;
 				state->was_voiced = false;
+				state->pitch_variation_tracker.reset();
+				state->rms_variation_tracker.reset();
 
 				prosody = ProsodyState{}; // zero the struct if you like
 				prosody.rms = state->smoothed_rms;
@@ -224,62 +230,24 @@ namespace robotick
 			prosody.harmonicity_hnr_db = compute_harmonicity_hnr_db(frame_energy, harmonic_energy, config.harmonic_floor_db);
 
 			// --- Spectral brightness from slope of log(freq) vs log(amplitude) ---
-			if (pitch_info.harmonic_amplitudes.size() >= 2)
-			{
-				double sum_x = 0.0;
-				double sum_y = 0.0;
-				double sum_xy = 0.0;
-				double sum_x2 = 0.0;
-				const size_t num_harmonics = pitch_info.harmonic_amplitudes.size();
-
-				for (size_t harmonic_id = 0; harmonic_id < num_harmonics; ++harmonic_id)
-				{
-					const double frequency = (harmonic_id + 1) * pitch_info.h1_f0_hz;
-					const double amplitude = robotick::max(1e-12, static_cast<double>(pitch_info.harmonic_amplitudes[harmonic_id]));
-					const double log_frequency = log10(frequency);
-					const double log_amplitude = log10(amplitude);
-
-					sum_x += log_frequency;
-					sum_y += log_amplitude;
-					sum_xy += log_frequency * log_amplitude;
-					sum_x2 += log_frequency * log_frequency;
-				}
-
-				const double mean_x = sum_x / static_cast<double>(num_harmonics);
-				const double mean_y = sum_y / static_cast<double>(num_harmonics);
-				const double numerator = sum_xy - static_cast<double>(num_harmonics) * mean_x * mean_y;
-				const double denominator = sum_x2 - static_cast<double>(num_harmonics) * mean_x * mean_x;
-				const double slope = safe_div(numerator, denominator, 0.0);
-
-				prosody.spectral_brightness = static_cast<float>(-20.0 * slope);
-			}
-			else
-			{
-				prosody.spectral_brightness = 0.0f;
-			}
+			prosody.spectral_brightness = compute_spectral_brightness(pitch_info);
 
 			// --- harmonic descriptors ---
 			compute_harmonic_descriptors(pitch_info, static_cast<float>(inputs.mono.sample_rate), prosody);
 
 			// --- Jitter & shimmer (rough proxies) ---
-			const float pitch_delta = fabsf(current_pitch - previous_pitch);
-			prosody.jitter = (previous_pitch > 0.0f) ? (pitch_delta / previous_pitch) : 0.0f;
+			prosody.jitter = update_relative_variation(state->pitch_variation_tracker, current_pitch);
 
-			const float rms_delta = fabsf(state->smoothed_rms - state->previous_rms);
-			prosody.shimmer = (state->previous_rms > 0.0f) ? (rms_delta / state->previous_rms) : 0.0f;
-
-			state->previous_rms = state->smoothed_rms;
+			prosody.shimmer = update_relative_variation(state->rms_variation_tracker, rms);
 
 			// --- Speaking rate (EMA of voiced segment starts/sec) ---
 			if (!state->was_voiced)
 			{
 				const float gap_seconds = info.time_now - state->last_voiced_onset_time;
-				if (gap_seconds > 0.05f && gap_seconds < 2.0f)
-				{
-					const float instant_rate = 1.0f / gap_seconds;
-					state->speaking_rate_tracker =
-						config.speaking_rate_decay * state->speaking_rate_tracker + (1.0f - config.speaking_rate_decay) * instant_rate;
-				}
+				// gap_seconds captures the length of the silence leading up to this voiced onset.
+				const float instant_rate = (gap_seconds > 0.05f) ? (1.0f / gap_seconds) : 0.0f;
+				state->speaking_rate_tracker =
+					update_speaking_rate_sps(state->speaking_rate_tracker, instant_rate, config.speaking_rate_decay, gap_seconds);
 				state->last_voiced_onset_time = info.time_now;
 			}
 

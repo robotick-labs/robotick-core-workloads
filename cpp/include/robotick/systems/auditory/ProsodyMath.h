@@ -27,6 +27,45 @@ namespace robotick
 		float second = 0.0f;
 	};
 
+	struct RelativeVariationTracker
+	{
+		float previous_value = 0.0f;
+		bool has_previous_value = false;
+
+		inline void reset()
+		{
+			previous_value = 0.0f;
+			has_previous_value = false;
+		}
+	};
+
+	inline float update_relative_variation(RelativeVariationTracker& tracker, const float current_value)
+	{
+		if (current_value <= 0.0f)
+		{
+			tracker.reset();
+			return 0.0f;
+		}
+
+		if (!tracker.has_previous_value)
+		{
+			tracker.previous_value = current_value;
+			tracker.has_previous_value = true;
+			return 0.0f;
+		}
+
+		const float previous_value = tracker.previous_value;
+		tracker.previous_value = current_value;
+
+		if (previous_value <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		const float delta = fabsf(current_value - previous_value);
+		return delta / previous_value;
+	}
+
 	inline FormantRatios compute_formant_ratios(const HarmonicPitchResult& hp, const float sample_rate_hz)
 	{
 		FormantRatios result{};
@@ -83,6 +122,78 @@ namespace robotick
 		}
 
 		return result;
+	}
+
+	inline float compute_spectral_brightness(const HarmonicPitchResult& hp)
+	{
+		if (hp.h1_f0_hz <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		const size_t num_harmonics = hp.harmonic_amplitudes.size();
+		if (num_harmonics < 2)
+		{
+			return 0.0f;
+		}
+
+		double sum_x = 0.0;
+		double sum_y = 0.0;
+		double sum_xy = 0.0;
+		double sum_x2 = 0.0;
+
+		for (size_t harmonic_id = 0; harmonic_id < num_harmonics; ++harmonic_id)
+		{
+			const double frequency = static_cast<double>(harmonic_id + 1) * hp.h1_f0_hz;
+			const double amplitude = robotick::max(1e-12, static_cast<double>(hp.harmonic_amplitudes[harmonic_id]));
+			const double log_frequency = log10(frequency);
+			const double log_amplitude = log10(amplitude);
+
+			sum_x += log_frequency;
+			sum_y += log_amplitude;
+			sum_xy += log_frequency * log_amplitude;
+			sum_x2 += log_frequency * log_frequency;
+		}
+
+		const double n = static_cast<double>(num_harmonics);
+		const double mean_x = sum_x / n;
+		const double mean_y = sum_y / n;
+		const double numerator = sum_xy - n * mean_x * mean_y;
+		const double denominator = sum_x2 - n * mean_x * mean_x;
+
+		if (fabs(denominator) < 1e-12)
+		{
+			return 0.0f;
+		}
+
+		const double slope = numerator / denominator;
+		return static_cast<float>(20.0 * slope);
+	}
+
+	inline float update_voiced_confidence(const bool voiced_now, const float current_confidence, const float delta_time, const float falloff_rate_hz)
+	{
+		if (voiced_now)
+		{
+			return 1.0f;
+		}
+
+		// Silent frame: reduce confidence linearly based on elapsed time and the configured falloff rate.
+		const float decay = delta_time * falloff_rate_hz;
+		return robotick::max(0.0f, current_confidence - decay);
+	}
+
+	inline float update_speaking_rate_sps(float current_tracker, float instant_rate, float decay, float silence_duration_sec)
+	{
+		if (silence_duration_sec <= 0.0f)
+		{
+			return current_tracker;
+		}
+
+		// Convert the configured decay into a clamp-safe smoothing factor for the EMA
+		const float alpha = robotick::clamp(decay, 0.0f, 0.999f);
+		// For long pauses, fall back to using the actual pause duration (so rate never sticks at zero).
+		const float effective_rate = (silence_duration_sec > 2.0f) ? (1.0f / silence_duration_sec) : instant_rate;
+		return alpha * current_tracker + (1.0f - alpha) * effective_rate;
 	}
 
 } // namespace robotick
