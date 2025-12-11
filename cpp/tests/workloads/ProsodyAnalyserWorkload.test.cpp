@@ -5,6 +5,7 @@
 #include "robotick/systems/auditory/ProsodyMath.h"
 
 #include <catch2/catch_all.hpp>
+#include <cmath>
 
 namespace robotick::test
 {
@@ -170,6 +171,45 @@ namespace robotick::test
 			CHECK(update_relative_variation(tracker, 1.0f) == Catch::Approx(0.0f));
 			CHECK(update_relative_variation(tracker, 0.0f) == Catch::Approx(0.0f));
 			CHECK(update_relative_variation(tracker, 1.0f) == Catch::Approx(0.0f));
+		}
+	}
+
+	TEST_CASE("Unit/Workloads/ProsodyAnalyser/EMASmoothing")
+	{
+		const auto step_response = [](float initial, float input, float alpha, int steps)
+		{
+			float value = initial;
+			for (int i = 0; i < steps; ++i)
+			{
+				value = apply_exponential_smoothing(value, input, alpha);
+			}
+			return value;
+		};
+
+		SECTION("RMS smoothing matches analytical EMA step response")
+		{
+			const float alpha = 0.2f;
+			const float initial = 0.0f;
+			const float target = 1.0f;
+			const int steps = 5;
+
+			const float smoothed = step_response(initial, target, alpha, steps);
+			const float expected = target - (target - initial) * powf(1.0f - alpha, static_cast<float>(steps));
+
+			CHECK(smoothed == Catch::Approx(expected).margin(1e-4f));
+		}
+
+		SECTION("Pitch smoothing follows the same EMA formula")
+		{
+			const float alpha = 0.1f;
+			const float initial = 120.0f;
+			const float target = 240.0f;
+			const int steps = 8;
+
+			const float smoothed = step_response(initial, target, alpha, steps);
+			const float expected = target - (target - initial) * powf(1.0f - alpha, static_cast<float>(steps));
+
+			CHECK(smoothed == Catch::Approx(expected).margin(1e-3f));
 		}
 	}
 

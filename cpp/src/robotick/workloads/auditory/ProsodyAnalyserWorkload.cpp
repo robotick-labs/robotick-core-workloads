@@ -88,7 +88,7 @@ namespace robotick
 			const float rms = (samples.empty()) ? 0.0f : static_cast<float>(sqrt(energy_sum / static_cast<double>(samples.size())));
 
 			// --- Smoothed RMS ---
-			state->smoothed_rms = (1.0f - config.rms_smooth_alpha) * state->smoothed_rms + config.rms_smooth_alpha * rms;
+			state->smoothed_rms = apply_exponential_smoothing(state->smoothed_rms, rms, config.rms_smooth_alpha);
 			prosody.rms = state->smoothed_rms;
 
 			// --- Determine voiced state ---
@@ -129,7 +129,7 @@ namespace robotick
 
 			// --- Pitch smoothing ---
 			const float current_pitch = pitch_info.h1_f0_hz;
-			state->smoothed_pitch_hz = (1.0f - config.pitch_smooth_alpha) * state->smoothed_pitch_hz + config.pitch_smooth_alpha * current_pitch;
+			state->smoothed_pitch_hz = apply_exponential_smoothing(state->smoothed_pitch_hz, current_pitch, config.pitch_smooth_alpha);
 			prosody.pitch_hz = state->smoothed_pitch_hz;
 
 			// --- Pitch slope (use smoothed pitch) ---

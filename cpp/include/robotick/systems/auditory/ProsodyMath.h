@@ -253,6 +253,12 @@ namespace robotick
 		return static_cast<float>(20.0 * slope);
 	}
 
+	inline float apply_exponential_smoothing(const float previous_value, const float current_input, const float alpha)
+	{
+		const float clamped_alpha = robotick::clamp(alpha, 0.0f, 1.0f);
+		return (1.0f - clamped_alpha) * previous_value + clamped_alpha * current_input;
+	}
+
 	inline float update_voiced_confidence(const bool voiced_now, const float current_confidence, const float delta_time, const float falloff_rate_hz)
 	{
 		if (voiced_now)
