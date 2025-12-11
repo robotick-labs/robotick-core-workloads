@@ -19,6 +19,7 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, uint16_t, num_threads)
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, min_voiced_duration_sec)
 	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, silence_hangover_sec)
+	ROBOTICK_STRUCT_FIELD(SpeechToTextSettings, float, proto_refresh_interval_sec)
 	ROBOTICK_REGISTER_STRUCT_END(SpeechToTextSettings)
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(TranscribedWord)
@@ -28,6 +29,15 @@ namespace robotick
 	ROBOTICK_REGISTER_STRUCT_END(TranscribedWord)
 
 	ROBOTICK_REGISTER_FIXED_VECTOR(TranscribedWords, TranscribedWord);
+
+	ROBOTICK_REGISTER_STRUCT_BEGIN(Transcript)
+	ROBOTICK_STRUCT_FIELD(Transcript, TranscribedWords, words)
+	ROBOTICK_STRUCT_FIELD(Transcript, FixedString512, text)
+	ROBOTICK_STRUCT_FIELD(Transcript, float, transcribe_duration_sec)
+	ROBOTICK_STRUCT_FIELD(Transcript, float, transcript_mean_confidence)
+	ROBOTICK_STRUCT_FIELD(Transcript, float, start_time_sec)
+	ROBOTICK_STRUCT_FIELD(Transcript, float, duration_sec)
+	ROBOTICK_REGISTER_STRUCT_END(Transcript)
 
 	void whisper_log_handler(enum ggml_log_level level, const char* text, void* user_data)
 	{

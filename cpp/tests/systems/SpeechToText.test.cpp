@@ -177,6 +177,58 @@ namespace robotick::test
 
 		static constexpr size_t num_expected_words_jfk = sizeof(expected_words_jfk) / sizeof(expected_words_jfk[0]);
 
+		SECTION("Transcript clear resets all fields")
+		{
+			Transcript transcript;
+			TranscribedWord word;
+			word.text = "Hello";
+			word.start_time_sec = 1.0f;
+			word.end_time_sec = 1.5f;
+			word.confidence = 0.42f;
+
+			transcript.words.add(word);
+			transcript.text = "Hello";
+			transcript.transcribe_duration_sec = 3.0f;
+			transcript.transcript_mean_confidence = 0.31f;
+			transcript.start_time_sec = 5.0f;
+			transcript.duration_sec = 2.0f;
+
+			transcript.clear();
+
+			CHECK(transcript.words.empty());
+			CHECK(transcript.text.empty());
+				CHECK(transcript.transcribe_duration_sec == Catch::Approx(0.0f));
+				CHECK(transcript.transcript_mean_confidence == Catch::Approx(0.0f));
+				CHECK(transcript.start_time_sec == Catch::Approx(0.0f));
+				CHECK(transcript.duration_sec == Catch::Approx(0.0f));
+		}
+
+		SECTION("Transcript timing prefers word spans but falls back to defaults")
+		{
+			Transcript transcript;
+
+			transcript.update_timing_from_words(1.25f, 2.5f);
+				CHECK(transcript.start_time_sec == Catch::Approx(1.25f));
+				CHECK(transcript.duration_sec == Catch::Approx(2.5f));
+
+			TranscribedWord first_word;
+			first_word.text = "Hi";
+			first_word.start_time_sec = 0.5f;
+			first_word.end_time_sec = 1.0f;
+
+			TranscribedWord last_word;
+			last_word.text = "all";
+			last_word.start_time_sec = 2.0f;
+			last_word.end_time_sec = 2.4f;
+
+			transcript.words.add(first_word);
+			transcript.words.add(last_word);
+			transcript.update_timing_from_words(0.0f, 0.0f);
+
+				CHECK(transcript.start_time_sec == Catch::Approx(first_word.start_time_sec));
+				CHECK(transcript.duration_sec == Catch::Approx(last_word.end_time_sec - first_word.start_time_sec));
+		}
+
 		SECTION("SpeechToText transcribes JFK WAV correctly")
 		{
 			FILE* model_file = ::fopen(model_path, "rb");
