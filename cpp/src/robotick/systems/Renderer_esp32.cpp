@@ -131,6 +131,27 @@ namespace robotick
 		impl->canvas->fillTriangle(x0, y0, x1, y1, x2, y2, c);
 	}
 
+	void Renderer::draw_rect_filled(const Vec2& p0, const Vec2& p1, const Color& color)
+	{
+		if (!impl || !impl->canvas)
+			return;
+		const float min_x = (p0.x < p1.x) ? p0.x : p1.x;
+		const float min_y = (p0.y < p1.y) ? p0.y : p1.y;
+		const float max_x = (p0.x > p1.x) ? p0.x : p1.x;
+		const float max_y = (p0.y > p1.y) ? p0.y : p1.y;
+		const int x0 = to_px_x(min_x);
+		const int y0 = to_px_y(min_y);
+		const int x1 = to_px_x(max_x);
+		const int y1 = to_px_y(max_y);
+		const int w = (x1 - x0);
+		const int h = (y1 - y0);
+		if (w <= 0 || h <= 0)
+		{
+			return;
+		}
+		impl->canvas->fillRect(x0, y0, w, h, impl->canvas->color565(color.r, color.g, color.b));
+	}
+
 	void Renderer::draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color)
 	{
 		if (!text || !*text || !impl || !impl->canvas)
@@ -232,6 +253,10 @@ namespace robotick
 	}
 
 	void Renderer::draw_triangle_filled(const Vec2&, const Vec2&, const Vec2&, const Color&)
+	{
+	}
+
+	void Renderer::draw_rect_filled(const Vec2&, const Vec2&, const Color&)
 	{
 	}
 

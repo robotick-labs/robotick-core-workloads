@@ -285,6 +285,14 @@ namespace robotick
 		filledTrigonRGBA(impl->renderer, x0, y0, x1, y1, x2, y2, color.r, color.g, color.b, color.a);
 	}
 
+	void Renderer::draw_rect_filled(const Vec2& p0, const Vec2& p1, const Color& color)
+	{
+		const Vec2 top_right = {p1.x, p0.y};
+		const Vec2 bottom_left = {p0.x, p1.y};
+		draw_triangle_filled(p0, top_right, p1, color);
+		draw_triangle_filled(p0, p1, bottom_left, color);
+	}
+
 	void Renderer::draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color)
 	{
 		if (!text || !*text || !impl || !impl->renderer)

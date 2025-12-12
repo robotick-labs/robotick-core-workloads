@@ -200,7 +200,30 @@ namespace robotick::test
 				CHECK(transcript.transcribe_duration_sec == Catch::Approx(0.0f));
 				CHECK(transcript.transcript_mean_confidence == Catch::Approx(0.0f));
 				CHECK(transcript.start_time_sec == Catch::Approx(0.0f));
-				CHECK(transcript.duration_sec == Catch::Approx(0.0f));
+			CHECK(transcript.duration_sec == Catch::Approx(0.0f));
+		}
+
+		SECTION("Transcript preserves non-zero word start times")
+		{
+			Transcript transcript;
+			TranscribedWord leading_silence_word;
+			leading_silence_word.text = "Hello";
+			leading_silence_word.start_time_sec = 2.4f;
+			leading_silence_word.end_time_sec = 2.9f;
+			leading_silence_word.confidence = 0.9f;
+			transcript.words.add(leading_silence_word);
+
+			TranscribedWord trailing_word;
+			trailing_word.text = "world";
+			trailing_word.start_time_sec = 3.1f;
+			trailing_word.end_time_sec = 3.8f;
+			trailing_word.confidence = 0.85f;
+			transcript.words.add(trailing_word);
+
+			transcript.update_timing_from_words(0.0f, 10.0f);
+
+			CHECK(transcript.start_time_sec == Catch::Approx(2.4f));
+			CHECK(transcript.duration_sec == Catch::Approx(3.8f - 2.4f));
 		}
 
 		SECTION("Transcript timing prefers word spans but falls back to defaults")

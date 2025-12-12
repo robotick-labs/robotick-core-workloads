@@ -1,0 +1,5 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/auditory/ProsodyFusion.cpp
+      - robotick/systems/auditory/ProsodyState.cpp

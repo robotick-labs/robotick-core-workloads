@@ -47,6 +47,11 @@ namespace robotick
 
 		RelativeVariationTracker pitch_variation_tracker;
 		RelativeVariationTracker rms_variation_tracker;
+
+		float last_jitter = 0.0f;
+		float last_shimmer = 0.0f;
+
+		bool was_voiced = false;
 	};
 
 	struct ProsodyAnalyserWorkload
@@ -89,49 +94,56 @@ namespace robotick
 			state->smoothed_rms = apply_exponential_smoothing(state->smoothed_rms, rms, config.rms_smooth_alpha);
 			prosody.rms = state->smoothed_rms;
 
-			// --- Determine voiced state ---
-			const bool voiced_now = (pitch_info.h1_f0_hz >= config.min_pitch_hz && pitch_info.h1_f0_hz <= config.max_pitch_hz);
-			prosody.voiced_confidence = update_voiced_confidence(voiced_now, prosody.voiced_confidence, delta_time, config.voiced_falloff_rate_hz);
+			const float current_pitch = pitch_info.h1_f0_hz;
+			const bool has_pitch = (current_pitch > 0.0f);
+			prosody.is_voiced = has_pitch;
+			prosody.voiced_confidence = has_pitch ? 1.0f : 0.0f;
 
-			if (!voiced_now)
+			if (!has_pitch)
 			{
 				state->previous_pitch_hz = 0.0f;
 				state->smoothed_pitch_hz = 0.0f;
 				state->pitch_variation_tracker.reset();
 				state->rms_variation_tracker.reset();
+				state->last_jitter = 0.0f;
+				state->last_shimmer = 0.0f;
 
-				prosody = ProsodyState{}; // zero the struct if you like
+				prosody = ProsodyState{};
 				prosody.rms = state->smoothed_rms;
 				prosody.is_voiced = false;
 				prosody.voiced_confidence = 0.0f;
 
-				// Keep the multi-second EMA slowly fading
 				decay_speaking_rate_tracker(state->speaking_rate_state, config.speaking_rate_decay);
-
+				state->was_voiced = false;
 				return;
 			}
 
-			prosody.is_voiced = true;
+			const bool new_segment = !state->was_voiced;
+			state->was_voiced = true;
 
-			// --- Smooth voiced confidence ---
-			if (voiced_now)
+			if (new_segment)
 			{
-				prosody.voiced_confidence = 1.0f;
+				state->pitch_variation_tracker.reset();
+				state->rms_variation_tracker.reset();
+				state->last_jitter = 0.0f;
+				state->last_shimmer = 0.0f;
+				state->smoothed_pitch_hz = current_pitch;
+				state->previous_pitch_hz = current_pitch;
+			}
+			else if (state->smoothed_pitch_hz > 0.0f)
+			{
+				state->smoothed_pitch_hz = apply_exponential_smoothing(state->smoothed_pitch_hz, current_pitch, config.pitch_smooth_alpha);
 			}
 			else
 			{
-				const float decay = delta_time * config.voiced_falloff_rate_hz;
-				prosody.voiced_confidence = robotick::max(0.0f, prosody.voiced_confidence - decay);
+				state->smoothed_pitch_hz = current_pitch;
 			}
 
-			// --- Pitch smoothing ---
-			const float current_pitch = pitch_info.h1_f0_hz;
-			state->smoothed_pitch_hz = apply_exponential_smoothing(state->smoothed_pitch_hz, current_pitch, config.pitch_smooth_alpha);
 			prosody.pitch_hz = state->smoothed_pitch_hz;
 
 			// --- Pitch slope (use smoothed pitch) ---
 			const float previous_pitch = state->previous_pitch_hz;
-			if (previous_pitch > 0.0f && state->smoothed_pitch_hz > 0.0f)
+			if (!new_segment && previous_pitch > 0.0f)
 			{
 				prosody.pitch_slope_hz_per_s = (state->smoothed_pitch_hz - previous_pitch) / delta_time;
 			}
@@ -139,7 +151,6 @@ namespace robotick
 			{
 				prosody.pitch_slope_hz_per_s = 0.0f;
 			}
-
 			state->previous_pitch_hz = state->smoothed_pitch_hz;
 
 			// --- Harmonicity (HNR proxy) ---
@@ -165,10 +176,25 @@ namespace robotick
 			prosody.formant1_ratio = descriptors.formant1_ratio;
 			prosody.formant2_ratio = descriptors.formant2_ratio;
 
-			// --- Jitter & shimmer (rough proxies) ---
-			prosody.jitter = update_relative_variation(state->pitch_variation_tracker, current_pitch);
+			if (!new_segment)
+			{
+				state->last_jitter = update_relative_variation(state->pitch_variation_tracker, current_pitch);
+			}
+			else
+			{
+				state->last_jitter = 0.0f;
+			}
+			prosody.jitter = state->last_jitter;
 
-			prosody.shimmer = update_relative_variation(state->rms_variation_tracker, rms);
+			if (!new_segment)
+			{
+				state->last_shimmer = update_relative_variation(state->rms_variation_tracker, rms);
+			}
+			else
+			{
+				state->last_shimmer = 0.0f;
+			}
+			prosody.shimmer = state->last_shimmer;
 
 			// --- Speaking rate (EMA of voiced segment starts/sec) ---
 			prosody.speaking_rate_sps = update_speaking_rate_on_voiced(state->speaking_rate_state, info.time_now, config.speaking_rate_decay);

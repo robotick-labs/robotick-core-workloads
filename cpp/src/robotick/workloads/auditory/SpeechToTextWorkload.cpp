@@ -51,17 +51,25 @@ namespace robotick
 		float get_duration_sec() const { return static_cast<float>(samples.size()) / accumulator_sample_rate_hz; }
 		static constexpr float get_capacity_sec() { return static_cast<float>(AccumulatorSamples::capacity()) / accumulator_sample_rate_hz; }
 
-		void request_drop_oldest_duration_sec(const float drop_secs)
+		void request_drop_oldest_samples(size_t samples_to_drop)
 		{
-			size_t samples_to_drop = static_cast<size_t>(drop_secs * (float)accumulator_sample_rate_hz);
 			if (samples_to_drop > samples.size())
 			{
 				samples_to_drop = samples.size();
 			}
 
 			const size_t keep_count = samples.size() - samples_to_drop;
-			memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
+			if (samples_to_drop > 0 && keep_count > 0)
+			{
+				memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
+			}
 			samples.set_size(keep_count);
+		}
+
+		void request_drop_oldest_duration_sec(const float drop_secs)
+		{
+			size_t samples_to_drop = static_cast<size_t>(drop_secs * (float)accumulator_sample_rate_hz);
+			request_drop_oldest_samples(samples_to_drop);
 		}
 	};
 
@@ -93,6 +101,8 @@ namespace robotick
 
 		double last_voiced_time = 0.0;
 		bool is_voiced_segment_pending = false;
+		bool was_voiced = false;
+		size_t voiced_segment_start_sample = 0;
 
 		AudioAccumulator& get_foreground_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[1] : audio_accumulators[0]; }
 		AudioAccumulator& get_background_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[0] : audio_accumulators[1]; }
@@ -284,6 +294,9 @@ namespace robotick
 				return;
 			}
 
+			const bool is_voiced = inputs.is_voiced;
+			const double now = tick_info.time_now;
+
 			// Downsample and append new samples
 			{
 				AudioBuffer512 downsampled;
@@ -308,13 +321,21 @@ namespace robotick
 				foreground_accumulator.samples.set_size(old_size + add_count);
 
 				ROBOTICK_ASSERT(foreground_accumulator.samples.size() <= foreground_accumulator.samples.capacity());
+
+				if (!is_voiced)
+				{
+					const double silence_duration = now - state->last_voiced_time;
+					if (silence_duration >= static_cast<double>(config.settings.silence_hangover_sec))
+					{
+						const size_t prefix_grace_samples = (add_count > 0) ? add_count : 0;
+						state->voiced_segment_start_sample =
+							(old_size > prefix_grace_samples) ? (old_size - prefix_grace_samples) : 0;
+					}
+				}
 			}
 
 			// Swap buffers if background thread is idle, and we're comfortably beyond the end of a "voiced" piece of audio
 			{
-				const bool is_voiced = inputs.is_voiced;
-				const double now = tick_info.time_now;
-
 				AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
 				const float foreground_duration_sec = foreground_accumulator.get_duration_sec();
 
@@ -330,6 +351,8 @@ namespace robotick
 						state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
 						state->get_foreground_accumulator().samples.clear();
 						state->get_foreground_accumulator().end_time_sec = now;
+						state->voiced_segment_start_sample = 0;
+						state->was_voiced = false;
 					}
 
 					state->current_job_is_final = is_final;
@@ -339,8 +362,16 @@ namespace robotick
 
 				if (is_voiced)
 				{
+					const double silence_gap_sec = (!state->was_voiced) ? (now - state->last_voiced_time) : 0.0;
 					state->last_voiced_time = now;
 					state->is_voiced_segment_pending = foreground_duration_sec >= config.settings.min_voiced_duration_sec;
+
+					if (!state->was_voiced && state->voiced_segment_start_sample > 0 &&
+						silence_gap_sec >= static_cast<double>(config.settings.silence_hangover_sec))
+					{
+						state->get_foreground_accumulator().request_drop_oldest_samples(state->voiced_segment_start_sample);
+						state->voiced_segment_start_sample = 0;
+					}
 				}
 
 				const bool can_stream = is_voiced && state->is_voiced_segment_pending && !state->is_bgthread_active.is_set() &&
@@ -367,6 +398,17 @@ namespace robotick
 
 					submit_audio_for_transcription(true);
 				}
+
+				if (!is_voiced)
+				{
+					const double silence_duration = now - state->last_voiced_time;
+					if (silence_duration >= static_cast<double>(config.settings.silence_hangover_sec))
+					{
+						state->voiced_segment_start_sample = state->get_foreground_accumulator().samples.size();
+					}
+				}
+
+				state->was_voiced = is_voiced;
 			}
 
 			// Retrieve transcript if ready
