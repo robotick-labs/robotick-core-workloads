@@ -15,13 +15,19 @@ namespace robotick
 	ROBOTICK_REGISTER_FIXED_VECTOR(ProsodyPitchCurve, float);
 	ROBOTICK_REGISTER_FIXED_VECTOR(ProsodyRmsCurve, float);
 
+	ROBOTICK_REGISTER_ENUM_BEGIN(ProsodicSegmentState)
+	ROBOTICK_ENUM_VALUE("Ongoing", ProsodicSegmentState::Ongoing)
+	ROBOTICK_ENUM_VALUE("Completed", ProsodicSegmentState::Completed)
+	ROBOTICK_ENUM_VALUE("Finalised", ProsodicSegmentState::Finalised)
+	ROBOTICK_REGISTER_ENUM_END(ProsodicSegmentState)
+
 	ROBOTICK_REGISTER_STRUCT_BEGIN(ProsodicSegment)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, float, start_time_sec)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, float, end_time_sec)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodyPitchCurve, pitch_hz)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodyRmsCurve, rms)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, float, mean_voiced_confidence)
-	ROBOTICK_STRUCT_FIELD(ProsodicSegment, bool, is_finalised)
+	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodicSegmentState, state)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, TranscribedWords, words)
 	ROBOTICK_REGISTER_STRUCT_END(ProsodicSegment)
 

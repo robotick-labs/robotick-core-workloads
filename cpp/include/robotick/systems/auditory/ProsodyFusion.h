@@ -21,6 +21,13 @@ namespace robotick
 
 	using ProsodyHistoryBuffer = FixedVector<ProsodyHistorySample, 4096>;
 
+	enum class ProsodicSegmentState : uint8_t
+	{
+		Ongoing = 0,
+		Completed = 1,
+		Finalised = 2
+	};
+
 	// Downsampled view of prosody spanning a speech segment. Words carry the
 	// transcript text (proto or finalized) so we do not need a separate string.
 	struct ProsodicSegment
@@ -32,7 +39,7 @@ namespace robotick
 		ProsodyRmsCurve rms;
 
 		float mean_voiced_confidence = 0.0f;
-		bool is_finalised = false;
+		ProsodicSegmentState state = ProsodicSegmentState::Ongoing;
 
 		TranscribedWords words;
 	};

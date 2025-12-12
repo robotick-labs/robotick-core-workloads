@@ -17,9 +17,11 @@ namespace robotick
 	// Stores how aggressively we keep/densify history before passing it to UI.
 	struct ProsodyFusionConfig
 	{
-		float history_duration_sec = 8.0f;	   // rolling buffer length for live curves
-		uint32_t simplified_sample_count = 16; // downsample count per segment
+		float history_duration_sec = 8.0f;		 // rolling buffer length for live curves
+		uint32_t simplified_sample_count = 16;	 // downsample count per segment
 		float minimum_segment_duration_sec = 0.1f;
+		float silence_hangover_sec = 0.2f;		 // match SpeechToText defaults
+		float segment_merge_tolerance_sec = 0.25f;
 	};
 
 	struct ProsodyFusionInputs
@@ -31,8 +33,7 @@ namespace robotick
 
 	struct ProsodyFusionOutputs
 	{
-		ProsodicSegment current_segment;
-		ProsodicSegmentBuffer prev_segments;
+		ProsodicSegmentBuffer speech_segments;
 	};
 
 	// Keeps the rolling prosody buffer plus the last transcript metadata to
@@ -49,6 +50,10 @@ namespace robotick
 		float last_final_start = -1.0f;
 		float last_final_duration = -1.0f;
 		FixedString512 last_final_text;
+
+		bool in_voiced_segment = false;
+		float current_segment_start = -1.0f;
+		float last_voiced_time = -1.0f;
 	};
 
 	struct ProsodyFusionWorkload
@@ -63,8 +68,27 @@ namespace robotick
 			state->history.clear();
 			state->last_proto_text.clear();
 			state->last_final_text.clear();
-			outputs.current_segment = ProsodicSegment{};
-			outputs.prev_segments.clear();
+			outputs.speech_segments.clear();
+			state->in_voiced_segment = false;
+			state->current_segment_start = -1.0f;
+			state->last_voiced_time = -1.0f;
+		}
+
+		ProsodicSegment& upsert_segment(const ProsodicSegment& segment)
+		{
+			for (int i = static_cast<int>(outputs.speech_segments.size()) - 1; i >= 0; --i)
+			{
+				ProsodicSegment& candidate = outputs.speech_segments[static_cast<size_t>(i)];
+				const bool overlaps = fabsf(candidate.start_time_sec - segment.start_time_sec) <= config.segment_merge_tolerance_sec;
+				if (overlaps)
+				{
+					candidate = segment;
+					return candidate;
+				}
+			}
+
+			append_segment_with_capacity(outputs.speech_segments, segment);
+			return outputs.speech_segments[outputs.speech_segments.size() - 1];
 		}
 
 		static bool transcript_has_content(const Transcript& transcript) { return (!transcript.text.empty()) && (transcript.duration_sec > 0.0f); }
@@ -164,13 +188,10 @@ namespace robotick
 			return true;
 		}
 
-		// Builds a "live" segment by sampling the raw history between the given
-		// times. These segments purposely omit text so UIs can render tone-only
-		// previews before Whisper emits words.
-
-		bool build_segment_from_history_window(float start_time, float end_time, ProsodicSegment& out_segment)
+		// Builds a segment by sampling the raw history between the given times.
+		bool build_segment_from_history_window(float start_time, float end_time, ProsodicSegmentState segment_state, ProsodicSegment& out_segment)
 		{
-			if (state->history.size() < 2)
+			if (state->history.size() < 2 || !(end_time > start_time))
 			{
 				return false;
 			}
@@ -186,8 +207,8 @@ namespace robotick
 
 			out_segment = ProsodicSegment{};
 			out_segment.start_time_sec = clamped_start;
-			out_segment.end_time_sec = clamped_end;
-			out_segment.is_finalised = false;
+			out_segment.end_time_sec = robotick::max(clamped_end, clamped_start + config.minimum_segment_duration_sec);
+			out_segment.state = segment_state;
 			out_segment.words.clear();
 
 			const uint32_t sample_count = robotick::max<uint32_t>(2u, config.simplified_sample_count);
@@ -197,9 +218,7 @@ namespace robotick
 			for (uint32_t i = 0; i < sample_count; ++i)
 			{
 				const float alpha = (sample_count <= 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(sample_count - 1);
-				// Evenly spaced sampling gives a normalized curve regardless of
-				// how long the underlying segment lasted.
-				const float sample_time = clamped_start + alpha * (clamped_end - clamped_start);
+				const float sample_time = clamped_start + alpha * (out_segment.end_time_sec - clamped_start);
 
 				ProsodyState sampled_state{};
 				if (!sample_history(sample_time, sampled_state))
@@ -230,8 +249,8 @@ namespace robotick
 		}
 
 		// Converts a proto/final Whisper transcript to a segment and samples the
-		// matching prosody timeline. `is_finalised` differentiates proto vs final.
-		bool build_segment_from_transcript(const Transcript& transcript, const bool is_finalised, ProsodicSegment& out_segment)
+		// matching prosody timeline.
+		bool build_segment_from_transcript(const Transcript& transcript, const ProsodicSegmentState state, ProsodicSegment& out_segment)
 		{
 			if (!transcript_has_content(transcript))
 			{
@@ -246,7 +265,7 @@ namespace robotick
 			out_segment = ProsodicSegment{};
 			out_segment.start_time_sec = start_time;
 			out_segment.end_time_sec = end_time;
-			out_segment.is_finalised = is_finalised;
+			out_segment.state = state;
 			out_segment.words.clear();
 			// Copy any Whisper word timings that intersect the segment window.
 			for (const TranscribedWord& word : transcript.words)
@@ -310,18 +329,41 @@ namespace robotick
 		{
 			append_history_sample(inputs.prosody_state, tick_info.time_now);
 
-			// Live stream: always emit the most recent window of prosody so UI
-			// can show tone even without transcripts.
-			ProsodicSegment live_segment;
-			const float live_end_time = state->history.empty() ? tick_info.time_now : state->history[state->history.size() - 1].time_sec;
-			const float live_start_time = live_end_time - config.history_duration_sec;
-			if (build_segment_from_history_window(live_start_time, live_end_time, live_segment))
+			const bool is_voiced = inputs.prosody_state.is_voiced;
+			if (is_voiced)
 			{
-				outputs.current_segment = live_segment;
+				state->last_voiced_time = tick_info.time_now;
+				if (!state->in_voiced_segment)
+				{
+					state->in_voiced_segment = true;
+					state->current_segment_start = tick_info.time_now;
+				}
 			}
-			else
+
+			if (state->in_voiced_segment && state->last_voiced_time > state->current_segment_start)
 			{
-				outputs.current_segment = ProsodicSegment{};
+				ProsodicSegment live_segment;
+				if (build_segment_from_history_window(state->current_segment_start, state->last_voiced_time, ProsodicSegmentState::Ongoing, live_segment))
+				{
+					upsert_segment(live_segment);
+				}
+			}
+
+			const bool should_end_segment = state->in_voiced_segment &&
+											(state->last_voiced_time > 0.0f) &&
+											!is_voiced &&
+											((tick_info.time_now - state->last_voiced_time) >= config.silence_hangover_sec);
+
+			if (should_end_segment)
+			{
+				ProsodicSegment completed_segment;
+				if (build_segment_from_history_window(state->current_segment_start, state->last_voiced_time, ProsodicSegmentState::Completed, completed_segment))
+				{
+					upsert_segment(completed_segment);
+				}
+
+				state->in_voiced_segment = false;
+				state->current_segment_start = -1.0f;
 			}
 
 			// Proto segment: Whisper is mid-sentence. We surface it immediately
@@ -329,9 +371,9 @@ namespace robotick
 			if (transcript_changed(inputs.proto_transcript, state->last_proto_start, state->last_proto_duration, state->last_proto_text))
 			{
 				ProsodicSegment proto_segment;
-				if (build_segment_from_transcript(inputs.proto_transcript, false, proto_segment))
+				if (build_segment_from_transcript(inputs.proto_transcript, ProsodicSegmentState::Ongoing, proto_segment))
 				{
-					outputs.current_segment = proto_segment;
+					upsert_segment(proto_segment);
 				}
 			}
 
@@ -340,10 +382,9 @@ namespace robotick
 			if (transcript_changed(inputs.transcript, state->last_final_start, state->last_final_duration, state->last_final_text))
 			{
 				ProsodicSegment baked_segment;
-				if (build_segment_from_transcript(inputs.transcript, true, baked_segment))
+				if (build_segment_from_transcript(inputs.transcript, ProsodicSegmentState::Finalised, baked_segment))
 				{
-					append_segment_with_capacity(outputs.prev_segments, baked_segment);
-					outputs.current_segment = baked_segment;
+					upsert_segment(baked_segment);
 				}
 			}
 		}
@@ -353,6 +394,10 @@ namespace robotick
 			state->history.clear();
 			state->last_proto_text.clear();
 			state->last_final_text.clear();
+			outputs.speech_segments.clear();
+			state->in_voiced_segment = false;
+			state->current_segment_start = -1.0f;
+			state->last_voiced_time = -1.0f;
 		}
 	};
 

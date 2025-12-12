@@ -40,8 +40,7 @@ namespace robotick
 	{
 		CochlearFrame cochlear_frame;	// envelope[Nbands], band_center_hz[Nbands]
 		HarmonicPitchResult pitch_info; // h1_f0_hz, harmonic_amplitudes[k]
-		ProsodicSegment current_segment;
-		ProsodicSegmentBuffer prev_segments;
+		ProsodicSegmentBuffer speech_segments;
 	};
 
 	struct CochlearVisualizerOutputs
@@ -282,23 +281,33 @@ namespace robotick
 					overlays.add(overlay);
 				};
 
-				if (segment_has_span(inputs.current_segment))
+				for (const ProsodicSegment& segment : inputs.speech_segments)
 				{
-					const bool is_final = inputs.current_segment.is_finalised;
-					const Color curve_color = is_final ? Colors::Blue : Color{255, 64, 64, 255};
-					const Color bar_color = is_final ? Colors::White : Colors::Orange;
-					const bool draw_bars = is_final || !inputs.current_segment.words.empty();
-					add_overlay(inputs.current_segment, draw_bars, curve_color, bar_color);
-				}
-
-				for (const ProsodicSegment& segment : inputs.prev_segments)
-				{
-					if (!segment_has_span(segment) || true)
+					if (!segment_has_span(segment))
 					{
 						continue;
 					}
-					const Color curve_color = Colors::Blue;
-					add_overlay(segment, true, curve_color, Colors::White);
+
+					Color curve_color = Colors::Yellow;
+					Color bar_color = Colors::Yellow;
+					switch (segment.state)
+					{
+					case ProsodicSegmentState::Ongoing:
+						curve_color = Colors::Yellow;
+						bar_color = Colors::Yellow;
+						break;
+					case ProsodicSegmentState::Completed:
+						curve_color = Colors::Orange;
+						bar_color = Colors::Orange;
+						break;
+					case ProsodicSegmentState::Finalised:
+						curve_color = Colors::Blue;
+						bar_color = Colors::White;
+						break;
+					}
+
+					const bool draw_bars = (segment.state == ProsodicSegmentState::Finalised) || !segment.words.empty();
+					add_overlay(segment, draw_bars, curve_color, bar_color);
 				}
 			}
 
