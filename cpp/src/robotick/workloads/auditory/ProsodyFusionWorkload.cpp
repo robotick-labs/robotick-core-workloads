@@ -17,10 +17,10 @@ namespace robotick
 	// Stores how aggressively we keep/densify history before passing it to UI.
 	struct ProsodyFusionConfig
 	{
-		float history_duration_sec = 8.0f;		 // rolling buffer length for live curves
-		uint32_t simplified_sample_count = 16;	 // downsample count per segment
+		float history_duration_sec = 8.0f;	   // rolling buffer length for live curves
+		uint32_t simplified_sample_count = 16; // downsample count per segment
 		float minimum_segment_duration_sec = 0.1f;
-		float silence_hangover_sec = 0.2f;		 // match SpeechToText defaults
+		float silence_hangover_sec = 0.2f; // match SpeechToText defaults
 		float segment_merge_tolerance_sec = 0.25f;
 	};
 
@@ -72,6 +72,11 @@ namespace robotick
 			state->in_voiced_segment = false;
 			state->current_segment_start = -1.0f;
 			state->last_voiced_time = -1.0f;
+		}
+
+		float clamp_pitch_change(const float /*previous_pitch*/, const float candidate_pitch, const float /*delta_time_sec*/) const
+		{
+			return candidate_pitch;
 		}
 
 		ProsodicSegment& upsert_segment(const ProsodicSegment& segment)
@@ -214,6 +219,9 @@ namespace robotick
 			const uint32_t sample_count = robotick::max<uint32_t>(2u, config.simplified_sample_count);
 			float confidence_sum = 0.0f;
 			int confidence_count = 0;
+			float prev_pitch = 0.0f;
+			float prev_time = clamped_start;
+			bool has_prev_pitch = false;
 
 			for (uint32_t i = 0; i < sample_count; ++i)
 			{
@@ -226,11 +234,6 @@ namespace robotick
 					sampled_state = inputs.prosody_state;
 				}
 
-				if (!out_segment.pitch_hz.full())
-				{
-					out_segment.pitch_hz.add(sampled_state.pitch_hz);
-				}
-
 				if (!out_segment.rms.full())
 				{
 					out_segment.rms.add(sampled_state.rms);
@@ -238,6 +241,22 @@ namespace robotick
 
 				confidence_sum += sampled_state.voiced_confidence;
 				++confidence_count;
+
+				float pitch = sampled_state.pitch_hz;
+				if (has_prev_pitch)
+				{
+					const float dt = robotick::max(1e-3f, sample_time - prev_time);
+					pitch = clamp_pitch_change(prev_pitch, pitch, dt);
+				}
+
+				if (!out_segment.pitch_hz.full())
+				{
+					out_segment.pitch_hz.add(pitch);
+				}
+
+				prev_pitch = pitch;
+				prev_time = sample_time;
+				has_prev_pitch = true;
 			}
 
 			if (confidence_count > 0)
@@ -285,6 +304,9 @@ namespace robotick
 
 			float confidence_sum = 0.0f;
 			int confidence_count = 0;
+			float prev_pitch = 0.0f;
+			float prev_time = start_time;
+			bool has_prev_pitch = false;
 
 			for (uint32_t i = 0; i < sample_count; ++i)
 			{
@@ -298,11 +320,6 @@ namespace robotick
 					sampled_state = inputs.prosody_state;
 				}
 
-				if (!out_segment.pitch_hz.full())
-				{
-					out_segment.pitch_hz.add(sampled_state.pitch_hz);
-				}
-
 				if (!out_segment.rms.full())
 				{
 					out_segment.rms.add(sampled_state.rms);
@@ -310,6 +327,22 @@ namespace robotick
 
 				confidence_sum += sampled_state.voiced_confidence;
 				++confidence_count;
+
+				float pitch = sampled_state.pitch_hz;
+				if (has_prev_pitch)
+				{
+					const float dt = robotick::max(1e-3f, sample_time - prev_time);
+					pitch = clamp_pitch_change(prev_pitch, pitch, dt);
+				}
+
+				if (!out_segment.pitch_hz.full())
+				{
+					out_segment.pitch_hz.add(pitch);
+				}
+
+				prev_pitch = pitch;
+				prev_time = sample_time;
+				has_prev_pitch = true;
 			}
 
 			if (confidence_count > 0)
@@ -343,21 +376,21 @@ namespace robotick
 			if (state->in_voiced_segment && state->last_voiced_time > state->current_segment_start)
 			{
 				ProsodicSegment live_segment;
-				if (build_segment_from_history_window(state->current_segment_start, state->last_voiced_time, ProsodicSegmentState::Ongoing, live_segment))
+				if (build_segment_from_history_window(
+						state->current_segment_start, state->last_voiced_time, ProsodicSegmentState::Ongoing, live_segment))
 				{
 					upsert_segment(live_segment);
 				}
 			}
 
-			const bool should_end_segment = state->in_voiced_segment &&
-											(state->last_voiced_time > 0.0f) &&
-											!is_voiced &&
+			const bool should_end_segment = state->in_voiced_segment && (state->last_voiced_time > 0.0f) && !is_voiced &&
 											((tick_info.time_now - state->last_voiced_time) >= config.silence_hangover_sec);
 
 			if (should_end_segment)
 			{
 				ProsodicSegment completed_segment;
-				if (build_segment_from_history_window(state->current_segment_start, state->last_voiced_time, ProsodicSegmentState::Completed, completed_segment))
+				if (build_segment_from_history_window(
+						state->current_segment_start, state->last_voiced_time, ProsodicSegmentState::Completed, completed_segment))
 				{
 					upsert_segment(completed_segment);
 				}
