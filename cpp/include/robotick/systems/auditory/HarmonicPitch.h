@@ -29,6 +29,7 @@ namespace robotick
 
 		float min_total_continuation_amplitude = 1.0f;
 		uint32_t max_hold_frames = 3; // how long we keep reporting the last valid pitch when frames go silent
+		uint32_t continuation_search_radius = 2; // how many neighboring bands to probe when the center band momentarily dips
 	};
 
 	using HarmonicAmplitudes = FixedVector<float, harmonic_pitch::MaxHarmonics>;

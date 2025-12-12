@@ -11,6 +11,7 @@ namespace robotick
 {
 	// Compact representation of a segment's F0 contour and RMS envelope.
 	using ProsodyPitchCurve = FixedVector<float, 128>;
+	using ProsodyPitchMask = FixedVector<uint8_t, 128>;
 	using ProsodyRmsCurve = FixedVector<float, 128>;
 
 	struct ProsodyHistorySample
@@ -37,6 +38,8 @@ namespace robotick
 
 		ProsodyPitchCurve pitch_hz;
 		ProsodyRmsCurve rms;
+		ProsodyPitchMask pitch_link_mask;
+		ProsodyRmsCurve link_rms;
 
 		float mean_voiced_confidence = 0.0f;
 		ProsodicSegmentState state = ProsodicSegmentState::Ongoing;

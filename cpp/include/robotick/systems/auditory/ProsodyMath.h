@@ -21,6 +21,14 @@ namespace robotick
 		return (harmonicity_db < floor_db) ? floor_db : harmonicity_db;
 	}
 
+	inline float compute_harmonic_confidence(const float hnr_db, const float min_db, const float max_db)
+	{
+		const float clamped_min = robotick::min(min_db, max_db - 1e-3f);
+		const float clamped_max = robotick::max(max_db, clamped_min + 1e-3f);
+		const float normalized = (hnr_db - clamped_min) / (clamped_max - clamped_min);
+		return robotick::clamp(normalized, 0.0f, 1.0f);
+	}
+
 	struct FormantRatios
 	{
 		float first = 0.0f;

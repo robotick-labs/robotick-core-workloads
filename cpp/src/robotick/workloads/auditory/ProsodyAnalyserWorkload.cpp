@@ -1,7 +1,7 @@
 // Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// ProsodyAnalyserWorkload.cpp (harmonic-driven version with temporal smoothing)
+// ProsodyAnalyserWorkload.cpp (harmonic-driven version)
 
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioFrame.h"
@@ -16,13 +16,16 @@ namespace robotick
 		float harmonic_floor_db = -60.0f;  // HNR clamp
 		float speaking_rate_decay = 0.95f; // slower EMA smoothing for multi-second trend
 
-		float pitch_smooth_alpha = 0.2f; // ~5-frame smoothing (~100 ms)
 		float rms_smooth_alpha = 0.2f;	 // ~100 ms amplitude smoothing
 
 		float voiced_falloff_rate_hz = 5.0f; // how quickly voiced confidence fades (1/s)
 
 		float min_pitch_hz = 60.0f;	 // very deep adult voice
 		float max_pitch_hz = 600.0f; // very high child's voice
+
+		float harmonic_confidence_min_db = -15.0f;
+		float harmonic_confidence_max_db = 25.0f;
+		float harmonic_confidence_gate = 0.35f;
 	};
 
 	struct ProsodyAnalyserInputs
@@ -40,7 +43,6 @@ namespace robotick
 	{
 		float previous_pitch_hz = 0.0f;
 
-		float smoothed_pitch_hz = 0.0f;
 		float smoothed_rms = 0.0f;
 
 		SpeakingRateTracker speaking_rate_state;
@@ -102,7 +104,6 @@ namespace robotick
 			if (!has_pitch)
 			{
 				state->previous_pitch_hz = 0.0f;
-				state->smoothed_pitch_hz = 0.0f;
 				state->pitch_variation_tracker.reset();
 				state->rms_variation_tracker.reset();
 				state->last_jitter = 0.0f;
@@ -112,6 +113,8 @@ namespace robotick
 				prosody.rms = state->smoothed_rms;
 				prosody.is_voiced = false;
 				prosody.voiced_confidence = 0.0f;
+				prosody.is_harmonic = false;
+				prosody.harmonic_confidence = 0.0f;
 
 				decay_speaking_rate_tracker(state->speaking_rate_state, config.speaking_rate_decay);
 				state->was_voiced = false;
@@ -127,31 +130,21 @@ namespace robotick
 				state->rms_variation_tracker.reset();
 				state->last_jitter = 0.0f;
 				state->last_shimmer = 0.0f;
-				state->smoothed_pitch_hz = current_pitch;
 				state->previous_pitch_hz = current_pitch;
 			}
-			else if (state->smoothed_pitch_hz > 0.0f)
-			{
-				state->smoothed_pitch_hz = apply_exponential_smoothing(state->smoothed_pitch_hz, current_pitch, config.pitch_smooth_alpha);
-			}
-			else
-			{
-				state->smoothed_pitch_hz = current_pitch;
-			}
+			prosody.pitch_hz = current_pitch;
 
-			prosody.pitch_hz = state->smoothed_pitch_hz;
-
-			// --- Pitch slope (use smoothed pitch) ---
+			// --- Pitch slope (direct from the upstream pitch tracker) ---
 			const float previous_pitch = state->previous_pitch_hz;
 			if (!new_segment && previous_pitch > 0.0f)
 			{
-				prosody.pitch_slope_hz_per_s = (state->smoothed_pitch_hz - previous_pitch) / delta_time;
+				prosody.pitch_slope_hz_per_s = (current_pitch - previous_pitch) / delta_time;
 			}
 			else
 			{
 				prosody.pitch_slope_hz_per_s = 0.0f;
 			}
-			state->previous_pitch_hz = state->smoothed_pitch_hz;
+			state->previous_pitch_hz = current_pitch;
 
 			// --- Harmonicity (HNR proxy) ---
 			float harmonic_energy = 0.0f;
@@ -162,6 +155,9 @@ namespace robotick
 			}
 
 			prosody.harmonicity_hnr_db = compute_harmonicity_hnr_db(frame_energy, harmonic_energy, config.harmonic_floor_db);
+			prosody.harmonic_confidence =
+				compute_harmonic_confidence(prosody.harmonicity_hnr_db, config.harmonic_confidence_min_db, config.harmonic_confidence_max_db);
+			prosody.is_harmonic = (prosody.harmonic_confidence >= config.harmonic_confidence_gate);
 
 			// --- Spectral brightness from slope of log(freq) vs log(amplitude) ---
 			prosody.spectral_brightness = compute_spectral_brightness(pitch_info);

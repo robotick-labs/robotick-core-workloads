@@ -291,6 +291,39 @@ namespace robotick::test
 			CHECK_FALSE(HarmonicPitch::try_continue_previous_result(config, centers, envelope, prev, continued));
 		}
 
+		SECTION("Continuation bridges short gaps by probing nearby bands")
+		{
+			const int num_bands = 128;
+			AudioBuffer128 centers(num_bands);
+			AudioBuffer128 envelope(num_bands);
+			const float fmin = 80.0f;
+			const float fmax = 1500.0f;
+			for (int i = 0; i < num_bands; ++i)
+			{
+				centers[i] = fmin + (fmax - fmin) * (float(i) / float(num_bands - 1));
+				envelope[i] = 0.0f;
+			}
+
+			HarmonicPitchSettings config;
+			config.min_amplitude = 0.05f;
+			config.min_total_continuation_amplitude = 0.3f;
+			config.continuation_search_radius = 3;
+
+			HarmonicPitchResult prev{};
+			prev.h1_f0_hz = 400.0f;
+			prev.harmonic_amplitudes.add(0.5f);
+
+				stamp_gaussian_peak(envelope, centers, prev.h1_f0_hz, 0.6f, 25.0f);
+				stamp_gaussian_peak(envelope, centers, prev.h1_f0_hz * 2.0f, 0.3f, 25.0f);
+			const int prev_band = find_closest_frequency_center_index(centers, prev.h1_f0_hz);
+			REQUIRE(prev_band >= 0);
+			envelope[prev_band] = 0.0f; // simulate a single-bin dropout
+
+			HarmonicPitchResult continued{};
+			REQUIRE(HarmonicPitch::try_continue_previous_result(config, centers, envelope, prev, continued));
+			CHECK(continued.h1_f0_hz == Catch::Approx(prev.h1_f0_hz).margin(8.0f));
+		}
+
 	}
 }
 

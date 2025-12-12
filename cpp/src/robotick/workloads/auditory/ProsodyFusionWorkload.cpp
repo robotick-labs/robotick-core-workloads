@@ -7,6 +7,7 @@
 #include "robotick/framework/strings/FixedString.h"
 #include "robotick/systems/auditory/ProsodyFusion.h"
 #include "robotick/systems/auditory/ProsodyState.h"
+#include "robotick/systems/auditory/ProsodyFusionMath.h"
 #include "robotick/systems/auditory/SpeechToText.h"
 
 #include <cmath>
@@ -22,7 +23,10 @@ namespace robotick
 		float minimum_segment_duration_sec = 0.1f;
 		float silence_hangover_sec = 0.2f; // match SpeechToText defaults
 		float segment_merge_tolerance_sec = 0.25f;
-		float max_pitch_ratio_per_sec = 4.0f; // allow ~2 octaves per second
+		float max_pitch_jump_hz = 80.0f;
+		float max_pitch_slope_hz_per_sec = 800.0f;
+		float min_link_rms = 0.01f;
+		float min_link_confidence = 0.3f;
 	};
 
 	struct ProsodyFusionInputs
@@ -107,28 +111,6 @@ namespace robotick
 				}
 				segment.words.add(word);
 			}
-		}
-
-		float clamp_pitch_change(const float previous_pitch, const float candidate_pitch, const float delta_time_sec) const
-		{
-			if (previous_pitch <= 0.0f || candidate_pitch <= 0.0f || delta_time_sec <= 0.0f)
-			{
-				return candidate_pitch;
-			}
-
-			const float max_ratio = powf(config.max_pitch_ratio_per_sec, delta_time_sec);
-			const float min_ratio = 1.0f / max_ratio;
-			const float ratio = candidate_pitch / previous_pitch;
-			if (ratio > max_ratio)
-			{
-				return previous_pitch * max_ratio;
-			}
-			if (ratio < min_ratio)
-			{
-				return previous_pitch * min_ratio;
-			}
-
-			return candidate_pitch;
 		}
 
 		ProsodicSegment& upsert_segment(const ProsodicSegment& segment)
@@ -269,11 +251,16 @@ namespace robotick
 			out_segment.words.clear();
 
 			const uint32_t sample_count = robotick::max<uint32_t>(2u, config.simplified_sample_count);
+			ProsodyLinkConstraints link_constraints{};
+			link_constraints.max_jump_hz = config.max_pitch_jump_hz;
+			link_constraints.max_slope_hz_per_sec = config.max_pitch_slope_hz_per_sec;
+			link_constraints.min_link_rms = config.min_link_rms;
+			link_constraints.min_link_confidence = config.min_link_confidence;
+
 			float confidence_sum = 0.0f;
 			int confidence_count = 0;
-			float prev_pitch = 0.0f;
-			float prev_time = clamped_start;
-			bool has_prev_pitch = false;
+			ProsodyLinkSample prev_sample{};
+			bool has_prev_sample = false;
 
 			for (uint32_t i = 0; i < sample_count; ++i)
 			{
@@ -294,19 +281,34 @@ namespace robotick
 				++confidence_count;
 
 				float pitch = sampled_state.pitch_hz;
-				if (has_prev_pitch)
-				{
-					const float dt = robotick::max(1e-3f, sample_time - prev_time);
-					pitch = clamp_pitch_change(prev_pitch, pitch, dt);
-				}
-
 				if (!out_segment.pitch_hz.full())
 				{
 					out_segment.pitch_hz.add(pitch);
 				}
-				prev_pitch = pitch;
-				prev_time = sample_time;
-				has_prev_pitch = true;
+
+				ProsodyLinkSample current_sample{};
+				current_sample.pitch_hz = pitch;
+				current_sample.rms = sampled_state.rms;
+				current_sample.confidence = sampled_state.voiced_confidence;
+				current_sample.time_sec = sample_time;
+
+				ProsodyLinkEvaluation eval{};
+				if (has_prev_sample)
+				{
+					eval = evaluate_prosody_link(link_constraints, prev_sample, current_sample);
+				}
+
+				if (!out_segment.pitch_link_mask.full())
+				{
+					out_segment.pitch_link_mask.add(eval.connect ? 1u : 0u);
+				}
+				if (!out_segment.link_rms.full())
+				{
+					out_segment.link_rms.add(eval.link_rms);
+				}
+
+				prev_sample = current_sample;
+				has_prev_sample = true;
 			}
 
 			if (confidence_count > 0)
@@ -351,12 +353,16 @@ namespace robotick
 			}
 
 			const uint32_t sample_count = robotick::max<uint32_t>(2u, config.simplified_sample_count);
+			ProsodyLinkConstraints link_constraints{};
+			link_constraints.max_jump_hz = config.max_pitch_jump_hz;
+			link_constraints.max_slope_hz_per_sec = config.max_pitch_slope_hz_per_sec;
+			link_constraints.min_link_rms = config.min_link_rms;
+			link_constraints.min_link_confidence = config.min_link_confidence;
 
 			float confidence_sum = 0.0f;
 			int confidence_count = 0;
-			float prev_pitch = 0.0f;
-			float prev_time = start_time;
-			bool has_prev_pitch = false;
+			ProsodyLinkSample prev_sample{};
+			bool has_prev_sample = false;
 
 			for (uint32_t i = 0; i < sample_count; ++i)
 			{
@@ -378,19 +384,35 @@ namespace robotick
 				++confidence_count;
 
 				float pitch = sampled_state.pitch_hz;
-				if (has_prev_pitch)
-				{
-					const float dt = robotick::max(1e-3f, sample_time - prev_time);
-					pitch = clamp_pitch_change(prev_pitch, pitch, dt);
-				}
 
 				if (!out_segment.pitch_hz.full())
 				{
 					out_segment.pitch_hz.add(pitch);
 				}
-				prev_pitch = pitch;
-				prev_time = sample_time;
-				has_prev_pitch = true;
+
+				ProsodyLinkSample current_sample{};
+				current_sample.pitch_hz = pitch;
+				current_sample.rms = sampled_state.rms;
+				current_sample.confidence = sampled_state.voiced_confidence;
+				current_sample.time_sec = sample_time;
+
+				ProsodyLinkEvaluation eval{};
+				if (has_prev_sample)
+				{
+					eval = evaluate_prosody_link(link_constraints, prev_sample, current_sample);
+				}
+
+				if (!out_segment.pitch_link_mask.full())
+				{
+					out_segment.pitch_link_mask.add(eval.connect ? 1u : 0u);
+				}
+				if (!out_segment.link_rms.full())
+				{
+					out_segment.link_rms.add(eval.link_rms);
+				}
+
+				prev_sample = current_sample;
+				has_prev_sample = true;
 			}
 
 			if (confidence_count > 0)

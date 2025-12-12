@@ -186,6 +186,30 @@ namespace robotick::test
 		}
 	}
 
+	TEST_CASE("Unit/Workloads/ProsodyAnalyser/HarmonicConfidenceMapping")
+	{
+		const float min_db = -15.0f;
+		const float max_db = 25.0f;
+
+		SECTION("Strong harmonic frames produce high confidence")
+		{
+			const float frame_energy = 4.0f;
+			const float harmonic_energy = 3.8f;
+			const float hnr_db = compute_harmonicity_hnr_db(frame_energy, harmonic_energy, -60.0f);
+			const float confidence = compute_harmonic_confidence(hnr_db, min_db, max_db);
+			CHECK(confidence > 0.65f);
+		}
+
+		SECTION("Noise-dominated frames reduce confidence toward zero")
+		{
+			const float frame_energy = 2.0f;
+			const float harmonic_energy = 0.01f;
+			const float hnr_db = compute_harmonicity_hnr_db(frame_energy, harmonic_energy, -60.0f);
+			const float confidence = compute_harmonic_confidence(hnr_db, min_db, max_db);
+			CHECK(confidence < 0.1f);
+		}
+	}
+
 	TEST_CASE("Unit/Workloads/ProsodyAnalyser/FormantNormalization")
 	{
 		SECTION("Normalized formant ratios stay stable when F0 changes")
@@ -347,19 +371,6 @@ namespace robotick::test
 			const float expected = target - (target - initial) * powf(1.0f - alpha, static_cast<float>(steps));
 
 			CHECK(smoothed == Catch::Approx(expected).margin(1e-4f));
-		}
-
-		SECTION("Pitch smoothing follows the same EMA formula")
-		{
-			const float alpha = 0.1f;
-			const float initial = 120.0f;
-			const float target = 240.0f;
-			const int steps = 8;
-
-			const float smoothed = step_response(initial, target, alpha, steps);
-			const float expected = target - (target - initial) * powf(1.0f - alpha, static_cast<float>(steps));
-
-			CHECK(smoothed == Catch::Approx(expected).margin(1e-3f));
 		}
 	}
 

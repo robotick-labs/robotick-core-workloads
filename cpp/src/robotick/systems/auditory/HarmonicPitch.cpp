@@ -15,6 +15,7 @@ namespace robotick
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchSettings)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_amplitude)
 	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, float, min_peak_falloff_norm)
+	ROBOTICK_STRUCT_FIELD(HarmonicPitchSettings, uint32_t, continuation_search_radius)
 	ROBOTICK_REGISTER_STRUCT_END(HarmonicPitchSettings)
 
 	ROBOTICK_REGISTER_STRUCT_BEGIN(HarmonicPitchResult)
@@ -399,19 +400,74 @@ namespace robotick
 		if (prev_f0_band < 0 || prev_f0_band >= static_cast<int>(num_bands))
 			return false;
 
-		// Step 2: check if we’re still "inside the white snake" at this band
-		if (envelope[prev_f0_band] < settings.min_amplitude)
+		// Step 2: check if we’re still "inside the white snake" at this band.
+		// Some frames briefly dip the exact center band even though surrounding
+		// bins still carry voiced energy, so probe nearby bands before giving up.
+		int anchor_band = prev_f0_band;
+		const int search_radius = static_cast<int>(settings.continuation_search_radius);
+		if (envelope[anchor_band] < settings.min_amplitude && search_radius > 0)
+		{
+			int replacement = -1;
+			for (int offset = 1; offset <= search_radius; ++offset)
+			{
+				const int left = anchor_band - offset;
+				if (left >= 0 && envelope[left] >= settings.min_amplitude)
+				{
+					replacement = left;
+					break;
+				}
+
+				const int right = anchor_band + offset;
+				if (right < static_cast<int>(num_bands) && envelope[right] >= settings.min_amplitude)
+				{
+					replacement = right;
+					break;
+				}
+			}
+
+			if (replacement >= 0)
+			{
+				anchor_band = replacement;
+			}
+			else
+			{
+				return false;
+			}
+		}
+		else if (envelope[anchor_band] < settings.min_amplitude)
+		{
 			return false;
+		}
 
-		// Step 3: walk outward in both directions to find the extent of this snake
-		int start_band = prev_f0_band;
-		int end_band = prev_f0_band;
+		// Step 3: walk outward in both directions to find the extent of this snake,
+		// tolerating short gaps (e.g., single-bin dropouts) within the configured radius.
+		const auto extend_band = [&](int start, int direction) -> int {
+			int idx = start;
+			int gap = 0;
+			while (true)
+			{
+				const int next = idx + direction;
+				if (next < 0 || next >= static_cast<int>(num_bands))
+					break;
 
-		while (start_band > 0 && envelope[start_band - 1] >= settings.min_amplitude)
-			--start_band;
+				if (envelope[next] >= settings.min_amplitude)
+				{
+					idx = next;
+					gap = 0;
+					continue;
+				}
 
-		while (end_band + 1 < static_cast<int>(num_bands) && envelope[end_band + 1] >= settings.min_amplitude)
-			++end_band;
+				if (gap >= search_radius)
+					break;
+
+				++gap;
+				idx = next;
+			}
+			return idx;
+		};
+
+		const int start_band = extend_band(anchor_band, -1);
+		const int end_band = extend_band(anchor_band, +1);
 
 		// Step 4: compute centroid within this band range
 		float weighted_sum = 0.0f;

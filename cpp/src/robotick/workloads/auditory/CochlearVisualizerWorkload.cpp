@@ -34,6 +34,7 @@ namespace robotick
 		// If true: render offscreen and export PNG bytes to outputs.visualization_png
 		// If false: present to the active display/window
 		bool render_to_texture = true;
+		float fusion_link_alpha_gain = 100.0f;
 	};
 
 	struct CochlearVisualizerInputs
@@ -359,6 +360,9 @@ namespace robotick
 				Vec2 prev_point = {};
 				bool has_prev = false;
 
+				const size_t mask_count = segment.pitch_link_mask.size();
+				const size_t link_rms_count = segment.link_rms.size();
+
 				for (size_t i = 0; i < sample_count; ++i)
 				{
 					const float freq_hz = segment.pitch_hz[i];
@@ -381,7 +385,15 @@ namespace robotick
 					const Vec2 current_point = {x, y};
 					if (has_prev)
 					{
-						draw_line_segment(s.renderer, prev_point, current_point, curve_thickness, overlay.curve_color);
+						const bool link_allowed = (i < mask_count) && (segment.pitch_link_mask[i] != 0);
+						if (link_allowed)
+						{
+							const float link_rms = (i < link_rms_count) ? segment.link_rms[i] : segment.rms[i];
+							const float alpha_scale = clampf(link_rms * config.fusion_link_alpha_gain, 0.05f, 1.0f);
+							Color dynamic_color = overlay.curve_color;
+							dynamic_color.a = static_cast<uint8_t>(alpha_scale * static_cast<float>(overlay.curve_color.a));
+							draw_line_segment(s.renderer, prev_point, current_point, curve_thickness, dynamic_color);
+						}
 					}
 
 					prev_point = current_point;

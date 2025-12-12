@@ -13,6 +13,7 @@ namespace robotick
 	ROBOTICK_REGISTER_STRUCT_END(ProsodyHistorySample)
 
 	ROBOTICK_REGISTER_FIXED_VECTOR(ProsodyPitchCurve, float);
+	ROBOTICK_REGISTER_FIXED_VECTOR(ProsodyPitchMask, uint8_t);
 	ROBOTICK_REGISTER_FIXED_VECTOR(ProsodyRmsCurve, float);
 
 	ROBOTICK_REGISTER_ENUM_BEGIN(ProsodicSegmentState)
@@ -26,6 +27,8 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, float, end_time_sec)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodyPitchCurve, pitch_hz)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodyRmsCurve, rms)
+	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodyPitchMask, pitch_link_mask)
+	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodyRmsCurve, link_rms)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, float, mean_voiced_confidence)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, ProsodicSegmentState, state)
 	ROBOTICK_STRUCT_FIELD(ProsodicSegment, TranscribedWords, words)
