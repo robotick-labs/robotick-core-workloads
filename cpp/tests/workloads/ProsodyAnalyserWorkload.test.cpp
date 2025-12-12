@@ -5,6 +5,7 @@
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
+#include "robotick/systems/auditory/SnakePitchTracker.h"
 #include "robotick/systems/auditory/ProsodyMath.h"
 #include "robotick/systems/auditory/ProsodyState.h"
 
@@ -526,16 +527,16 @@ namespace robotick::test
 
 	TEST_CASE("Integration/Auditory/HarmonicPitchToProsody")
 	{
-		HarmonicPitchSettings pitch_settings;
-		pitch_settings.min_amplitude = 0.01f;
-		pitch_settings.min_peak_falloff_norm = 0.05f;
-		pitch_settings.allow_single_peak_mode = true;
-		pitch_settings.min_total_continuation_amplitude = 1.0f;
-		pitch_settings.max_hold_frames = 3;
-		pitch_settings.continuation_search_radius = 2;
+		SnakePitchTrackerConfig tracker_config;
+		tracker_config.min_peak_amplitude = 0.01f;
+		tracker_config.peak_merge_cents = 15.0f;
+		tracker_config.snake_match_cents = 25.0f;
+		tracker_config.harmonic_match_cents = 25.0f;
+		tracker_config.snake_keep_alive_frames = 3;
+		SnakePitchTracker tracker;
+		tracker.configure(tracker_config);
 
 		ProsodyPipelineHarness harness;
-		HarmonicPitchResult prev{};
 
 		float time_now = 0.0f;
 		const float delta_time = 0.05f;
@@ -556,10 +557,8 @@ namespace robotick::test
 			cochlear.timestamp = time_now;
 
 			HarmonicPitchResult current{};
-			const bool ok =
-				HarmonicPitch::find_or_continue_harmonic_features(pitch_settings, cochlear.band_center_hz, cochlear.envelope, prev, current);
+			const bool ok = tracker.update(cochlear, current);
 			REQUIRE(ok);
-			prev = current;
 
 			const ProsodyState prosody = harness.tick(audio, current, time_now, delta_time);
 			detected_pitches.add(prosody.pitch_hz);
@@ -569,15 +568,16 @@ namespace robotick::test
 			time_now += delta_time;
 		}
 
-		for (int silent = 0; silent < 3; ++silent)
+		for (int silent = 0; silent < 6; ++silent)
 		{
 			AudioFrame silent_audio{};
 			CochlearFrame silent_cochlear{};
 			synthesize_envelope(silent_cochlear, 0.0f, 1.0f);
 			silent_cochlear.timestamp = time_now;
-			HarmonicPitchResult empty{};
-			prev = {};
-			const ProsodyState prosody = harness.tick(silent_audio, empty, time_now, delta_time);
+			HarmonicPitchResult tracker_result{};
+			const bool has_pitch = tracker.update(silent_cochlear, tracker_result);
+			const HarmonicPitchResult delivered = has_pitch ? tracker_result : HarmonicPitchResult{};
+			const ProsodyState prosody = harness.tick(silent_audio, delivered, time_now, delta_time);
 			confidence_values.add(prosody.voiced_confidence);
 			time_now += delta_time;
 		}
