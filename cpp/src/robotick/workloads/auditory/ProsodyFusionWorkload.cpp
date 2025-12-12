@@ -18,10 +18,11 @@ namespace robotick
 	struct ProsodyFusionConfig
 	{
 		float history_duration_sec = 8.0f;	   // rolling buffer length for live curves
-		uint32_t simplified_sample_count = 16; // downsample count per segment
+		uint32_t simplified_sample_count = 32; // downsample count per segment
 		float minimum_segment_duration_sec = 0.1f;
 		float silence_hangover_sec = 0.2f; // match SpeechToText defaults
 		float segment_merge_tolerance_sec = 0.25f;
+		float max_pitch_ratio_per_sec = 4.0f; // allow ~2 octaves per second
 	};
 
 	struct ProsodyFusionInputs
@@ -74,8 +75,59 @@ namespace robotick
 			state->last_voiced_time = -1.0f;
 		}
 
-		float clamp_pitch_change(const float /*previous_pitch*/, const float candidate_pitch, const float /*delta_time_sec*/) const
+		ProsodicSegment* find_segment_for_transcript(const Transcript& transcript)
 		{
+			if (!transcript_has_content(transcript))
+			{
+				return nullptr;
+			}
+
+			for (int i = static_cast<int>(outputs.speech_segments.size()) - 1; i >= 0; --i)
+			{
+				ProsodicSegment& candidate = outputs.speech_segments[static_cast<size_t>(i)];
+				const bool start_close = fabsf(candidate.start_time_sec - transcript.start_time_sec) <= config.segment_merge_tolerance_sec;
+				const bool overlaps = (transcript.start_time_sec >= candidate.start_time_sec && transcript.start_time_sec <= candidate.end_time_sec);
+				if (start_close || overlaps)
+				{
+					return &candidate;
+				}
+			}
+			return nullptr;
+		}
+
+		void annotate_segment_with_transcript(ProsodicSegment& segment, const Transcript& transcript, ProsodicSegmentState new_state)
+		{
+			segment.state = new_state;
+			segment.words.clear();
+			for (const TranscribedWord& word : transcript.words)
+			{
+				if (segment.words.full())
+				{
+					break;
+				}
+				segment.words.add(word);
+			}
+		}
+
+		float clamp_pitch_change(const float previous_pitch, const float candidate_pitch, const float delta_time_sec) const
+		{
+			if (previous_pitch <= 0.0f || candidate_pitch <= 0.0f || delta_time_sec <= 0.0f)
+			{
+				return candidate_pitch;
+			}
+
+			const float max_ratio = powf(config.max_pitch_ratio_per_sec, delta_time_sec);
+			const float min_ratio = 1.0f / max_ratio;
+			const float ratio = candidate_pitch / previous_pitch;
+			if (ratio > max_ratio)
+			{
+				return previous_pitch * max_ratio;
+			}
+			if (ratio < min_ratio)
+			{
+				return previous_pitch * min_ratio;
+			}
+
 			return candidate_pitch;
 		}
 
@@ -238,7 +290,6 @@ namespace robotick
 				{
 					out_segment.rms.add(sampled_state.rms);
 				}
-
 				confidence_sum += sampled_state.voiced_confidence;
 				++confidence_count;
 
@@ -253,7 +304,6 @@ namespace robotick
 				{
 					out_segment.pitch_hz.add(pitch);
 				}
-
 				prev_pitch = pitch;
 				prev_time = sample_time;
 				has_prev_pitch = true;
@@ -324,7 +374,6 @@ namespace robotick
 				{
 					out_segment.rms.add(sampled_state.rms);
 				}
-
 				confidence_sum += sampled_state.voiced_confidence;
 				++confidence_count;
 
@@ -339,7 +388,6 @@ namespace robotick
 				{
 					out_segment.pitch_hz.add(pitch);
 				}
-
 				prev_pitch = pitch;
 				prev_time = sample_time;
 				has_prev_pitch = true;
@@ -403,10 +451,17 @@ namespace robotick
 			// so higher layers can update overlays/text continuously.
 			if (transcript_changed(inputs.proto_transcript, state->last_proto_start, state->last_proto_duration, state->last_proto_text))
 			{
-				ProsodicSegment proto_segment;
-				if (build_segment_from_transcript(inputs.proto_transcript, ProsodicSegmentState::Ongoing, proto_segment))
+				if (ProsodicSegment* existing = find_segment_for_transcript(inputs.proto_transcript))
 				{
-					upsert_segment(proto_segment);
+					annotate_segment_with_transcript(*existing, inputs.proto_transcript, ProsodicSegmentState::Ongoing);
+				}
+				else
+				{
+					ProsodicSegment proto_segment;
+					if (build_segment_from_transcript(inputs.proto_transcript, ProsodicSegmentState::Ongoing, proto_segment))
+					{
+						upsert_segment(proto_segment);
+					}
 				}
 			}
 
@@ -414,10 +469,17 @@ namespace robotick
 			// baked history, preserving the exact timings Whisper confirmed.
 			if (transcript_changed(inputs.transcript, state->last_final_start, state->last_final_duration, state->last_final_text))
 			{
-				ProsodicSegment baked_segment;
-				if (build_segment_from_transcript(inputs.transcript, ProsodicSegmentState::Finalised, baked_segment))
+				if (ProsodicSegment* existing = find_segment_for_transcript(inputs.transcript))
 				{
-					upsert_segment(baked_segment);
+					annotate_segment_with_transcript(*existing, inputs.transcript, ProsodicSegmentState::Finalised);
+				}
+				else
+				{
+					ProsodicSegment baked_segment;
+					if (build_segment_from_transcript(inputs.transcript, ProsodicSegmentState::Finalised, baked_segment))
+					{
+						upsert_segment(baked_segment);
+					}
 				}
 			}
 		}
