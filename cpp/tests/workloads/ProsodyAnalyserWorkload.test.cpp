@@ -530,6 +530,9 @@ namespace robotick::test
 		pitch_settings.min_amplitude = 0.01f;
 		pitch_settings.min_peak_falloff_norm = 0.05f;
 		pitch_settings.allow_single_peak_mode = true;
+		pitch_settings.min_total_continuation_amplitude = 1.0f;
+		pitch_settings.max_hold_frames = 3;
+		pitch_settings.continuation_search_radius = 2;
 
 		ProsodyPipelineHarness harness;
 		HarmonicPitchResult prev{};

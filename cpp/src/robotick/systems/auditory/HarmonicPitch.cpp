@@ -95,12 +95,20 @@ namespace robotick
 		if (num_bands < 3 || start_band_id + 2 >= num_bands)
 			return region;
 
+		const auto evaluate_band = [&](int band_index) -> float {
+			const float center = envelope[band_index];
+			const float prev = (band_index > 0) ? envelope[band_index - 1] : center;
+			const float next = (band_index + 1 < static_cast<int>(num_bands)) ? envelope[band_index + 1] : center;
+			const float smoothed = (prev + 2.0f * center + next) * 0.25f;
+			return max(0.0f, smoothed - settings.min_amplitude);
+		};
+
 		int candidate_peak_band_id = -1;
 		float candidate_peak_value = 0.0f;
 
 		for (size_t band_id = start_band_id; band_id < num_bands; ++band_id)
 		{
-			const float current_value = max(0.0f, envelope[band_id] - settings.min_amplitude);
+			const float current_value = evaluate_band(static_cast<int>(band_id));
 
 			// Found new candidate peak
 			if (current_value > candidate_peak_value)
@@ -121,7 +129,7 @@ namespace robotick
 					int rise_index = candidate_peak_band_id;
 					for (int other_band_id = candidate_peak_band_id - 1; other_band_id >= 0; --other_band_id)
 					{
-						const float back_value = max(0.0f, envelope[other_band_id] - settings.min_amplitude);
+						const float back_value = evaluate_band(other_band_id);
 						if ((candidate_peak_value - back_value) >= required_drop)
 						{
 							rise_index = other_band_id;
@@ -337,6 +345,10 @@ namespace robotick
 
 		result.h1_f0_hz = best_f0;
 		result.harmonic_amplitudes = best_amplitudes;
+		while (result.harmonic_amplitudes.size() < result.harmonic_amplitudes.capacity())
+		{
+			result.harmonic_amplitudes.add(0.0f);
+		}
 
 		// ------------------------------------------------------------------------------------------
 		// Step 4: Fill in any harmonics not detected as peaks, with the current band-envelope value

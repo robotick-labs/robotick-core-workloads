@@ -207,7 +207,7 @@ namespace robotick::test
 					CHECK(result.h1_f0_hz <= centers[num_bands - 1]);
 
 					// Harmonic structure validation
-					REQUIRE(result.harmonic_amplitudes.size() == num_harmonics);
+					REQUIRE(result.harmonic_amplitudes.size() >= num_harmonics);
 
 					// Check that harmonic amplitudes decrease (or at least don’t increase drastically)
 					for (int harmonic_id = 1; harmonic_id < num_harmonics - 1; ++harmonic_id)

@@ -28,6 +28,8 @@ namespace robotick
 		float cochlear_visual_gain = 1.0f;
 
 		bool draw_pitch_info = true;
+		bool draw_pitch_info_amplitude = true;
+		bool draw_harmonics = true;
 		float pitch_visual_gain = 1.0f;
 		float pitch_min_amplitude = 0.2f;
 
@@ -212,10 +214,17 @@ namespace robotick
 					if (amp <= 0.0f)
 						continue;
 
-					float a = (amp - config.pitch_min_amplitude) * config.pitch_visual_gain;
-					if (config.log_scale)
-						a = log1pf(a * 10.0f) / log1pf(10.0f);
-					a = clampf(a, 0.0f, 1.0f);
+					if (h > 1 && !config.draw_harmonics)
+						continue;
+
+					float a = 1.0f;
+					if (config.draw_pitch_info_amplitude)
+					{
+						a = (amp - config.pitch_min_amplitude) * config.pitch_visual_gain;
+						if (config.log_scale)
+							a = log1pf(a * 10.0f) / log1pf(10.0f);
+						a = clampf(a, 0.0f, 1.0f);
+					}
 
 					const uint8_t r = static_cast<uint8_t>(a * 64.0f);
 					const uint8_t g = static_cast<uint8_t>(64.0f + a * (255.0f - 128.0f));

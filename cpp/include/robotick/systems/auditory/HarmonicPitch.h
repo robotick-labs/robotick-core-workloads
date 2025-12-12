@@ -27,9 +27,9 @@ namespace robotick
 		float harmonic_tolerance_cents = 50.0f; // i.e. hormonic's peak must be within 50% of a semitone to count as a matching harmonic
 		bool allow_single_peak_mode = true;
 
-		float min_total_continuation_amplitude = 1.0f;
-		uint32_t max_hold_frames = 3; // how long we keep reporting the last valid pitch when frames go silent
-		uint32_t continuation_search_radius = 2; // how many neighboring bands to probe when the center band momentarily dips
+		float min_total_continuation_amplitude = 0.35f;
+		uint32_t max_hold_frames = 6; // how long we keep reporting the last valid pitch when frames go silent
+		uint32_t continuation_search_radius = 4; // how many neighboring bands to probe when the center band momentarily dips
 	};
 
 	using HarmonicAmplitudes = FixedVector<float, harmonic_pitch::MaxHarmonics>;
