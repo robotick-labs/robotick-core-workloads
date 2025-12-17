@@ -24,9 +24,6 @@ namespace robotick
 		float silence_hangover_sec = 0.2f; // match SpeechToText defaults
 		float segment_merge_tolerance_sec = 0.25f;
 		float max_pitch_jump_hz = 80.0f;
-		float max_pitch_slope_hz_per_sec = 800.0f;
-		float min_link_rms = 0.01f;
-		float min_link_confidence = 0.3f;
 	};
 
 	struct ProsodyFusionInputs
@@ -253,9 +250,6 @@ namespace robotick
 			const uint32_t sample_count = robotick::max<uint32_t>(2u, config.simplified_sample_count);
 			ProsodyLinkConstraints link_constraints{};
 			link_constraints.max_jump_hz = config.max_pitch_jump_hz;
-			link_constraints.max_slope_hz_per_sec = config.max_pitch_slope_hz_per_sec;
-			link_constraints.min_link_rms = config.min_link_rms;
-			link_constraints.min_link_confidence = config.min_link_confidence;
 
 			float confidence_sum = 0.0f;
 			int confidence_count = 0;
@@ -289,7 +283,6 @@ namespace robotick
 				ProsodyLinkSample current_sample{};
 				current_sample.pitch_hz = pitch;
 				current_sample.rms = sampled_state.rms;
-				current_sample.confidence = sampled_state.voiced_confidence;
 				current_sample.time_sec = sample_time;
 
 				ProsodyLinkEvaluation eval{};
@@ -355,9 +348,6 @@ namespace robotick
 			const uint32_t sample_count = robotick::max<uint32_t>(2u, config.simplified_sample_count);
 			ProsodyLinkConstraints link_constraints{};
 			link_constraints.max_jump_hz = config.max_pitch_jump_hz;
-			link_constraints.max_slope_hz_per_sec = config.max_pitch_slope_hz_per_sec;
-			link_constraints.min_link_rms = config.min_link_rms;
-			link_constraints.min_link_confidence = config.min_link_confidence;
 
 			float confidence_sum = 0.0f;
 			int confidence_count = 0;
@@ -393,7 +383,6 @@ namespace robotick
 				ProsodyLinkSample current_sample{};
 				current_sample.pitch_hz = pitch;
 				current_sample.rms = sampled_state.rms;
-				current_sample.confidence = sampled_state.voiced_confidence;
 				current_sample.time_sec = sample_time;
 
 				ProsodyLinkEvaluation eval{};

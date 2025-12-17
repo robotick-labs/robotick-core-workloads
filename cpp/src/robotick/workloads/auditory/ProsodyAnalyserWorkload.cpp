@@ -20,9 +20,6 @@ namespace robotick
 
 		float voiced_falloff_rate_hz = 5.0f; // how quickly voiced confidence fades (1/s)
 
-		float min_pitch_hz = 60.0f;	 // very deep adult voice
-		float max_pitch_hz = 600.0f; // very high child's voice
-
 		float harmonic_confidence_min_db = -15.0f;
 		float harmonic_confidence_max_db = 25.0f;
 		float harmonic_confidence_gate = 0.35f;
@@ -54,6 +51,7 @@ namespace robotick
 		float last_shimmer = 0.0f;
 
 		bool was_voiced = false;
+		float voiced_confidence = 0.0f;
 	};
 
 	struct ProsodyAnalyserWorkload
@@ -78,6 +76,7 @@ namespace robotick
 		void tick(const TickInfo& info)
 		{
 			auto& prosody = outputs.prosody_state;
+			prosody = ProsodyState{};
 			const auto& pitch_info = inputs.pitch_info;
 			const auto& samples = inputs.mono.samples;
 			const float delta_time = robotick::max(1e-6f, info.delta_time);
@@ -98,8 +97,13 @@ namespace robotick
 
 			const float current_pitch = pitch_info.h1_f0_hz;
 			const bool has_pitch = (current_pitch > 0.0f);
+
+			state->voiced_confidence =
+				update_voiced_confidence(has_pitch, state->voiced_confidence, delta_time, config.voiced_falloff_rate_hz);
+
 			prosody.is_voiced = has_pitch;
-			prosody.voiced_confidence = has_pitch ? 1.0f : 0.0f;
+			prosody.voiced_confidence = state->voiced_confidence;
+			prosody.rms = state->smoothed_rms;
 
 			if (!has_pitch)
 			{
@@ -109,12 +113,12 @@ namespace robotick
 				state->last_jitter = 0.0f;
 				state->last_shimmer = 0.0f;
 
-				prosody = ProsodyState{};
-				prosody.rms = state->smoothed_rms;
-				prosody.is_voiced = false;
-				prosody.voiced_confidence = 0.0f;
 				prosody.is_harmonic = false;
 				prosody.harmonic_confidence = 0.0f;
+				prosody.jitter = 0.0f;
+				prosody.shimmer = 0.0f;
+				prosody.pitch_hz = 0.0f;
+				prosody.pitch_slope_hz_per_s = 0.0f;
 
 				decay_speaking_rate_tracker(state->speaking_rate_state, config.speaking_rate_decay);
 				state->was_voiced = false;
