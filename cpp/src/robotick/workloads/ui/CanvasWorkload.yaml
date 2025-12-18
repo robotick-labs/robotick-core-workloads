@@ -1,0 +1,13 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/Canvas.cpp
+
+    deps:
+      - name: yaml-cpp
+        source:
+          type: apt
+          package: libyaml-cpp-dev
+        find_package: yaml-cpp
+        link_libraries:
+          - yaml-cpp

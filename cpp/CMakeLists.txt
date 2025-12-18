@@ -114,7 +114,7 @@ target_include_directories(robotick-core-workloads PUBLIC
 
 target_compile_options(robotick-core-workloads PRIVATE -fno-exceptions)
 
-target_link_libraries(robotick-core-workloads PRIVATE robotick-engine)
+target_link_libraries(robotick-core-workloads PRIVATE robotick-engine yaml-cpp)
 
 # =========================
 # Optional Python Workloads
@@ -146,6 +146,7 @@ if(ROBOTICK_ENABLE_PYTHON)
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttClient.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Canvas.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Renderer_desktop.cpp
     )
 
