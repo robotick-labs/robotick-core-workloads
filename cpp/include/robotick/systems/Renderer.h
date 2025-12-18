@@ -44,7 +44,9 @@ namespace robotick
 		void present();
 		void cleanup();
 
-		// Render-to-texture target size
+		// Render-to-texture (physical) target size in pixels.
+		// This is the pixel resolution used for on-screen presentation and/or PNG capture.
+		// Note: this is distinct from the logical coordinate space set by set_viewport().
 		void set_texture_only_size(float w, float h)
 		{
 			physical_w = static_cast<int>(w);
@@ -52,7 +54,9 @@ namespace robotick
 			update_scale();
 		}
 
-		// Viewport
+		// Logical viewport size (authoring coordinate space).
+		// Drawing APIs take positions/sizes in this logical space; they are scaled into the
+		// physical target size set by set_texture_only_size(), preserving aspect ratio and centering.
 		void set_viewport(float w, float h)
 		{
 			logical_w = w;
