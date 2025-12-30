@@ -6,6 +6,8 @@
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/utility/Algorithm.h"
+#include "robotick/systems/MuJoCoPhysics.h"
+#include "robotick/systems/MuJoCoSceneRegistry.h"
 
 #include <mujoco/mujoco.h>
 #include <yaml-cpp/yaml.h>
@@ -37,6 +39,7 @@ namespace robotick
 	{
 		Blackboard mujoco;
 		// ^- values read from sim each tick
+		uint32_t scene_id = 0;
 	};
 
 	// ---------- Binding model ----------
@@ -83,8 +86,8 @@ namespace robotick
 
 	struct MuJoCoState
 	{
-		mjModel* mujoco_model = nullptr;
-		mjData* mujoco_data = nullptr;
+		MuJoCoPhysics physics;
+		uint32_t scene_id = 0;
 
 		uint32_t sim_num_sub_ticks = 1;
 
@@ -111,16 +114,13 @@ namespace robotick
 
 		~MuJoCoWorkload()
 		{
-			if (state->mujoco_data)
+			if (state->scene_id != 0)
 			{
-				mj_deleteData(state->mujoco_data);
-				state->mujoco_data = nullptr;
+				MuJoCoSceneRegistry::get().unregister_scene(state->scene_id);
+				state->scene_id = 0;
+				outputs.scene_id = 0;
 			}
-			if (state->mujoco_model)
-			{
-				mj_deleteModel(state->mujoco_model);
-				state->mujoco_model = nullptr;
-			}
+			state->physics.unload();
 		}
 
 		// --- helpers: field parsing ---
@@ -225,7 +225,7 @@ namespace robotick
 
 		void finalize_sensor_output_field_types()
 		{
-			mjModel* m = state->mujoco_model;
+			const mjModel* m = state->physics.model();
 			ROBOTICK_ASSERT(m != nullptr);
 
 			bool changed = false;
@@ -318,7 +318,7 @@ namespace robotick
 
 		void resolve_binding_ids(MuJoCoBinding& b)
 		{
-			mjModel* mujoco_model = state->mujoco_model;
+			const mjModel* mujoco_model = state->physics.model();
 			ROBOTICK_ASSERT(mujoco_model != nullptr);
 
 			switch (b.entity_type)
@@ -353,17 +353,18 @@ namespace robotick
 
 		void load_model()
 		{
-			// Load model
-			char error[512] = {0};
-			mjModel* mujoco_model = mj_loadXML(config.model_path.c_str(), nullptr, error, sizeof(error));
-			if (!mujoco_model)
+			if (!state->physics.load_from_xml(config.model_path.c_str()))
 			{
-				ROBOTICK_FATAL_EXIT("mj_loadXML failed: %s", error);
+				ROBOTICK_FATAL_EXIT("MuJoCoPhysics failed to load model: %s", config.model_path.c_str());
 			}
-			state->mujoco_model = mujoco_model;
 
-			state->mujoco_data = mj_makeData(mujoco_model);
-			ROBOTICK_ASSERT(state->mujoco_data != nullptr);
+			if (state->scene_id != 0)
+			{
+				MuJoCoSceneRegistry::get().unregister_scene(state->scene_id);
+				state->scene_id = 0;
+			}
+			state->scene_id = MuJoCoSceneRegistry::get().register_scene(&state->physics);
+			outputs.scene_id = state->scene_id;
 
 			for (auto& b : state->config_bindings)
 				resolve_binding_ids(b);
@@ -378,8 +379,8 @@ namespace robotick
 		void assign_blackboard_from_mujoco(const MuJoCoBinding& b, Blackboard& bb)
 		{
 			const FieldDescriptor& fd = *b.blackboard_field;
-			mjModel* mujoco_model = state->mujoco_model;
-			mjData* mujoco_data = state->mujoco_data;
+			const mjModel* mujoco_model = state->physics.model();
+			mjData* mujoco_data = state->physics.data();
 
 			float value = 0.0f;
 
@@ -498,8 +499,8 @@ namespace robotick
 			const FieldDescriptor& fd = *b.blackboard_field;
 			const float v = bb.get<float>(fd);
 
-			mjModel* mujoco_model = state->mujoco_model;
-			mjData* mujoco_data = state->mujoco_data;
+			const mjModel* mujoco_model = state->physics.model();
+			mjData* mujoco_data = state->physics.data();
 
 			switch (b.entity_type)
 			{
@@ -553,10 +554,10 @@ namespace robotick
 		void setup()
 		{
 			// Optionally run forward to make derived quantities valid
-			mj_forward(state->mujoco_model, state->mujoco_data);
+			state->physics.forward();
 
-			mjModel* m = state->mujoco_model;
-			mjData* d = state->mujoco_data;
+			const mjModel* m = state->physics.model();
+			mjData* d = state->physics.data();
 
 			// hard-reset all controls this tick
 			if (m->nu > 0)
@@ -581,14 +582,14 @@ namespace robotick
 			// MuJoCo uses dt in the model; you can override it by scaling mujoco_model->opt.timestep if needed
 			const float final_sim_rate = tick_rate_hz * static_cast<float>(state->sim_num_sub_ticks);
 			const double dt = 1.0 / static_cast<double>(final_sim_rate);
-			state->mujoco_model->opt.timestep = dt;
+			state->physics.model_mutable()->opt.timestep = dt;
 		}
 
 		void tick(const TickInfo& tick_info)
 		{
 			(void)tick_info;
 
-			mjData* mujoco_data = state->mujoco_data;
+			mjData* mujoco_data = state->physics.data();
 
 			// Write inputs to sim
 			for (const auto& b : state->input_bindings)
@@ -603,7 +604,7 @@ namespace robotick
 			{
 				for (uint32_t i = 0; i < state->sim_num_sub_ticks; ++i)
 				{
-					mj_step(state->mujoco_model, mujoco_data);
+					mj_step(state->physics.model(), mujoco_data);
 				}
 			}
 
