@@ -19,15 +19,24 @@ namespace robotick::tests
 		REQUIRE(physics.load_from_xml(kModelPath));
 
 		MuJoCoSceneRegistry& registry = MuJoCoSceneRegistry::get();
-		const uint64_t scene_id = registry.register_scene(&physics);
+		const uint32_t scene_id = registry.register_scene(&physics);
 		REQUIRE(scene_id != 0);
 		REQUIRE(registry.is_valid(scene_id));
 
-		MuJoCoRenderSnapshot snapshot = registry.get_render_snapshot(scene_id);
-		REQUIRE(snapshot.model != nullptr);
-		REQUIRE(snapshot.data != nullptr);
+		mjData* snapshot_data = nullptr;
+		const mjModel* snapshot_model = nullptr;
+		double snapshot_time = 0.0;
+		REQUIRE(registry.alloc_render_snapshot(scene_id, snapshot_data, snapshot_model, snapshot_time));
+		REQUIRE(snapshot_model != nullptr);
+		REQUIRE(snapshot_data != nullptr);
 
-		physics.free_render_snapshot(snapshot);
+		const mjModel* copied_model = nullptr;
+		double copied_time = 0.0;
+		REQUIRE(registry.copy_render_snapshot(scene_id, snapshot_data, copied_model, copied_time));
+		REQUIRE(copied_model == snapshot_model);
+
+		registry.destroy_render_snapshot(snapshot_data);
+
 		registry.unregister_scene(scene_id);
 		REQUIRE_FALSE(registry.is_valid(scene_id));
 	}
@@ -35,11 +44,14 @@ namespace robotick::tests
 	TEST_CASE("Unit/Systems/MuJoCoSceneRegistry/InvalidHandle")
 	{
 		MuJoCoSceneRegistry& registry = MuJoCoSceneRegistry::get();
-		const uint64_t invalid_id = 0xdeadbeefULL;
+		const uint32_t invalid_id = 0xdeadbeefu;
 		REQUIRE_FALSE(registry.is_valid(invalid_id));
-		MuJoCoRenderSnapshot snapshot = registry.get_render_snapshot(invalid_id);
-		REQUIRE(snapshot.data == nullptr);
-		REQUIRE(snapshot.model == nullptr);
+		mjData* snapshot_data = nullptr;
+		const mjModel* snapshot_model = nullptr;
+		double snapshot_time = 0.0;
+		REQUIRE_FALSE(registry.alloc_render_snapshot(invalid_id, snapshot_data, snapshot_model, snapshot_time));
+		REQUIRE(snapshot_data == nullptr);
+		REQUIRE(snapshot_model == nullptr);
 	}
 #else
 	TEST_CASE("Unit/Systems/MuJoCoSceneRegistry/SkipNonDesktop")

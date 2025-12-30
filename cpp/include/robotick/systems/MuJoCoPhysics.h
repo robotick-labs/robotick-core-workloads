@@ -16,13 +16,6 @@ namespace robotick
 	// then registers the instance with MuJoCoSceneRegistry so camera workloads
 	// can request snapshots via a scene_id handle.
 
-	struct MuJoCoRenderSnapshot
-	{
-		const ::mjModel* model = nullptr;
-		::mjData* data = nullptr;
-		double time = 0.0;
-	};
-
 	class MuJoCoPhysics
 	{
 	  public:
@@ -43,9 +36,15 @@ namespace robotick
 		::mjModel* model_mutable() { return model_; }
 		::mjData* data() const { return data_; }
 
-		// Thread-safe copy of mjData for rendering; caller must free via free_render_snapshot().
-		MuJoCoRenderSnapshot get_render_snapshot() const;
-		void free_render_snapshot(MuJoCoRenderSnapshot& snapshot) const;
+		// Thread-safe copy of mjData for rendering; caller must free via destroy_render_snapshot().
+		bool alloc_render_snapshot(::mjData*& data_out, const ::mjModel*& model_out, double& time_out) const;
+		// Frees a snapshot allocated by alloc_render_snapshot(). Safe to call with nullptr.
+		void destroy_render_snapshot(::mjData*& data_out) const;
+		// Thread-safe copy into a caller-owned mjData buffer; no allocation.
+		bool copy_render_snapshot(::mjData* dst, const ::mjModel*& model_out, double& time_out) const;
+
+		// Static helper for freeing mjData without requiring an instance.
+		static void destroy_snapshot(::mjData*& data_out);
 
 	  private:
 		// Guards model/data access and snapshot creation.

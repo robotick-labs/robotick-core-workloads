@@ -18,6 +18,7 @@ namespace robotick
 		ROBOTICK_ASSERT(physics != nullptr);
 
 		LockGuard lock(mutex_);
+		// Stable handle generation with a small fixed registry keeps allocation predictable.
 		for (uint32_t i = 0; i < kMaxScenes; ++i)
 		{
 			SceneEntry& entry = entries_[i];
@@ -47,6 +48,7 @@ namespace robotick
 		SceneEntry& entry = entries_[index];
 		if (entry.active && entry.generation == generation)
 		{
+			// Leave generation to invalidate stale handles.
 			entry.active = false;
 			entry.physics = nullptr;
 		}
@@ -66,21 +68,67 @@ namespace robotick
 		return entry.active && entry.generation == generation && entry.physics != nullptr;
 	}
 
-	MuJoCoRenderSnapshot MuJoCoSceneRegistry::get_render_snapshot(uint32_t scene_id) const
+	const mjModel* MuJoCoSceneRegistry::get_model(uint32_t scene_id) const
 	{
 		uint32_t index = 0;
 		uint32_t generation = 0;
 		decode_handle(scene_id, index, generation);
 
 		if (index >= kMaxScenes)
-			return {};
+			return nullptr;
 
 		LockGuard lock(mutex_);
 		const SceneEntry& entry = entries_[index];
 		if (!entry.active || entry.generation != generation || entry.physics == nullptr)
-			return {};
+			return nullptr;
 
-		return entry.physics->get_render_snapshot();
+		// Expose the model pointer for contexts that need immutable access.
+		return entry.physics->model();
+	}
+
+	bool MuJoCoSceneRegistry::alloc_render_snapshot(
+		uint32_t scene_id,
+		::mjData*& data_out,
+		const ::mjModel*& model_out,
+		double& time_out) const
+	{
+		uint32_t index = 0;
+		uint32_t generation = 0;
+		decode_handle(scene_id, index, generation);
+
+		if (index >= kMaxScenes)
+			return false;
+
+		LockGuard lock(mutex_);
+		const SceneEntry& entry = entries_[index];
+		if (!entry.active || entry.generation != generation || entry.physics == nullptr)
+			return false;
+
+		// Allocation happens inside MuJoCoPhysics under its own mutex.
+		return entry.physics->alloc_render_snapshot(data_out, model_out, time_out);
+	}
+
+	bool MuJoCoSceneRegistry::copy_render_snapshot(uint32_t scene_id, ::mjData* dst, const ::mjModel*& model_out, double& time_out) const
+	{
+		uint32_t index = 0;
+		uint32_t generation = 0;
+		decode_handle(scene_id, index, generation);
+
+		if (index >= kMaxScenes)
+			return false;
+
+		LockGuard lock(mutex_);
+		const SceneEntry& entry = entries_[index];
+		if (!entry.active || entry.generation != generation || entry.physics == nullptr)
+			return false;
+
+		return entry.physics->copy_render_snapshot(dst, model_out, time_out);
+	}
+
+	void MuJoCoSceneRegistry::destroy_render_snapshot(::mjData*& data_out) const
+	{
+		// Free through the centralized helper to keep lifetime rules consistent.
+		MuJoCoPhysics::destroy_snapshot(data_out);
 	}
 
 	uint32_t MuJoCoSceneRegistry::make_handle(uint32_t index, uint32_t generation)

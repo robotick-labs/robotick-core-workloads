@@ -1,6 +1,7 @@
 // Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
+#include "robotick/systems/MuJoCoRenderContext.h"
 #include "robotick/systems/MuJoCoPhysics.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,20 +14,10 @@ namespace robotick::tests
 		constexpr char kModelPath[] = ROBOTICK_CORE_ROOT "/cpp/tests/data/mujoco/minimal.xml";
 	} // namespace
 
-	TEST_CASE("Unit/Systems/MuJoCoPhysics/LoadInvalidPath")
-	{
-		MuJoCoPhysics physics;
-		REQUIRE_FALSE(physics.load_from_xml("does_not_exist.xml"));
-	}
-
-	TEST_CASE("Unit/Systems/MuJoCoPhysics/LoadAndSnapshot")
+	TEST_CASE("Unit/Systems/MuJoCoRenderContext/RenderPNG")
 	{
 		MuJoCoPhysics physics;
 		REQUIRE(physics.load_from_xml(kModelPath));
-		REQUIRE(physics.is_loaded());
-
-		physics.forward();
-		physics.step();
 
 		mjData* snapshot_data = nullptr;
 		const mjModel* snapshot_model = nullptr;
@@ -35,19 +26,26 @@ namespace robotick::tests
 		REQUIRE(snapshot_model != nullptr);
 		REQUIRE(snapshot_data != nullptr);
 
-		const mjModel* copied_model = nullptr;
-		double copied_time = 0.0;
-		REQUIRE(physics.copy_render_snapshot(snapshot_data, copied_model, copied_time));
-		REQUIRE(copied_model == physics.model());
+		MuJoCoRenderContext context;
+		if (!context.init(snapshot_model, 64, 48))
+		{
+			MuJoCoPhysics::destroy_snapshot(snapshot_data);
+			SKIP("MuJoCo render context init failed (likely headless GL)");
+		}
 
-		physics.destroy_render_snapshot(snapshot_data);
-		REQUIRE(snapshot_data == nullptr);
+		ImagePng128k png;
+		if (!context.render_to_png(snapshot_model, snapshot_data, "", png))
+		{
+			MuJoCoPhysics::destroy_snapshot(snapshot_data);
+			SKIP("MuJoCo render failed (likely headless GL)");
+		}
 
-		physics.unload();
-		REQUIRE_FALSE(physics.is_loaded());
+		REQUIRE(png.size() > 0);
+
+		MuJoCoPhysics::destroy_snapshot(snapshot_data);
 	}
 #else
-	TEST_CASE("Unit/Systems/MuJoCoPhysics/SkipNonDesktop")
+	TEST_CASE("Unit/Systems/MuJoCoRenderContext/SkipNonDesktop")
 	{
 		SUCCEED();
 	}

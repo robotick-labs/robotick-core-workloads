@@ -24,6 +24,7 @@ namespace robotick
 		unload();
 
 		char error[512] = {0};
+		// MuJoCo allocates the model; we own and free it on unload().
 		mjModel* model = mj_loadXML(model_path, nullptr, error, sizeof(error));
 		if (!model)
 		{
@@ -31,6 +32,7 @@ namespace robotick
 			return false;
 		}
 
+		// Pre-allocate the primary simulation state buffer.
 		mjData* data = mj_makeData(model);
 		if (!data)
 		{
@@ -73,32 +75,62 @@ namespace robotick
 			mj_step(model_, data_);
 	}
 
-	MuJoCoRenderSnapshot MuJoCoPhysics::get_render_snapshot() const
+	bool MuJoCoPhysics::alloc_render_snapshot(::mjData*& data_out, const ::mjModel*& model_out, double& time_out) const
 	{
+		// Allocate a scratch mjData and copy the current sim state into it.
 		LockGuard lock(mutex_);
 		if (!model_ || !data_)
-			return {};
-
-		MuJoCoRenderSnapshot snapshot;
-		snapshot.model = model_;
-		snapshot.data = mj_makeData(model_);
-		if (snapshot.data)
 		{
-			mj_copyData(snapshot.data, model_, data_);
-			snapshot.time = data_->time;
+			data_out = nullptr;
+			model_out = nullptr;
+			time_out = 0.0;
+			return false;
 		}
-		return snapshot;
+
+		data_out = mj_makeData(model_);
+		if (!data_out)
+		{
+			model_out = nullptr;
+			time_out = 0.0;
+			return false;
+		}
+
+		mj_copyData(data_out, model_, data_);
+		model_out = model_;
+		time_out = data_->time;
+		return true;
 	}
 
-	void MuJoCoPhysics::free_render_snapshot(MuJoCoRenderSnapshot& snapshot) const
+	void MuJoCoPhysics::destroy_render_snapshot(::mjData*& data_out) const
 	{
-		if (snapshot.data)
+		// Convenience wrapper for instance callers.
+		destroy_snapshot(data_out);
+	}
+
+	bool MuJoCoPhysics::copy_render_snapshot(::mjData* dst, const ::mjModel*& model_out, double& time_out) const
+	{
+		if (!dst)
+			return false;
+
+		LockGuard lock(mutex_);
+		if (!model_ || !data_)
+			return false;
+
+		// Copy the live simulation state into a pre-allocated buffer.
+		mj_copyData(dst, model_, data_);
+		model_out = model_;
+		time_out = data_->time;
+		return true;
+	}
+
+	void MuJoCoPhysics::destroy_snapshot(::mjData*& data_out)
+	{
+		// This is intentionally standalone so other systems can free snapshots.
+		if (data_out)
 		{
-			mj_deleteData(snapshot.data);
-			snapshot.data = nullptr;
+			mj_deleteData(data_out);
+			data_out = nullptr;
 		}
-		snapshot.model = nullptr;
-		snapshot.time = 0.0;
 	}
 } // namespace robotick
 
@@ -125,13 +157,18 @@ namespace robotick
 	{
 	}
 
-	MuJoCoRenderSnapshot MuJoCoPhysics::get_render_snapshot() const
+	bool MuJoCoPhysics::alloc_render_snapshot(::mjData*&, const ::mjModel*&, double&) const
 	{
-		return {};
+		return false;
 	}
 
-	void MuJoCoPhysics::free_render_snapshot(MuJoCoRenderSnapshot&)
+	void MuJoCoPhysics::destroy_render_snapshot(::mjData*&)
 	{
+	}
+
+	bool MuJoCoPhysics::copy_render_snapshot(::mjData*, const ::mjModel*&, double&) const
+	{
+		return false;
 	}
 } // namespace robotick
 

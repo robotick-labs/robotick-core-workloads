@@ -23,8 +23,14 @@ namespace robotick
 
 		// Check whether a handle is still valid.
 		bool is_valid(uint32_t scene_id) const;
-		// Fetch a render snapshot for a valid handle; returns empty snapshot if invalid.
-		MuJoCoRenderSnapshot get_render_snapshot(uint32_t scene_id) const;
+		// Fetch the model pointer for a valid handle; returns nullptr if invalid.
+		const ::mjModel* get_model(uint32_t scene_id) const;
+		// Allocate a render snapshot; returns false on invalid handle or alloc failure.
+		bool alloc_render_snapshot(uint32_t scene_id, ::mjData*& data_out, const ::mjModel*& model_out, double& time_out) const;
+		// Copy into a caller-owned mjData buffer; returns false on invalid handle.
+		bool copy_render_snapshot(uint32_t scene_id, ::mjData* dst, const ::mjModel*& model_out, double& time_out) const;
+		// Release a snapshot obtained from alloc_render_snapshot().
+		void destroy_render_snapshot(::mjData*& data_out) const;
 
 	  private:
 		struct SceneEntry

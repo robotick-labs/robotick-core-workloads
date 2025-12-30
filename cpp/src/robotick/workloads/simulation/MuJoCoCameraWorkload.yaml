@@ -1,6 +1,7 @@
 platforms:
   linux:
     files:
+      - robotick/systems/MuJoCoRenderContext.cpp
       - robotick/systems/MuJoCoPhysics.cpp
       - robotick/systems/MuJoCoSceneRegistry.cpp
 
