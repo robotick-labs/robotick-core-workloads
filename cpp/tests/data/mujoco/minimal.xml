@@ -1,11 +1,5 @@
 <mujoco model="minimal">
   <compiler angle="radian"/>
   <option timestep="0.001"/>
-
-  <worldbody>
-    <body name="box" pos="0 0 0">
-      <joint name="hinge" type="hinge" axis="0 0 1"/>
-      <geom type="box" size="0.01 0.01 0.01" mass="0.1"/>
-    </body>
-  </worldbody>
+  <worldbody/>
 </mujoco>

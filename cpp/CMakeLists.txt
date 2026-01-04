@@ -199,6 +199,15 @@ endif()
 target_link_libraries(robotick-core-workloads PUBLIC nlohmann_json::nlohmann_json)
 
 if(ROBOTICK_PLATFORM_LINUX)
+    find_library(EGL_LIBRARY EGL PATHS /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu)
+    find_library(OPENGL_LIBRARY GL PATHS /usr/lib /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu)
+    if(NOT EGL_LIBRARY OR NOT OPENGL_LIBRARY)
+        message(FATAL_ERROR "EGL/OpenGL libraries not found; install libegl1 and libgl1 dev packages.")
+    endif()
+    target_link_libraries(robotick-core-workloads PUBLIC ${EGL_LIBRARY} ${OPENGL_LIBRARY})
+endif()
+
+if(ROBOTICK_PLATFORM_LINUX)
     find_package(SDL2 REQUIRED)
     target_link_libraries(robotick-core-workloads PRIVATE civetweb)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2::SDL2)
@@ -277,6 +286,7 @@ endif()
 # =========================
 
 if(ROBOTICK_PLATFORM_DESKTOP)
+    find_package(OpenGL REQUIRED)
     find_package(OpenCV REQUIRED)
 
     if(NOT OpenCV_FOUND)
@@ -287,6 +297,7 @@ if(ROBOTICK_PLATFORM_DESKTOP)
 
     target_include_directories(robotick-core-workloads PRIVATE ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(robotick-core-workloads PRIVATE ${OpenCV_LIBS})
+    target_link_libraries(robotick-core-workloads PRIVATE OpenGL::GL)
 else()
     message(STATUS "OpenCV is not enabled on this platform")
 endif()

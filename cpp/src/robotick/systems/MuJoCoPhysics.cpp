@@ -96,6 +96,7 @@ namespace robotick
 		}
 
 		mj_copyData(data_out, model_, data_);
+		mj_forward(model_, data_out);
 		model_out = model_;
 		time_out = data_->time;
 		return true;
@@ -116,6 +117,8 @@ namespace robotick
 		if (!model_ || !data_)
 			return false;
 
+		// Reset the destination stack before copying; required for reuse across frames.
+		mj_resetData(model_, dst);
 		// Copy the live simulation state into a pre-allocated buffer.
 		mj_copyData(dst, model_, data_);
 		model_out = model_;

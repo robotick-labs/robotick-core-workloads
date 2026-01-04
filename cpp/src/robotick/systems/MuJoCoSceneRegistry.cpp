@@ -18,7 +18,7 @@ namespace robotick
 		ROBOTICK_ASSERT(physics != nullptr);
 
 		LockGuard lock(mutex_);
-		// Stable handle generation with a small fixed registry keeps allocation predictable.
+		// Small fixed registry keeps allocation predictable.
 		for (uint32_t i = 0; i < kMaxScenes; ++i)
 		{
 			SceneEntry& entry = entries_[i];
@@ -26,8 +26,7 @@ namespace robotick
 			{
 				entry.active = true;
 				entry.physics = physics;
-				entry.generation = (entry.generation == 0) ? 1 : entry.generation + 1;
-				return make_handle(i, entry.generation);
+				return make_handle(i);
 			}
 		}
 
@@ -38,17 +37,13 @@ namespace robotick
 	void MuJoCoSceneRegistry::unregister_scene(uint32_t scene_id)
 	{
 		uint32_t index = 0;
-		uint32_t generation = 0;
-		decode_handle(scene_id, index, generation);
-
-		if (index >= kMaxScenes)
+		if (!decode_handle(scene_id, index))
 			return;
 
 		LockGuard lock(mutex_);
 		SceneEntry& entry = entries_[index];
-		if (entry.active && entry.generation == generation)
+		if (entry.active)
 		{
-			// Leave generation to invalidate stale handles.
 			entry.active = false;
 			entry.physics = nullptr;
 		}
@@ -57,29 +52,23 @@ namespace robotick
 	bool MuJoCoSceneRegistry::is_valid(uint32_t scene_id) const
 	{
 		uint32_t index = 0;
-		uint32_t generation = 0;
-		decode_handle(scene_id, index, generation);
-
-		if (index >= kMaxScenes)
+		if (!decode_handle(scene_id, index))
 			return false;
 
 		LockGuard lock(mutex_);
 		const SceneEntry& entry = entries_[index];
-		return entry.active && entry.generation == generation && entry.physics != nullptr;
+		return entry.active && entry.physics != nullptr;
 	}
 
 	const mjModel* MuJoCoSceneRegistry::get_model(uint32_t scene_id) const
 	{
 		uint32_t index = 0;
-		uint32_t generation = 0;
-		decode_handle(scene_id, index, generation);
-
-		if (index >= kMaxScenes)
+		if (!decode_handle(scene_id, index))
 			return nullptr;
 
 		LockGuard lock(mutex_);
 		const SceneEntry& entry = entries_[index];
-		if (!entry.active || entry.generation != generation || entry.physics == nullptr)
+		if (!entry.active || entry.physics == nullptr)
 			return nullptr;
 
 		// Expose the model pointer for contexts that need immutable access.
@@ -93,15 +82,12 @@ namespace robotick
 		double& time_out) const
 	{
 		uint32_t index = 0;
-		uint32_t generation = 0;
-		decode_handle(scene_id, index, generation);
-
-		if (index >= kMaxScenes)
+		if (!decode_handle(scene_id, index))
 			return false;
 
 		LockGuard lock(mutex_);
 		const SceneEntry& entry = entries_[index];
-		if (!entry.active || entry.generation != generation || entry.physics == nullptr)
+		if (!entry.active || entry.physics == nullptr)
 			return false;
 
 		// Allocation happens inside MuJoCoPhysics under its own mutex.
@@ -111,15 +97,12 @@ namespace robotick
 	bool MuJoCoSceneRegistry::copy_render_snapshot(uint32_t scene_id, ::mjData* dst, const ::mjModel*& model_out, double& time_out) const
 	{
 		uint32_t index = 0;
-		uint32_t generation = 0;
-		decode_handle(scene_id, index, generation);
-
-		if (index >= kMaxScenes)
+		if (!decode_handle(scene_id, index))
 			return false;
 
 		LockGuard lock(mutex_);
 		const SceneEntry& entry = entries_[index];
-		if (!entry.active || entry.generation != generation || entry.physics == nullptr)
+		if (!entry.active || entry.physics == nullptr)
 			return false;
 
 		return entry.physics->copy_render_snapshot(dst, model_out, time_out);
@@ -131,14 +114,16 @@ namespace robotick
 		MuJoCoPhysics::destroy_snapshot(data_out);
 	}
 
-	uint32_t MuJoCoSceneRegistry::make_handle(uint32_t index, uint32_t generation)
+	uint32_t MuJoCoSceneRegistry::make_handle(uint32_t index)
 	{
-		return (static_cast<uint32_t>(generation) << 16) | (index & 0xffffu);
+		return index + 1u;
 	}
 
-	void MuJoCoSceneRegistry::decode_handle(uint32_t handle, uint32_t& index_out, uint32_t& generation_out)
+	bool MuJoCoSceneRegistry::decode_handle(uint32_t handle, uint32_t& index_out)
 	{
-		index_out = handle & 0xffffu;
-		generation_out = (handle >> 16) & 0xffffu;
+		if (handle == 0)
+			return false;
+		index_out = handle - 1u;
+		return index_out < kMaxScenes;
 	}
 } // namespace robotick

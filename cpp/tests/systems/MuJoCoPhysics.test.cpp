@@ -10,44 +10,48 @@ namespace robotick::tests
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 	namespace
 	{
-		constexpr char kModelPath[] = ROBOTICK_CORE_ROOT "/cpp/tests/data/mujoco/minimal.xml";
+		// Minimal MuJoCo scene with empty worldbody, used for smoke tests (no visuals required).
+		constexpr char kMinimalModelPath[] = ROBOTICK_CORE_ROOT "/cpp/tests/data/mujoco/minimal.xml";
 	} // namespace
 
-	TEST_CASE("Unit/Systems/MuJoCoPhysics/LoadInvalidPath")
+	TEST_CASE("Unit/Systems/MuJoCoPhysics")
 	{
-		MuJoCoPhysics physics;
-		REQUIRE_FALSE(physics.load_from_xml("does_not_exist.xml"));
-	}
+		SECTION("Load invalid path returns false")
+		{
+			MuJoCoPhysics physics;
+			REQUIRE_FALSE(physics.load_from_xml("does_not_exist.xml"));
+		}
 
-	TEST_CASE("Unit/Systems/MuJoCoPhysics/LoadAndSnapshot")
-	{
-		MuJoCoPhysics physics;
-		REQUIRE(physics.load_from_xml(kModelPath));
-		REQUIRE(physics.is_loaded());
+		SECTION("Loads model, steps sim, and allocates/copies/frees render snapshot")
+		{
+			MuJoCoPhysics physics;
+			REQUIRE(physics.load_from_xml(kMinimalModelPath));
+			REQUIRE(physics.is_loaded());
 
-		physics.forward();
-		physics.step();
+			physics.forward();
+			physics.step();
 
-		mjData* snapshot_data = nullptr;
-		const mjModel* snapshot_model = nullptr;
-		double snapshot_time = 0.0;
-		REQUIRE(physics.alloc_render_snapshot(snapshot_data, snapshot_model, snapshot_time));
-		REQUIRE(snapshot_model != nullptr);
-		REQUIRE(snapshot_data != nullptr);
+			mjData* snapshot_data = nullptr;
+			const mjModel* snapshot_model = nullptr;
+			double snapshot_time = 0.0;
+			REQUIRE(physics.alloc_render_snapshot(snapshot_data, snapshot_model, snapshot_time));
+			REQUIRE(snapshot_model != nullptr);
+			REQUIRE(snapshot_data != nullptr);
 
-		const mjModel* copied_model = nullptr;
-		double copied_time = 0.0;
-		REQUIRE(physics.copy_render_snapshot(snapshot_data, copied_model, copied_time));
-		REQUIRE(copied_model == physics.model());
+			const mjModel* copied_model = nullptr;
+			double copied_time = 0.0;
+			REQUIRE(physics.copy_render_snapshot(snapshot_data, copied_model, copied_time));
+			REQUIRE(copied_model == physics.model());
 
-		physics.destroy_render_snapshot(snapshot_data);
-		REQUIRE(snapshot_data == nullptr);
+			physics.destroy_render_snapshot(snapshot_data);
+			REQUIRE(snapshot_data == nullptr);
 
-		physics.unload();
-		REQUIRE_FALSE(physics.is_loaded());
+			physics.unload();
+			REQUIRE_FALSE(physics.is_loaded());
+		}
 	}
 #else
-	TEST_CASE("Unit/Systems/MuJoCoPhysics/SkipNonDesktop")
+	TEST_CASE("Unit/Systems/MuJoCoPhysics")
 	{
 		SUCCEED();
 	}

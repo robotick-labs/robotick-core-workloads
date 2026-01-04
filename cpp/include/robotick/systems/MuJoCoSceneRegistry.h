@@ -37,8 +37,6 @@ namespace robotick
 		{
 			// Pointer owned elsewhere; registry does not manage lifetime.
 			MuJoCoPhysics* physics = nullptr;
-			// Monotonic generation to invalidate stale handles.
-			uint32_t generation = 0;
 			bool active = false;
 		};
 
@@ -49,8 +47,8 @@ namespace robotick
 		mutable Mutex mutex_;
 		SceneEntry entries_[kMaxScenes]{};
 
-		// Pack/unpack handle as {generation|index}.
-		static uint32_t make_handle(uint32_t index, uint32_t generation);
-		static void decode_handle(uint32_t handle, uint32_t& index_out, uint32_t& generation_out);
+		// Handle encoding is a 1-based index into entries_.
+		static uint32_t make_handle(uint32_t index);
+		static bool decode_handle(uint32_t handle, uint32_t& index_out);
 	};
 } // namespace robotick

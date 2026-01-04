@@ -5,7 +5,8 @@
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
-#include "robotick/systems/Image.h"
+#include <cstddef>
+#include <EGL/egl.h>
 
 // Forward declarations from MuJoCo (keep in global namespace).
 typedef struct mjModel_ mjModel;
@@ -15,9 +16,6 @@ typedef struct mjvOption_ mjvOption;
 typedef struct mjvCamera_ mjvCamera;
 typedef struct mjrContext_ mjrContext;
 typedef struct mjrRect_ mjrRect;
-
-// Forward declarations from SDL.
-typedef struct SDL_Window SDL_Window;
 
 namespace robotick
 {
@@ -31,10 +29,27 @@ namespace robotick
 		void shutdown();
 		bool is_ready() const { return initialized_; }
 
-		bool render_to_png(const mjModel* model, const mjData* data, const char* camera_name, ImagePng128k& out_png);
+		bool render_to_rgb(
+			const mjModel* model,
+			const mjData* data,
+			const char* camera_name,
+			uint8_t* out_rgb,
+			size_t out_capacity,
+			size_t& out_size,
+			int& out_width,
+			int& out_height,
+			bool use_window_buffer = false);
+
+		// Test helper: clear the current framebuffer to solid blue and read back RGB.
+		bool debug_clear_and_read_blue(
+			uint8_t* out_rgb,
+			size_t out_capacity,
+			size_t& out_size,
+			int& out_width,
+			int& out_height,
+			bool use_window_buffer = false);
 
 	  private:
-		bool init_sdl_video();
 		bool init_gl_context();
 		void destroy_gl_context();
 		void update_viewport(int width, int height);
@@ -47,9 +62,9 @@ namespace robotick
 
 		const mjModel* model_ = nullptr;
 
-		::SDL_Window* window_ = nullptr;
-		void* gl_context_ = nullptr;
-
+		EGLDisplay egl_display_ = EGL_NO_DISPLAY;
+		EGLContext egl_context_ = EGL_NO_CONTEXT;
+		EGLSurface egl_surface_ = EGL_NO_SURFACE;
 		::mjvScene* scene_ = nullptr;
 		::mjvOption* option_ = nullptr;
 		::mjvCamera* camera_ = nullptr;
