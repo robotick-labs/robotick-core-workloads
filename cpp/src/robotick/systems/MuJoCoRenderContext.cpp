@@ -7,6 +7,7 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/memory/StdApproved.h"
+#include "robotick/systems/MuJoCoCallbacks.h"
 
 #include <mujoco/mujoco.h>
 
@@ -25,14 +26,12 @@ namespace robotick
 
 		PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display_ext()
 		{
-			return reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-				eglGetProcAddress("eglGetPlatformDisplayEXT"));
+			return reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(eglGetProcAddress("eglGetPlatformDisplayEXT"));
 		}
 
 		PFNEGLQUERYDEVICESEXTPROC query_devices_ext()
 		{
-			return reinterpret_cast<PFNEGLQUERYDEVICESEXTPROC>(
-				eglGetProcAddress("eglQueryDevicesEXT"));
+			return reinterpret_cast<PFNEGLQUERYDEVICESEXTPROC>(eglGetProcAddress("eglQueryDevicesEXT"));
 		}
 
 		EGLDisplay create_surfaceless_display()
@@ -79,6 +78,8 @@ namespace robotick
 	{
 		if (!model || width <= 0 || height <= 0)
 			return false;
+
+		mujoco_callbacks::install();
 
 		if (initialized_ && model_ == model && width_ == width && height_ == height)
 			return true;
@@ -159,8 +160,7 @@ namespace robotick
 		initialized_ = false;
 	}
 
-	bool MuJoCoRenderContext::render_to_rgb(
-		const mjModel* model,
+	bool MuJoCoRenderContext::render_to_rgb(const mjModel* model,
 		const mjData* data,
 		const char* camera_name,
 		uint8_t* out_rgb,
@@ -204,7 +204,10 @@ namespace robotick
 		if (render_width > max_viewport.width || render_height > max_viewport.height)
 		{
 			ROBOTICK_WARNING("MuJoCoRenderContext: clamping render size %dx%d to max %dx%d.",
-				render_width, render_height, max_viewport.width, max_viewport.height);
+				render_width,
+				render_height,
+				max_viewport.width,
+				max_viewport.height);
 			render_width = (render_width < max_viewport.width) ? render_width : max_viewport.width;
 			render_height = (render_height < max_viewport.height) ? render_height : max_viewport.height;
 		}
@@ -261,12 +264,7 @@ namespace robotick
 	}
 
 	bool MuJoCoRenderContext::debug_clear_and_read_blue(
-		uint8_t* out_rgb,
-		size_t out_capacity,
-		size_t& out_size,
-		int& out_width,
-		int& out_height,
-		bool /*use_window_buffer*/)
+		uint8_t* out_rgb, size_t out_capacity, size_t& out_size, int& out_width, int& out_height, bool /*use_window_buffer*/)
 	{
 		out_size = 0;
 		out_width = 0;
@@ -321,15 +319,22 @@ namespace robotick
 
 		auto try_create = [&](EGLint renderable_type, EGLenum api, const EGLint* ctx_attribs) -> bool
 		{
-			EGLint cfg_attribs[] = {
-				EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-				EGL_RENDERABLE_TYPE, renderable_type,
-				EGL_RED_SIZE, 8,
-				EGL_GREEN_SIZE, 8,
-				EGL_BLUE_SIZE, 8,
-				EGL_ALPHA_SIZE, 8,
-				EGL_DEPTH_SIZE, 24,
-				EGL_STENCIL_SIZE, 8,
+			EGLint cfg_attribs[] = {EGL_SURFACE_TYPE,
+				EGL_PBUFFER_BIT,
+				EGL_RENDERABLE_TYPE,
+				renderable_type,
+				EGL_RED_SIZE,
+				8,
+				EGL_GREEN_SIZE,
+				8,
+				EGL_BLUE_SIZE,
+				8,
+				EGL_ALPHA_SIZE,
+				8,
+				EGL_DEPTH_SIZE,
+				24,
+				EGL_STENCIL_SIZE,
+				8,
 				EGL_NONE};
 
 			EGLConfig config = nullptr;

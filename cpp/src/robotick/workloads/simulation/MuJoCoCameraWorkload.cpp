@@ -34,7 +34,8 @@ namespace robotick
 
 	struct MuJoCoCameraOutputs
 	{
-		ImagePng128k png_data;
+		ImagePng256k png_data;
+		uint32_t frame_count = 0;
 	};
 
 	struct MuJoCoCameraState
@@ -73,7 +74,7 @@ namespace robotick
 		State<MuJoCoCameraState> state;
 
 		static bool encode_png_from_rgb(
-			const uint8_t* rgb, size_t rgb_size, int width, int height, ImagePng128k& out_png, std_approved::vector<uint8_t>& scratch)
+			const uint8_t* rgb, size_t rgb_size, int width, int height, ImagePng256k& out_png, std_approved::vector<uint8_t>& scratch)
 		{
 			out_png.set_size(0);
 			if (!rgb || rgb_size == 0 || width <= 0 || height <= 0)
@@ -107,11 +108,9 @@ namespace robotick
 			if (state->render_disabled)
 			{
 				// Avoid doing any work once we've opted out.
-				ROBOTICK_INFO("MuJoCoCameraWorkload: rendering disabled; skipping tick.");
+				ROBOTICK_WARNING_ONCE("MuJoCoCameraWorkload: rendering disabled; skipping tick.");
 				return;
 			}
-
-			LockGuard render_lock(state->render_mutex);
 
 			const mjModel* model = MuJoCoSceneRegistry::get().get_model(inputs.mujoco_scene_id);
 			if (!model)
@@ -164,65 +163,77 @@ namespace robotick
 				return;
 			}
 
-			if (!state->render_context_ready)
+			// Render the camera view into our RGB buffer
 			{
-				// Lazy-init the GL context once we have a valid model pointer.
-				state->render_context_ready =
-					state->render_context.init(snapshot_model, static_cast<int>(config.texture_width), static_cast<int>(config.texture_height));
+				LockGuard render_lock(state->render_mutex);
+
 				if (!state->render_context_ready)
 				{
-					ROBOTICK_WARNING("MuJoCoCameraWorkload: render context init failed; disabling render.");
+					// Lazy-init the GL context once we have a valid model pointer.
+					state->render_context_ready =
+						state->render_context.init(snapshot_model, static_cast<int>(config.texture_width), static_cast<int>(config.texture_height));
+					if (!state->render_context_ready)
+					{
+						ROBOTICK_WARNING("MuJoCoCameraWorkload: render context init failed; disabling render.");
+						state->render_disabled = true;
+						return;
+					}
+				}
+
+				if (state->png_scratch.capacity() == 0)
+					state->png_scratch.reserve(ImagePng256k::capacity());
+
+				const size_t rgb_capacity = static_cast<size_t>(config.texture_width * config.texture_height * 3);
+				if (state->rgb_data.size() == 0)
+				{
+					state->rgb_data.initialize(rgb_capacity);
+				}
+				else if (state->rgb_data.size() != rgb_capacity)
+				{
+					ROBOTICK_WARNING("MuJoCoCameraWorkload: rgb_data size %zu does not match required %zu.", state->rgb_data.size(), rgb_capacity);
 					state->render_disabled = true;
 					return;
 				}
+
+				int rgb_width = 0;
+				int rgb_height = 0;
+				size_t rgb_size = 0;
+				if (!state->render_context.render_to_rgb(snapshot_model,
+						state->render_data,
+						config.camera_name.c_str(),
+						state->rgb_data.data(),
+						state->rgb_data.size(),
+						rgb_size,
+						rgb_width,
+						rgb_height,
+						false))
+				{
+					state->rgb_size = 0;
+					state->rgb_width = 0;
+					state->rgb_height = 0;
+					outputs.png_data.set_size(0);
+					ROBOTICK_WARNING("MuJoCoCameraWorkload: render_to_rgb failed; output cleared.");
+					return;
+				}
+
+				state->rgb_size = rgb_size;
+				state->rgb_width = static_cast<uint32_t>(rgb_width);
+				state->rgb_height = static_cast<uint32_t>(rgb_height);
 			}
 
-			if (state->png_scratch.capacity() == 0)
-				state->png_scratch.reserve(ImagePng128k::capacity());
-
-			const size_t rgb_capacity = static_cast<size_t>(config.texture_width * config.texture_height * 3);
-			if (state->rgb_data.size() == 0)
-			{
-				state->rgb_data.initialize(rgb_capacity);
-			}
-			else if (state->rgb_data.size() != rgb_capacity)
-			{
-				ROBOTICK_WARNING("MuJoCoCameraWorkload: rgb_data size %zu does not match required %zu.", state->rgb_data.size(), rgb_capacity);
-				state->render_disabled = true;
-				return;
-			}
-
-			int rgb_width = 0;
-			int rgb_height = 0;
-			size_t rgb_size = 0;
-			if (!state->render_context.render_to_rgb(snapshot_model,
-					state->render_data,
-					config.camera_name.c_str(),
-					state->rgb_data.data(),
-					state->rgb_data.size(),
-					rgb_size,
-					rgb_width,
-					rgb_height,
-					false))
-			{
-				state->rgb_size = 0;
-				state->rgb_width = 0;
-				state->rgb_height = 0;
-				outputs.png_data.set_size(0);
-				ROBOTICK_WARNING("MuJoCoCameraWorkload: render_to_rgb failed; output cleared.");
-				return;
-			}
-
-			state->rgb_size = rgb_size;
-			state->rgb_width = static_cast<uint32_t>(rgb_width);
-			state->rgb_height = static_cast<uint32_t>(rgb_height);
-
-			if (!encode_png_from_rgb(state->rgb_data.data(), state->rgb_size, rgb_width, rgb_height, outputs.png_data, state->png_scratch))
+			if (!encode_png_from_rgb(state->rgb_data.data(),
+					state->rgb_size,
+					static_cast<int>(state->rgb_width),
+					static_cast<int>(state->rgb_height),
+					outputs.png_data,
+					state->png_scratch))
 			{
 				outputs.png_data.set_size(0);
 				ROBOTICK_WARNING("MuJoCoCameraWorkload: PNG encode failed; output cleared.");
 				return;
 			}
+
+			outputs.frame_count++;
 		}
 
 		void stop()

@@ -46,6 +46,9 @@ namespace robotick
 		// Static helper for freeing mjData without requiring an instance.
 		static void destroy_snapshot(::mjData*& data_out);
 
+		// Acquire the internal MuJoCo lock for safe external access.
+		UniqueLock lock() const { return UniqueLock(mutex_); }
+
 	  private:
 		// Guards model/data access and snapshot creation.
 		mutable Mutex mutex_;

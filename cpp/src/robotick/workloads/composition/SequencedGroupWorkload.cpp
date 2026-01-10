@@ -135,6 +135,7 @@ namespace robotick
 					const auto delta_duration = Clock::from_seconds(child_tick_info.delta_time);
 					const uint32_t delta_ns = detail::clamp_to_uint32(Clock::to_nanoseconds(delta_duration).count());
 					child_info.workload_info->workload_stats->record_tick_sample(duration_ns, delta_ns, budget_ns);
+					child_info.workload_info->workload_stats->tick_count++;
 				}
 			}
 		}

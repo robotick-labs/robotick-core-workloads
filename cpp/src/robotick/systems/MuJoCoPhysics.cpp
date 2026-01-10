@@ -4,6 +4,7 @@
 #include "robotick/systems/MuJoCoPhysics.h"
 
 #include "robotick/api.h"
+#include "robotick/systems/MuJoCoCallbacks.h"
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
@@ -20,6 +21,8 @@ namespace robotick
 	{
 		if (!model_path || model_path[0] == '\0')
 			return false;
+
+		mujoco_callbacks::install();
 
 		unload();
 
