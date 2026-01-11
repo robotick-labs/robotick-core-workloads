@@ -18,7 +18,7 @@ namespace robotick
 {
 	// ---------- Config / IO ----------
 
-	struct MuJoCoConfig
+	struct MuJoCoPhysicsConfig
 	{
 		FixedString256 workload_config_file_path;
 		FixedString256 model_path;
@@ -29,13 +29,13 @@ namespace robotick
 		// ^- config/initial-conditions snapshot read from sim at setup
 	};
 
-	struct MuJoCoInputs
+	struct MuJoCoPhysicsInputs
 	{
 		Blackboard mujoco;
 		// ^- values written into sim each tick (e.g., actuator ctrl)
 	};
 
-	struct MuJoCoOutputs
+	struct MuJoCoPhysicsOutputs
 	{
 		Blackboard mujoco;
 		// ^- values read from sim each tick
@@ -84,7 +84,7 @@ namespace robotick
 
 	// ---------- State ----------
 
-	struct MuJoCoState
+	struct MuJoCoPhysicsState
 	{
 		MuJoCoPhysics physics;
 		uint32_t scene_id = 0;
@@ -102,17 +102,17 @@ namespace robotick
 
 	// ---------- Workload ----------
 
-	struct MuJoCoWorkload
+	struct MuJoCoPhysicsWorkload
 	{
-		MuJoCoConfig config;
-		MuJoCoInputs inputs;
-		MuJoCoOutputs outputs;
+		MuJoCoPhysicsConfig config;
+		MuJoCoPhysicsInputs inputs;
+		MuJoCoPhysicsOutputs outputs;
 
-		State<MuJoCoState> state;
+		State<MuJoCoPhysicsState> state;
 
-		MuJoCoWorkload(){};
+		MuJoCoPhysicsWorkload(){};
 
-		~MuJoCoWorkload()
+		~MuJoCoPhysicsWorkload()
 		{
 			if (state->scene_id != 0)
 			{

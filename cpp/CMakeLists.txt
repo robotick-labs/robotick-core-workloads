@@ -142,7 +142,7 @@ if(ROBOTICK_ENABLE_PYTHON)
     list(APPEND EXCEPTION_ENABLED_SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttFieldSync.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/telemetry/MqttClientWorkload.cpp
-        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/simulation/MuJoCoWorkload.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/robotick/workloads/simulation/MuJoCoPhysicsWorkload.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/MqttClient.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/WebServer_desktop.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/robotick/systems/Camera_desktop.cpp

@@ -12,7 +12,7 @@ typedef struct mjData_ mjData;
 namespace robotick
 {
 	// MuJoCoPhysics owns the per-scene mjModel/mjData lifecycle and provides
-	// thread-safe render snapshots. MuJoCoWorkload runs physics via this class,
+	// thread-safe render snapshots. MuJoCoPhysicsWorkload runs physics via this class,
 	// then registers the instance with MuJoCoSceneRegistry so camera workloads
 	// can request snapshots via a scene_id handle.
 
