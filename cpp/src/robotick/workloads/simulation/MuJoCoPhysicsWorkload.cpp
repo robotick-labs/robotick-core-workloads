@@ -201,8 +201,7 @@ namespace robotick
 			return count;
 		}
 
-		void configure_io_fields_into(
-			YAML::Node yaml_node,
+		void configure_io_fields_into(YAML::Node yaml_node,
 			HeapVector<MuJoCoBinding>& bindings,
 			HeapVector<FieldDescriptor>& fields,
 			size_t field_offset = 0,
@@ -557,6 +556,16 @@ namespace robotick
 			return false;
 		}
 
+		template <typename TPng> bool get_png_bytes_for_typed_binding(const MuJoCoTextureBinding& binding, const uint8_t*& data_out, size_t& size_out)
+		{
+			const TPng* png = static_cast<const TPng*>(inputs.mujoco.get(*binding.input_field, sizeof(TPng)));
+			if (!png)
+				return false;
+			data_out = png->data();
+			size_out = png->size();
+			return true;
+		}
+
 		bool get_png_bytes_for_binding(const MuJoCoTextureBinding& binding, const uint8_t*& data_out, size_t& size_out)
 		{
 			data_out = nullptr;
@@ -567,39 +576,19 @@ namespace robotick
 
 			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng16k)))
 			{
-				const ImagePng16k* png = static_cast<ImagePng16k*>(inputs.mujoco.get(*binding.input_field, sizeof(ImagePng16k)));
-				if (!png)
-					return false;
-				data_out = png->data();
-				size_out = png->size();
-				return true;
+				return get_png_bytes_for_typed_binding<ImagePng16k>(binding, data_out, size_out);
 			}
 			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng64k)))
 			{
-				const ImagePng64k* png = static_cast<ImagePng64k*>(inputs.mujoco.get(*binding.input_field, sizeof(ImagePng64k)));
-				if (!png)
-					return false;
-				data_out = png->data();
-				size_out = png->size();
-				return true;
+				return get_png_bytes_for_typed_binding<ImagePng64k>(binding, data_out, size_out);
 			}
 			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng128k)))
 			{
-				const ImagePng128k* png = static_cast<ImagePng128k*>(inputs.mujoco.get(*binding.input_field, sizeof(ImagePng128k)));
-				if (!png)
-					return false;
-				data_out = png->data();
-				size_out = png->size();
-				return true;
+				return get_png_bytes_for_typed_binding<ImagePng128k>(binding, data_out, size_out);
 			}
 			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng256k)))
 			{
-				const ImagePng256k* png = static_cast<ImagePng256k*>(inputs.mujoco.get(*binding.input_field, sizeof(ImagePng256k)));
-				if (!png)
-					return false;
-				data_out = png->data();
-				size_out = png->size();
-				return true;
+				return get_png_bytes_for_typed_binding<ImagePng256k>(binding, data_out, size_out);
 			}
 
 			return false;
@@ -611,7 +600,7 @@ namespace robotick
 		{
 			const FieldDescriptor& fd = *b.blackboard_field;
 			const mjModel* mujoco_model = state->physics.model();
-			mjData* mujoco_data = state->physics.data();
+			const mjData* mujoco_data = state->physics.data();
 
 			float value = 0.0f;
 
@@ -725,13 +714,13 @@ namespace robotick
 			bb.set<float>(fd, value);
 		}
 
-		void assign_mj_from_blackboard(const MuJoCoBinding& b, const Blackboard& bb)
+		bool assign_mj_from_blackboard(const MuJoCoBinding& b, const Blackboard& bb)
 		{
 			const FieldDescriptor& fd = *b.blackboard_field;
 			const float field_value = bb.get<float>(fd);
 
 			const mjModel* mujoco_model = state->physics.model();
-			mjData* mujoco_data = state->physics.data();
+			mjData* mujoco_data = state->physics.data_mutable();
 
 			switch (b.entity_type)
 			{
@@ -743,7 +732,7 @@ namespace robotick
 				{
 					float rad = (b.field == MjField::QPosTargetDeg) ? deg_to_rad(field_value) : field_value;
 					mujoco_data->qpos[qpos_adr] = rad;
-					mj_kinematics(mujoco_model, mujoco_data);
+					return true;
 				}
 				else
 				{
@@ -758,6 +747,7 @@ namespace robotick
 				if (b.field == MjField::Ctrl)
 				{
 					mujoco_data->ctrl[actuator_index] = field_value;
+					return false;
 				}
 				else
 				{
@@ -769,6 +759,8 @@ namespace robotick
 			default:
 				ROBOTICK_FATAL_EXIT("Unsupported entity type for inputs on '%s'", b.alias.c_str());
 			}
+
+			return false;
 		}
 
 		void initialize_blackboard_from_mujoco(const HeapVector<MuJoCoBinding>& bindings, Blackboard& bb)
@@ -786,7 +778,7 @@ namespace robotick
 		{
 			auto physics_lock = state->physics.lock();
 			mjModel* physics_model = state->physics.model_mutable();
-			mjData* physics_data = state->physics.data();
+			mjData* physics_data = state->physics.data_mutable();
 
 			// Optionally run forward to make derived quantities valid
 			if (physics_model && physics_data)
@@ -826,10 +818,11 @@ namespace robotick
 			(void)tick_info;
 
 			auto physics_lock = state->physics.lock();
-			const mjModel* model = state->physics.model();
-			mjData* mujoco_data = state->physics.data();
-			if (!model || !mujoco_data)
+			mjModel* model_mutable = state->physics.model_mutable();
+			mjData* mujoco_data = state->physics.data_mutable();
+			if (!model_mutable || !mujoco_data)
 				return;
+			const mjModel* model = model_mutable;
 
 			// Apply texture updates from PNG inputs (if configured).
 			if (!state->texture_bindings.empty())
@@ -857,26 +850,26 @@ namespace robotick
 					}
 
 					const size_t rgb_bytes = static_cast<size_t>(binding.tex_width * binding.tex_height * 3);
-					uint8_t* tex_rgb = model->tex_rgb + binding.tex_adr;
+					uint8_t* tex_rgb = model_mutable->tex_rgb + binding.tex_adr;
 					memcpy(tex_rgb, rgb.data, rgb_bytes);
 				}
 			}
 
 			// Write inputs to sim
+			bool needs_kinematics = false;
 			for (const auto& b : state->input_bindings)
 			{
-				assign_mj_from_blackboard(b, inputs.mujoco);
+				needs_kinematics = assign_mj_from_blackboard(b, inputs.mujoco) || needs_kinematics;
+			}
+			if (needs_kinematics)
+			{
+				mj_kinematics(model, mujoco_data);
 			}
 
-			const bool should_pause = false;
-
 			// Advance physics
-			if (!should_pause)
+			for (uint32_t i = 0; i < state->sim_num_sub_ticks; ++i)
 			{
-				for (uint32_t i = 0; i < state->sim_num_sub_ticks; ++i)
-				{
-					mj_step(model, mujoco_data);
-				}
+				mj_step(model, mujoco_data);
 			}
 
 			// Read outputs from sim

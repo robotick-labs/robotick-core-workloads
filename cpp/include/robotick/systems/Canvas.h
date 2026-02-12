@@ -97,7 +97,6 @@ namespace robotick
 			FieldDescriptor* field = nullptr;
 		};
 
-		bool parse_scene_yaml(const char* path, const YAML::Node& root);
 		void parse_canvas_config(const YAML::Node& canvas_node);
 		CanvasNode* parse_node_recursive(const YAML::Node& node_yaml, size_t& next_index);
 		void populate_lookup(CanvasNode& node, size_t& next_index);
@@ -114,6 +113,8 @@ namespace robotick
 
 		CanvasSurface surface_;
 		CanvasNode* root_ = nullptr;
+
+		// Child pointers reference entries in nodes_; nodes_ must not be resized after population.
 		HeapVector<CanvasNode> nodes_;
 		HeapVector<NodeLookupEntry> node_lookup_;
 		HeapVector<ControlBinding> control_bindings_;

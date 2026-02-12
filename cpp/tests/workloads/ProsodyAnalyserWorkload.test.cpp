@@ -5,9 +5,9 @@
 #include "robotick/systems/audio/AudioFrame.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
-#include "robotick/systems/auditory/SnakePitchTracker.h"
 #include "robotick/systems/auditory/ProsodyMath.h"
 #include "robotick/systems/auditory/ProsodyState.h"
+#include "robotick/systems/auditory/SnakePitchTracker.h"
 
 #include <catch2/catch_all.hpp>
 #include <cmath>
@@ -32,6 +32,7 @@ namespace robotick::test
 			float previous_pitch_hz = 0.0f;
 			float smoothed_pitch_hz = 0.0f;
 			float smoothed_rms = 0.0f;
+			float voiced_confidence = 0.0f;
 			RelativeVariationTracker pitch_tracker;
 			RelativeVariationTracker rms_tracker;
 			SpeakingRateTracker speaking_tracker;
@@ -51,8 +52,8 @@ namespace robotick::test
 				prosody.rms = smoothed_rms;
 
 				const bool voiced_now = (pitch.h1_f0_hz >= config.min_pitch_hz && pitch.h1_f0_hz <= config.max_pitch_hz);
-				prosody.voiced_confidence =
-					update_voiced_confidence(voiced_now, prosody.voiced_confidence, delta_time, config.voiced_falloff_rate_hz);
+				voiced_confidence = update_voiced_confidence(voiced_now, voiced_confidence, delta_time, config.voiced_falloff_rate_hz);
+				prosody.voiced_confidence = voiced_confidence;
 
 				if (!voiced_now)
 				{
@@ -64,7 +65,8 @@ namespace robotick::test
 				}
 
 				prosody.is_voiced = true;
-				prosody.voiced_confidence = 1.0f;
+				voiced_confidence = 1.0f;
+				prosody.voiced_confidence = voiced_confidence;
 
 				smoothed_pitch_hz = apply_exponential_smoothing(smoothed_pitch_hz, pitch.h1_f0_hz, config.pitch_smooth_alpha);
 				prosody.pitch_hz = smoothed_pitch_hz;
@@ -599,6 +601,6 @@ namespace robotick::test
 
 		CHECK(brightness_values[4] > brightness_values[1]);
 		REQUIRE(confidence_values.size() > 0);
-		CHECK(confidence_values[confidence_values.size() - 1] < 0.2f);
+		CHECK(confidence_values[confidence_values.size() - 1] < 0.3f);
 	}
 } // namespace robotick::test

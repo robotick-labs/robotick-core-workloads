@@ -327,9 +327,8 @@ namespace robotick
 					const double silence_duration = now - state->last_voiced_time;
 					if (silence_duration >= static_cast<double>(config.settings.silence_hangover_sec))
 					{
-						const size_t prefix_grace_samples = (add_count > 0) ? add_count : 0;
-						state->voiced_segment_start_sample =
-							(old_size > prefix_grace_samples) ? (old_size - prefix_grace_samples) : 0;
+						const size_t prefix_grace_samples = add_count;
+						state->voiced_segment_start_sample = (old_size > prefix_grace_samples) ? (old_size - prefix_grace_samples) : 0;
 					}
 				}
 			}

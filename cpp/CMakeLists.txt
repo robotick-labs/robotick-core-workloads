@@ -204,10 +204,9 @@ if(ROBOTICK_PLATFORM_LINUX)
     if(NOT EGL_LIBRARY OR NOT OPENGL_LIBRARY)
         message(FATAL_ERROR "EGL/OpenGL libraries not found; install libegl1 and libgl1 dev packages.")
     endif()
+    
     target_link_libraries(robotick-core-workloads PUBLIC ${EGL_LIBRARY} ${OPENGL_LIBRARY})
-endif()
 
-if(ROBOTICK_PLATFORM_LINUX)
     find_package(SDL2 REQUIRED)
     target_link_libraries(robotick-core-workloads PRIVATE civetweb)
     target_link_libraries(robotick-core-workloads PRIVATE SDL2::SDL2)

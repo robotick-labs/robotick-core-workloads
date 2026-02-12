@@ -21,6 +21,10 @@ namespace robotick
 	  public:
 		MuJoCoPhysics() = default;
 		~MuJoCoPhysics();
+		MuJoCoPhysics(const MuJoCoPhysics&) = delete;
+		MuJoCoPhysics& operator=(const MuJoCoPhysics&) = delete;
+		MuJoCoPhysics(MuJoCoPhysics&&) = delete;
+		MuJoCoPhysics& operator=(MuJoCoPhysics&&) = delete;
 
 		// Load model/data from an MJCF XML file path; returns false on failure.
 		bool load_from_xml(const char* model_path);
@@ -34,7 +38,8 @@ namespace robotick
 
 		const ::mjModel* model() const { return model_; }
 		::mjModel* model_mutable() { return model_; }
-		::mjData* data() const { return data_; }
+		const ::mjData* data() const { return data_; }
+		::mjData* data_mutable() { return data_; }
 
 		// Thread-safe copy of mjData for rendering; caller must free via destroy_render_snapshot().
 		bool alloc_render_snapshot(::mjData*& data_out, const ::mjModel*& model_out, double& time_out) const;

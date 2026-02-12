@@ -19,7 +19,7 @@ namespace robotick
 
 		inline void user_error(const char* message)
 		{
-			ROBOTICK_WARNING("MuJoCo error: %s", message ? message : "");
+			ROBOTICK_FATAL_EXIT("MuJoCo error: %s", message ? message : "");
 		}
 
 		inline void install()

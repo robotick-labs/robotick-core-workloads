@@ -12,6 +12,7 @@
 #include "robotick/framework/containers/FixedVector.h"
 #include "robotick/systems/audio/AudioFrame.h"
 
+#include <cstdlib>
 #include <kissfft/kiss_fftr.h>
 
 namespace robotick
@@ -52,6 +53,34 @@ namespace robotick
 		alignas(16) unsigned char kiss_cfg_mem_inv[65536]{};
 
 		float window_rms = 1.0f;
+
+		NoiseSuppressorState() = default;
+		~NoiseSuppressorState() { release_fft_plans(); }
+		NoiseSuppressorState(const NoiseSuppressorState&) = delete;
+		NoiseSuppressorState& operator=(const NoiseSuppressorState&) = delete;
+		NoiseSuppressorState(NoiseSuppressorState&&) = delete;
+		NoiseSuppressorState& operator=(NoiseSuppressorState&&) = delete;
+
+	  private:
+		void release_fft_plans()
+		{
+			const auto ptr_in_buffer = [](const void* ptr, const unsigned char* buffer, size_t buffer_size) -> bool
+			{
+				const auto p = reinterpret_cast<const unsigned char*>(ptr);
+				return (p >= buffer) && (p < (buffer + buffer_size));
+			};
+
+			if (kiss_config_fwd && !ptr_in_buffer(kiss_config_fwd, kiss_cfg_mem_fwd, sizeof(kiss_cfg_mem_fwd)))
+			{
+				free(kiss_config_fwd);
+			}
+			if (kiss_config_inv && !ptr_in_buffer(kiss_config_inv, kiss_cfg_mem_inv, sizeof(kiss_cfg_mem_inv)))
+			{
+				free(kiss_config_inv);
+			}
+			kiss_config_fwd = nullptr;
+			kiss_config_inv = nullptr;
+		}
 	};
 
 	struct NoiseSuppressorOutputs

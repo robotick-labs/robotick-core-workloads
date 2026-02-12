@@ -197,9 +197,9 @@ namespace robotick::test
 
 			CHECK(transcript.words.empty());
 			CHECK(transcript.text.empty());
-				CHECK(transcript.transcribe_duration_sec == Catch::Approx(0.0f));
-				CHECK(transcript.transcript_mean_confidence == Catch::Approx(0.0f));
-				CHECK(transcript.start_time_sec == Catch::Approx(0.0f));
+			CHECK(transcript.transcribe_duration_sec == Catch::Approx(0.0f));
+			CHECK(transcript.transcript_mean_confidence == Catch::Approx(0.0f));
+			CHECK(transcript.start_time_sec == Catch::Approx(0.0f));
 			CHECK(transcript.duration_sec == Catch::Approx(0.0f));
 		}
 
@@ -231,8 +231,8 @@ namespace robotick::test
 			Transcript transcript;
 
 			transcript.update_timing_from_words(1.25f, 2.5f);
-				CHECK(transcript.start_time_sec == Catch::Approx(1.25f));
-				CHECK(transcript.duration_sec == Catch::Approx(2.5f));
+			CHECK(transcript.start_time_sec == Catch::Approx(1.25f));
+			CHECK(transcript.duration_sec == Catch::Approx(2.5f));
 
 			TranscribedWord first_word;
 			first_word.text = "Hi";
@@ -248,8 +248,8 @@ namespace robotick::test
 			transcript.words.add(last_word);
 			transcript.update_timing_from_words(0.0f, 0.0f);
 
-				CHECK(transcript.start_time_sec == Catch::Approx(first_word.start_time_sec));
-				CHECK(transcript.duration_sec == Catch::Approx(last_word.end_time_sec - first_word.start_time_sec));
+			CHECK(transcript.start_time_sec == Catch::Approx(first_word.start_time_sec));
+			CHECK(transcript.duration_sec == Catch::Approx(last_word.end_time_sec - first_word.start_time_sec));
 		}
 
 		SECTION("SpeechToText transcribes JFK WAV correctly")
