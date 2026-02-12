@@ -7,7 +7,9 @@
 #include "robotick/framework/math/MathUtils.h"
 #include "robotick/framework/memory/Memory.h"
 
+#if defined(ROBOTICK_PLATFORM_LINUX)
 #include <yaml-cpp/yaml.h>
+#endif
 
 #include <cmath>
 #include <cstring>
@@ -32,6 +34,7 @@ namespace robotick
 			return Vec2f(v.x * c - v.y * s, v.x * s + v.y * c);
 		}
 
+#if defined(ROBOTICK_PLATFORM_LINUX)
 		size_t count_nodes_recursive(const YAML::Node& node)
 		{
 			if (!node || !node.IsMap())
@@ -113,6 +116,7 @@ namespace robotick
 			ROBOTICK_FATAL_EXIT("Unknown canvas node type '%s'. Supported: group, ellipse, rect.", value.c_str());
 			return CanvasNodeType::Group;
 		}
+#endif
 
 		float clamp01(float value)
 		{
@@ -125,6 +129,11 @@ namespace robotick
 
 	bool CanvasScene::load_from_file(const char* path)
 	{
+#if !defined(ROBOTICK_PLATFORM_LINUX)
+		(void)path;
+		ROBOTICK_WARNING("CanvasScene::load_from_file is not supported on this platform (yaml-cpp unavailable).");
+		return false;
+#else
 		if (root_ != nullptr || nodes_.size() > 0)
 		{
 			ROBOTICK_FATAL_EXIT("CanvasScene already loaded. Create a new CanvasScene for each scene.");
@@ -184,6 +193,7 @@ namespace robotick
 
 		source_path_ = path;
 		return true;
+#endif
 	}
 
 	const CanvasNode* CanvasScene::find_node(StringView id) const
@@ -336,6 +346,7 @@ namespace robotick
 		draw_node_recursive(*root_, Vec2f(0.0f, 0.0f), Vec2f(1.0f, 1.0f), 0.0f, true, 1.0f, renderer);
 	}
 
+#if defined(ROBOTICK_PLATFORM_LINUX)
 	void CanvasScene::parse_canvas_config(const YAML::Node& canvas_node)
 	{
 		if (const YAML::Node logical = canvas_node["logical_size"])
@@ -522,6 +533,7 @@ namespace robotick
 		out_binding.node = node;
 		out_binding.property = parse_property_path(property_path);
 	}
+#endif
 
 	CanvasScene::ControlProperty CanvasScene::parse_property_path(const char* path) const
 	{

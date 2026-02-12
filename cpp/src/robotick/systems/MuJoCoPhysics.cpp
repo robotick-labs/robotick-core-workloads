@@ -168,7 +168,7 @@ namespace robotick
 		return false;
 	}
 
-	void MuJoCoPhysics::destroy_render_snapshot(::mjData*&)
+	void MuJoCoPhysics::destroy_render_snapshot(::mjData*&) const
 	{
 	}
 

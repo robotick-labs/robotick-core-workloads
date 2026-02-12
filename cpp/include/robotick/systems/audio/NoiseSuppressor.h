@@ -13,7 +13,16 @@
 #include "robotick/systems/audio/AudioFrame.h"
 
 #include <cstdlib>
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 #include <kissfft/kiss_fftr.h>
+#else
+struct kiss_fft_cpx
+{
+	float r = 0.0f;
+	float i = 0.0f;
+};
+using kiss_fftr_cfg = void*;
+#endif
 
 namespace robotick
 {

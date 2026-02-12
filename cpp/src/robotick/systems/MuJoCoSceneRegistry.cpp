@@ -30,7 +30,7 @@ namespace robotick
 			}
 		}
 
-		ROBOTICK_FATAL_EXIT("MuJoCoSceneRegistry capacity exceeded (%u scenes)", kMaxScenes);
+		ROBOTICK_FATAL_EXIT("MuJoCoSceneRegistry capacity exceeded (%lu scenes)", static_cast<unsigned long>(kMaxScenes));
 		return 0;
 	}
 
@@ -75,11 +75,7 @@ namespace robotick
 		return entry.physics->model();
 	}
 
-	bool MuJoCoSceneRegistry::alloc_render_snapshot(
-		uint32_t scene_id,
-		::mjData*& data_out,
-		const ::mjModel*& model_out,
-		double& time_out) const
+	bool MuJoCoSceneRegistry::alloc_render_snapshot(uint32_t scene_id, ::mjData*& data_out, const ::mjModel*& model_out, double& time_out) const
 	{
 		uint32_t index = 0;
 		if (!decode_handle(scene_id, index))

@@ -20,6 +20,7 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(NoiseSuppressorConfig, float, noise_floor_min)
 	ROBOTICK_REGISTER_STRUCT_END(NoiseSuppressorConfig)
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 	void NoiseSuppressor::plan_fft(NoiseSuppressorState& state)
 	{
 		// Pre-size buffers and allocate fixed-heap FFT plans (fallback to heap if needed).
@@ -184,4 +185,29 @@ namespace robotick
 			output.samples[i] = state.ifft_time_domain[i] * normalizer;
 		}
 	}
+#else
+	void NoiseSuppressor::plan_fft(NoiseSuppressorState&)
+	{
+	}
+
+	void NoiseSuppressor::build_window(NoiseSuppressorState&)
+	{
+	}
+
+	void NoiseSuppressor::reset_state(NoiseSuppressorState&)
+	{
+	}
+
+	void NoiseSuppressor::process_frame(const NoiseSuppressorConfig&,
+		NoiseSuppressorState&,
+		const AudioFrame& input,
+		AudioFrame& output,
+		bool& is_noise_only,
+		NoiseSuppressorOutputs& debug_outputs)
+	{
+		output = input;
+		is_noise_only = false;
+		debug_outputs.noise_floor_rms = 0.0f;
+	}
+#endif
 } // namespace robotick

@@ -6,7 +6,19 @@
 #include "robotick/framework/containers/FixedVector.h"
 #include "robotick/framework/strings/FixedString.h"
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 #include "whisper.h"
+#else
+struct whisper_context;
+struct whisper_context_params
+{
+	uint32_t _placeholder = 0;
+};
+struct whisper_full_params
+{
+	uint32_t _placeholder = 0;
+};
+#endif
 
 #include <atomic>
 #include <cstddef>
