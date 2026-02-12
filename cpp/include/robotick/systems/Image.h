@@ -16,5 +16,6 @@ namespace robotick
 	using ImagePng16k = FixedVector<ImagePngByte, 16 * 1024>;
 	using ImagePng64k = FixedVector<ImagePngByte, 64 * 1024>;
 	using ImagePng128k = FixedVector<ImagePngByte, 128 * 1024>;
+	using ImagePng256k = FixedVector<ImagePngByte, 256 * 1024>;
 
 } // namespace robotick

@@ -44,7 +44,9 @@ namespace robotick
 		void present();
 		void cleanup();
 
-		// Render-to-texture target size
+		// Render-to-texture (physical) target size in pixels.
+		// This is the pixel resolution used for on-screen presentation and/or PNG capture.
+		// Note: this is distinct from the logical coordinate space set by set_viewport().
 		void set_texture_only_size(float w, float h)
 		{
 			physical_w = static_cast<int>(w);
@@ -52,7 +54,9 @@ namespace robotick
 			update_scale();
 		}
 
-		// Viewport
+		// Logical viewport size (authoring coordinate space).
+		// Drawing APIs take positions/sizes in this logical space; they are scaled into the
+		// physical target size set by set_texture_only_size(), preserving aspect ratio and centering.
 		void set_viewport(float w, float h)
 		{
 			logical_w = w;
@@ -63,6 +67,7 @@ namespace robotick
 		void draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color);
 		void draw_circle_filled(const Vec2& center, const float radius, const Color& color) { draw_ellipse_filled(center, radius, radius, color); }
 		void draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color);
+		void draw_rect_filled(const Vec2& p0, const Vec2& p1, const Color& color);
 		void draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color);
 
 		// New: blit an RGBA8888 image and scale to the current viewport

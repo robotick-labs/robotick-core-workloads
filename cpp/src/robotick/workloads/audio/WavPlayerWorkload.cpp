@@ -28,6 +28,7 @@ namespace robotick
 	{
 		AudioFrame left;
 		AudioFrame right;
+		AudioFrame mono;
 
 		float total_duration_sec = 0.0f;
 		uint64_t total_frame_count = 0;
@@ -58,6 +59,7 @@ namespace robotick
 
 			outputs.left.sample_rate = AudioSystem::get_sample_rate();
 			outputs.right.sample_rate = outputs.left.sample_rate;
+			outputs.mono.sample_rate = outputs.left.sample_rate;
 
 			outputs.total_duration_sec = wav_file.get_duration_seconds();
 			outputs.total_frame_count = wav_file.get_frame_count();
@@ -76,12 +78,14 @@ namespace robotick
 			static constexpr double ns_to_sec = 1e-9;
 			outputs.left.timestamp = ns_to_sec * (double)tick_info.time_now_ns;
 			outputs.right.timestamp = outputs.left.timestamp;
+			outputs.mono.timestamp = outputs.left.timestamp;
 
 			const WavFile& wav_file = state->wav_file;
 
 			const size_t frame_count = wav_file.get_frame_count();
 			const int target_rate = wav_file.get_sample_rate();
 			const int samples_per_tick = target_rate / static_cast<int>(tick_info.tick_rate_hz);
+			const bool source_is_mono = (wav_file.get_num_channels() == 1);
 
 			int remaining = frame_count - static_cast<int>(state->current_frame);
 			int emit_samples = robotick::min(samples_per_tick, remaining);
@@ -97,15 +101,37 @@ namespace robotick
 				{
 					outputs.left.samples.set(left_ptr, emit_samples);
 					outputs.right.samples.set(right_ptr, emit_samples);
+					if (source_is_mono)
+					{
+						outputs.mono.samples.set(left_ptr, emit_samples);
+					}
+					else
+					{
+						outputs.mono.samples.set_size(emit_samples);
+						for (int i = 0; i < emit_samples; ++i)
+						{
+							outputs.mono.samples[i] = 0.5f * (left_ptr[i] + right_ptr[i]);
+						}
+					}
 				}
 				else
 				{
 					outputs.left.samples.set_size(emit_samples);
 					outputs.right.samples.set_size(emit_samples);
+					outputs.mono.samples.set_size(emit_samples);
 					for (int i = 0; i < emit_samples; ++i)
 					{
 						outputs.left.samples[i] = gain * left_ptr[i];
 						outputs.right.samples[i] = gain * right_ptr[i];
+						if (source_is_mono)
+						{
+							outputs.mono.samples[i] = outputs.left.samples[i];
+						}
+						else
+						{
+							const float mono_val = 0.5f * (left_ptr[i] + right_ptr[i]);
+							outputs.mono.samples[i] = gain * mono_val;
+						}
 					}
 				}
 
@@ -115,6 +141,7 @@ namespace robotick
 			{
 				outputs.left.samples.fill(0.0f);
 				outputs.right.samples.fill(0.0f);
+				outputs.mono.samples.fill(0.0f);
 			}
 
 			// Loop if enabled and we're at the end

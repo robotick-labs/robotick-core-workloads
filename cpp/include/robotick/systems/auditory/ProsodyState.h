@@ -11,6 +11,8 @@ namespace robotick
 		float rms = 0.0f;				// loudness (captures voiced + unvoiced)
 		bool is_voiced = false;			// true if harmonic pitch present
 		float voiced_confidence = 0.0f; // based on harmonic energy
+		bool is_harmonic = false;		// true when harmonic content dominates
+		float harmonic_confidence = 0.0f;
 
 		// --- Temporal rhythm ---
 		float speaking_rate_sps = 0.0f; // syllables or bursts per second

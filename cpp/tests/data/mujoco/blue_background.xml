@@ -1,0 +1,20 @@
+<mujoco model="blue_background">
+  <compiler angle="radian"/>
+  <option timestep="0.001"/>
+
+  <asset>
+    <!-- Solid blue material applied to a visible box (instead of an infinite plane). -->
+    <material name="blue_ground" rgba="0.1 0.2 0.9 1" emission="1"/>
+  </asset>
+
+  <visual>
+    <global offwidth="128" offheight="96"/>
+  </visual>
+
+  <worldbody>
+    <light name="key_light" pos="0 0 2"/>
+    <!-- Use a modest box in front of the camera to fill the view with blue. -->
+    <geom name="blue_box" type="box" size="1 1 0.01" material="blue_ground" pos="0 0 0"/>
+    <camera name="test_cam" pos="0 0 3" zaxis="0 0 1"/>
+  </worldbody>
+</mujoco>

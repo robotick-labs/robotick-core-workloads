@@ -28,10 +28,8 @@ namespace robotick
 
 	struct SpeechToTextOutputs
 	{
-		TranscribedWords words;
-		FixedString512 transcript;
-		float transcribe_duration_sec = 0.0f;
-		float transcript_mean_confidence = 0.0f;
+		Transcript proto_transcript;
+		Transcript transcript;
 
 		float accumulator_duration_sec = 0.0f;
 		float accumulator_capacity_sec = 0.0f;
@@ -53,17 +51,25 @@ namespace robotick
 		float get_duration_sec() const { return static_cast<float>(samples.size()) / accumulator_sample_rate_hz; }
 		static constexpr float get_capacity_sec() { return static_cast<float>(AccumulatorSamples::capacity()) / accumulator_sample_rate_hz; }
 
-		void request_drop_oldest_duration_sec(const float drop_secs)
+		void request_drop_oldest_samples(size_t samples_to_drop)
 		{
-			size_t samples_to_drop = static_cast<size_t>(drop_secs * (float)accumulator_sample_rate_hz);
 			if (samples_to_drop > samples.size())
 			{
 				samples_to_drop = samples.size();
 			}
 
 			const size_t keep_count = samples.size() - samples_to_drop;
-			memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
+			if (samples_to_drop > 0 && keep_count > 0)
+			{
+				memmove(samples.data(), samples.data() + samples_to_drop, keep_count * sizeof(float));
+			}
 			samples.set_size(keep_count);
+		}
+
+		void request_drop_oldest_duration_sec(const float drop_secs)
+		{
+			size_t samples_to_drop = static_cast<size_t>(drop_secs * (float)accumulator_sample_rate_hz);
+			request_drop_oldest_samples(samples_to_drop);
 		}
 	};
 
@@ -74,13 +80,17 @@ namespace robotick
 		AudioAccumulator audio_accumulators[2];
 		AtomicFlag is_buffer_swapped{false}; // false → [0] is FG, true → [1] is FG
 
-		TranscribedWords last_result;
-		FixedString512 last_transcript;
-		float last_transcript_mean_confidence = 0.0f;
+		Transcript last_proto_transcript;
+		Transcript last_transcript;
 
+		float proto_transcribe_start_time_sec = 0.0f;
 		float transcribe_start_time_sec = 0.0f;
+		double last_proto_submit_time = 0.0;
+
+		bool current_job_is_final = false;
 
 		AtomicFlag is_bgthread_active{false};
+		AtomicFlag has_new_proto_transcript{false};
 		AtomicFlag has_new_transcript{false};
 
 		Thread bg_thread;
@@ -90,8 +100,9 @@ namespace robotick
 		bool thread_has_work = false;
 
 		double last_voiced_time = 0.0;
-		bool was_voiced_last_tick = false;
 		bool is_voiced_segment_pending = false;
+		bool was_voiced = false;
+		size_t voiced_segment_start_sample = 0;
 
 		AudioAccumulator& get_foreground_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[1] : audio_accumulators[0]; }
 		AudioAccumulator& get_background_accumulator() { return is_buffer_swapped.is_set() ? audio_accumulators[0] : audio_accumulators[1]; }
@@ -151,6 +162,7 @@ namespace robotick
 			}
 
 			state->thread_has_work = false;
+			const bool job_is_final = state->current_job_is_final;
 			lock.unlock();
 
 			state->is_bgthread_active.set();
@@ -199,11 +211,25 @@ namespace robotick
 					transcript.append(word.text.c_str());
 				}
 
+				Transcript finished_transcript;
+				finished_transcript.words = transcribed_words;
+				finished_transcript.text = transcript;
+				finished_transcript.transcript_mean_confidence = mean_confidence;
+				finished_transcript.update_timing_from_words(start_time_sec_engine, audio_accumulator_duration_sec);
+
 				lock.lock();
-				state->last_result = transcribed_words;
-				state->last_transcript = transcript;
-				state->last_transcript_mean_confidence = mean_confidence;
-				state->has_new_transcript.set();
+				if (job_is_final)
+				{
+					state->last_transcript = finished_transcript;
+					state->last_proto_transcript = finished_transcript;
+					state->has_new_transcript.set();
+					state->has_new_proto_transcript.set();
+				}
+				else
+				{
+					state->last_proto_transcript = finished_transcript;
+					state->has_new_proto_transcript.set();
+				}
 				lock.unlock();
 			}
 
@@ -224,10 +250,8 @@ namespace robotick
 
 		void reset_outputs()
 		{
-			outputs.words.clear();
+			outputs.proto_transcript.clear();
 			outputs.transcript.clear();
-			outputs.transcribe_duration_sec = 0.0f;
-			outputs.transcript_mean_confidence = 0.0f;
 			outputs.accumulator_duration_sec = 0.0f;
 			outputs.accumulator_capacity_sec = AudioAccumulator::get_capacity_sec();
 			outputs.is_transcribe_thread_active = false;
@@ -249,7 +273,13 @@ namespace robotick
 			state->thread_should_exit = false;
 			state->thread_has_work = false;
 			state->is_bgthread_active.clear();
+			state->has_new_proto_transcript.clear();
 			state->has_new_transcript.clear();
+			state->last_proto_transcript.clear();
+			state->last_transcript.clear();
+			state->current_job_is_final = false;
+			state->last_proto_submit_time = -static_cast<double>(config.settings.proto_refresh_interval_sec);
+			state->proto_transcribe_start_time_sec = 0.0f;
 			state->is_buffer_swapped.set(false);
 
 			state->bg_thread = Thread(speech_to_text_thread, static_cast<void*>(&state.get()), "SpeechToTextThread");
@@ -263,6 +293,9 @@ namespace robotick
 				outputs.is_transcribe_thread_active = false;
 				return;
 			}
+
+			const bool is_voiced = inputs.is_voiced;
+			const double now = tick_info.time_now;
 
 			// Downsample and append new samples
 			{
@@ -288,19 +321,66 @@ namespace robotick
 				foreground_accumulator.samples.set_size(old_size + add_count);
 
 				ROBOTICK_ASSERT(foreground_accumulator.samples.size() <= foreground_accumulator.samples.capacity());
+
+				if (!is_voiced)
+				{
+					const double silence_duration = now - state->last_voiced_time;
+					if (silence_duration >= static_cast<double>(config.settings.silence_hangover_sec))
+					{
+						const size_t prefix_grace_samples = add_count;
+						state->voiced_segment_start_sample = (old_size > prefix_grace_samples) ? (old_size - prefix_grace_samples) : 0;
+					}
+				}
 			}
 
 			// Swap buffers if background thread is idle, and we're comfortably beyond the end of a "voiced" piece of audio
 			{
-				const bool is_voiced = inputs.is_voiced;
-				const double now = tick_info.time_now;
-
 				AudioAccumulator& foreground_accumulator = state->get_foreground_accumulator();
+				const float foreground_duration_sec = foreground_accumulator.get_duration_sec();
+
+				const auto submit_audio_for_transcription = [&](const bool is_final)
+				{
+					LockGuard lock(state->mutex);
+
+					AudioAccumulator& background_accumulator = state->get_background_accumulator();
+					background_accumulator = foreground_accumulator;
+
+					if (is_final)
+					{
+						state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
+						state->get_foreground_accumulator().samples.clear();
+						state->get_foreground_accumulator().end_time_sec = now;
+						state->voiced_segment_start_sample = 0;
+						state->was_voiced = false;
+					}
+
+					state->current_job_is_final = is_final;
+					state->thread_has_work = true;
+					state->cv.notify_one();
+				};
 
 				if (is_voiced)
 				{
+					const double silence_gap_sec = (!state->was_voiced) ? (now - state->last_voiced_time) : 0.0;
 					state->last_voiced_time = now;
-					state->is_voiced_segment_pending = foreground_accumulator.get_duration_sec() >= config.settings.min_voiced_duration_sec;
+					state->is_voiced_segment_pending = foreground_duration_sec >= config.settings.min_voiced_duration_sec;
+
+					if (!state->was_voiced && state->voiced_segment_start_sample > 0 &&
+						silence_gap_sec >= static_cast<double>(config.settings.silence_hangover_sec))
+					{
+						state->get_foreground_accumulator().request_drop_oldest_samples(state->voiced_segment_start_sample);
+						state->voiced_segment_start_sample = 0;
+					}
+				}
+
+				const bool can_stream = is_voiced && state->is_voiced_segment_pending && !state->is_bgthread_active.is_set() &&
+										(now - state->last_proto_submit_time) >= static_cast<double>(config.settings.proto_refresh_interval_sec);
+
+				if (can_stream)
+				{
+					state->last_proto_submit_time = now;
+					state->proto_transcribe_start_time_sec = tick_info.time_now;
+					submit_audio_for_transcription(false);
 				}
 
 				const double silence_duration = now - state->last_voiced_time;
@@ -313,35 +393,53 @@ namespace robotick
 					outputs.transcribe_session_count++;
 
 					state->transcribe_start_time_sec = tick_info.time_now;
+					state->proto_transcribe_start_time_sec = state->transcribe_start_time_sec;
 
-					LockGuard lock(state->mutex);
-
-					AudioAccumulator& background_accumulator = state->get_background_accumulator();
-
-					// copy FG → BG
-					background_accumulator = foreground_accumulator;
-
-					// swap and clear FG
-					state->is_buffer_swapped.set(!state->is_buffer_swapped.is_set());
-					state->get_foreground_accumulator().samples.clear();
-					state->get_foreground_accumulator().end_time_sec = now;
-
-					// signal thread
-					state->thread_has_work = true;
-					state->cv.notify_one();
+					submit_audio_for_transcription(true);
 				}
+
+				if (!is_voiced)
+				{
+					const double silence_duration = now - state->last_voiced_time;
+					if (silence_duration >= static_cast<double>(config.settings.silence_hangover_sec))
+					{
+						state->voiced_segment_start_sample = state->get_foreground_accumulator().samples.size();
+					}
+				}
+
+				state->was_voiced = is_voiced;
 			}
 
 			// Retrieve transcript if ready
+			if (state->has_new_proto_transcript.is_set())
+			{
+				state->has_new_proto_transcript.clear();
+
+				Transcript proto_transcript;
+				{
+					LockGuard lock(state->mutex);
+					proto_transcript = state->last_proto_transcript;
+				}
+
+				proto_transcript.transcribe_duration_sec = tick_info.time_now - state->proto_transcribe_start_time_sec;
+
+				outputs.proto_transcript = proto_transcript;
+			}
+
 			if (state->has_new_transcript.is_set())
 			{
 				state->has_new_transcript.clear();
 
-				LockGuard lock(state->mutex);
-				outputs.words = state->last_result;
-				outputs.transcript = state->last_transcript;
-				outputs.transcribe_duration_sec = tick_info.time_now - state->transcribe_start_time_sec;
-				outputs.transcript_mean_confidence = state->last_transcript_mean_confidence;
+				Transcript latest_transcript;
+				{
+					LockGuard lock(state->mutex);
+					latest_transcript = state->last_transcript;
+				}
+
+				latest_transcript.transcribe_duration_sec = tick_info.time_now - state->transcribe_start_time_sec;
+
+				outputs.proto_transcript = latest_transcript;
+				outputs.transcript = latest_transcript;
 			}
 
 			outputs.accumulator_duration_sec = state->get_foreground_accumulator().get_duration_sec();

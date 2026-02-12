@@ -9,6 +9,7 @@
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
 #include "robotick/systems/auditory/HarmonicPitch.h"
+#include "robotick/systems/auditory/ProsodyFusion.h"
 
 #include <cstring>
 
@@ -27,18 +28,22 @@ namespace robotick
 		float cochlear_visual_gain = 1.0f;
 
 		bool draw_pitch_info = true;
+		bool draw_pitch_info_amplitude = true;
+		bool draw_harmonics = true;
 		float pitch_visual_gain = 1.0f;
 		float pitch_min_amplitude = 0.2f;
 
 		// If true: render offscreen and export PNG bytes to outputs.visualization_png
 		// If false: present to the active display/window
 		bool render_to_texture = true;
+		float fusion_link_alpha_gain = 100.0f;
 	};
 
 	struct CochlearVisualizerInputs
 	{
 		CochlearFrame cochlear_frame;	// envelope[Nbands], band_center_hz[Nbands]
 		HarmonicPitchResult pitch_info; // h1_f0_hz, harmonic_amplitudes[k]
+		ProsodicSegmentBuffer speech_segments;
 	};
 
 	struct CochlearVisualizerOutputs
@@ -71,6 +76,30 @@ namespace robotick
 		CochlearVisualizerInputs inputs;
 		CochlearVisualizerOutputs outputs;
 		State<CochlearVisualizerState> state;
+
+		static void draw_line_segment(Renderer& renderer, const Vec2& a, const Vec2& b, const float thickness, const Color& color)
+		{
+			const Vec2 diff = b - a;
+			const float length = diff.length();
+			if (length < 1e-3f)
+			{
+				const Vec2 min = {a.x - thickness * 0.5f, a.y - thickness * 0.5f};
+				const Vec2 max = {a.x + thickness * 0.5f, a.y + thickness * 0.5f};
+				renderer.draw_rect_filled(min, max, color);
+				return;
+			}
+
+			const float nx = -diff.y / length;
+			const float ny = diff.x / length;
+			const Vec2 offset(nx * thickness * 0.5f, ny * thickness * 0.5f);
+			const Vec2 p0 = a + offset;
+			const Vec2 p1 = a - offset;
+			const Vec2 p2 = b - offset;
+			const Vec2 p3 = b + offset;
+
+			renderer.draw_triangle_filled(p0, p1, p2, color);
+			renderer.draw_triangle_filled(p0, p2, p3, color);
+		}
 
 		// --- helpers ---
 
@@ -185,10 +214,17 @@ namespace robotick
 					if (amp <= 0.0f)
 						continue;
 
-					float a = (amp - config.pitch_min_amplitude) * config.pitch_visual_gain;
-					if (config.log_scale)
-						a = log1pf(a * 10.0f) / log1pf(10.0f);
-					a = clampf(a, 0.0f, 1.0f);
+					if (h > 1 && !config.draw_harmonics)
+						continue;
+
+					float a = 1.0f;
+					if (config.draw_pitch_info_amplitude)
+					{
+						a = (amp - config.pitch_min_amplitude) * config.pitch_visual_gain;
+						if (config.log_scale)
+							a = log1pf(a * 10.0f) / log1pf(10.0f);
+						a = clampf(a, 0.0f, 1.0f);
+					}
 
 					const uint8_t r = static_cast<uint8_t>(a * 64.0f);
 					const uint8_t g = static_cast<uint8_t>(64.0f + a * (255.0f - 128.0f));
@@ -215,9 +251,204 @@ namespace robotick
 				}
 			}
 
+			struct SegmentOverlay
+			{
+				const ProsodicSegment* segment = nullptr;
+				bool draw_bars = false;
+				Color curve_color = Colors::White;
+				Color bar_color = Colors::White;
+				float start_x = 0.0f;
+				float end_x = 0.0f;
+			};
+
+			FixedVector<SegmentOverlay, 64> overlays;
+			const float window_seconds = config.window_seconds;
+			const float window_end = tick.time_now;
+			const float window_start = window_end - window_seconds;
+			const auto segment_has_span = [](const ProsodicSegment& segment)
+			{
+				return (segment.end_time_sec > segment.start_time_sec) && (segment.pitch_hz.size() > 0);
+			};
+
+			if (window_seconds > 0.0f)
+			{
+				auto add_overlay = [&](const ProsodicSegment& segment, bool draw_bars, const Color& curve_color, const Color& bar_color)
+				{
+					const float start_norm = (segment.start_time_sec - window_start) / window_seconds;
+					const float end_norm = (segment.end_time_sec - window_start) / window_seconds;
+					if (end_norm <= 0.0f || start_norm >= 1.0f || overlays.full())
+					{
+						return;
+					}
+
+					SegmentOverlay overlay;
+					overlay.segment = &segment;
+					overlay.draw_bars = draw_bars;
+					overlay.curve_color = curve_color;
+					overlay.bar_color = bar_color;
+					overlay.start_x = clampf(start_norm, 0.0f, 1.0f) * static_cast<float>(config.viewport_width);
+					overlay.end_x = clampf(end_norm, 0.0f, 1.0f) * static_cast<float>(config.viewport_width);
+					overlays.add(overlay);
+				};
+
+				for (const ProsodicSegment& segment : inputs.speech_segments)
+				{
+					if (!segment_has_span(segment))
+					{
+						continue;
+					}
+
+					Color curve_color = Colors::Yellow;
+					Color bar_color = Colors::Yellow;
+					switch (segment.state)
+					{
+					case ProsodicSegmentState::Ongoing:
+						curve_color = Colors::Yellow;
+						bar_color = Colors::Yellow;
+						break;
+					case ProsodicSegmentState::Completed:
+						curve_color = Colors::Orange;
+						bar_color = Colors::Orange;
+						break;
+					case ProsodicSegmentState::Finalised:
+						curve_color = Colors::Blue;
+						bar_color = Colors::White;
+						break;
+					}
+
+					const bool draw_bars = (segment.state == ProsodicSegmentState::Finalised) || !segment.words.empty();
+					add_overlay(segment, draw_bars, curve_color, bar_color);
+				}
+			}
+
 			// 4) Draw to renderer and either present (live) or capture PNG (offscreen)
 			s.renderer.clear(Colors::Black);
 			s.renderer.draw_image_rgba8888_fit(s.rgba.data(), s.tex_w, s.tex_h);
+
+			const auto time_to_x = [&](float absolute_time_sec) -> float
+			{
+				if (window_seconds <= 0.0f)
+				{
+					return -1.0f;
+				}
+				const float norm = (absolute_time_sec - window_start) / window_seconds;
+				if (norm < 0.0f || norm > 1.0f)
+				{
+					return -1.0f;
+				}
+				return clampf(norm, 0.0f, 1.0f) * static_cast<float>(config.viewport_width);
+			};
+
+			const auto freq_to_y = [&](float freq_hz) -> float
+			{
+				if (s.tex_h <= 1)
+				{
+					return -1.0f;
+				}
+				const float band_idx = hz_to_band_idx(inputs.cochlear_frame.band_center_hz, freq_hz);
+				if (band_idx < 0.0f)
+				{
+					return -1.0f;
+				}
+				const float norm = clampf(band_idx / static_cast<float>(s.tex_h - 1), 0.0f, 1.0f);
+				const float viewport_height = static_cast<float>(config.viewport_height);
+				return (1.0f - norm) * viewport_height;
+			};
+
+			const float curve_thickness = 3.0f;
+			for (const SegmentOverlay& overlay : overlays)
+			{
+				const ProsodicSegment& segment = *overlay.segment;
+				const size_t sample_count = segment.pitch_hz.size();
+				if (sample_count == 0)
+				{
+					continue;
+				}
+
+				const float segment_duration = segment.end_time_sec - segment.start_time_sec;
+				Vec2 prev_point = {};
+				bool has_prev = false;
+
+				const size_t mask_count = segment.pitch_link_mask.size();
+				const size_t link_rms_count = segment.link_rms.size();
+
+				for (size_t i = 0; i < sample_count; ++i)
+				{
+					const float freq_hz = segment.pitch_hz[i];
+					if (freq_hz <= 0.0f)
+					{
+						has_prev = false;
+						continue;
+					}
+
+					const float alpha = (sample_count <= 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(sample_count - 1);
+					const float sample_time = segment.start_time_sec + alpha * segment_duration;
+					const float x = time_to_x(sample_time);
+					const float y = freq_to_y(freq_hz);
+					if (x < 0.0f || y < 0.0f)
+					{
+						has_prev = false;
+						continue;
+					}
+
+					const Vec2 current_point = {x, y};
+					if (has_prev)
+					{
+						const bool link_allowed = (i < mask_count) && (segment.pitch_link_mask[i] != 0);
+						if (link_allowed)
+						{
+							const float link_rms = (i < link_rms_count) ? segment.link_rms[i] : segment.rms[i];
+							const float alpha_scale = clampf(link_rms * config.fusion_link_alpha_gain, 0.05f, 1.0f);
+							Color dynamic_color = overlay.curve_color;
+							dynamic_color.a = static_cast<uint8_t>(alpha_scale * static_cast<float>(overlay.curve_color.a));
+							draw_line_segment(s.renderer, prev_point, current_point, curve_thickness, dynamic_color);
+						}
+					}
+
+					prev_point = current_point;
+					has_prev = true;
+				}
+			}
+
+			const float viewport_height = static_cast<float>(config.viewport_height);
+			for (const SegmentOverlay& overlay : overlays)
+			{
+				if (!overlay.draw_bars)
+				{
+					continue;
+				}
+
+				const Vec2 start_bar_min = {overlay.start_x, 0.0f};
+				const Vec2 start_bar_max = {overlay.start_x + 2.0f, viewport_height};
+				s.renderer.draw_rect_filled(start_bar_min, start_bar_max, overlay.bar_color);
+
+				const Vec2 end_bar_min = {overlay.end_x - 2.0f, 0.0f};
+				const Vec2 end_bar_max = {overlay.end_x, viewport_height};
+				s.renderer.draw_rect_filled(end_bar_min, end_bar_max, overlay.bar_color);
+
+				if (overlay.segment && !overlay.segment->words.empty() && window_seconds > 0.0f)
+				{
+					for (size_t w = 0; w < overlay.segment->words.size(); ++w)
+					{
+						const TranscribedWord& word = overlay.segment->words[w];
+						if (word.text.empty())
+						{
+							continue;
+						}
+
+						const float norm = (word.start_time_sec - window_start) / window_seconds;
+						if (norm < 0.0f || norm > 1.0f)
+						{
+							continue;
+						}
+
+						const float word_x = clampf(norm, 0.0f, 1.0f) * static_cast<float>(config.viewport_width);
+						const float line_offset = static_cast<float>((w % 2) * 12);
+						const Vec2 label_pos = {word_x, 4.0f + line_offset};
+						s.renderer.draw_text(word.text.c_str(), label_pos, 10.0f, TextAlign::Center, overlay.bar_color);
+					}
+				}
+			}
 
 			if (config.render_to_texture)
 			{

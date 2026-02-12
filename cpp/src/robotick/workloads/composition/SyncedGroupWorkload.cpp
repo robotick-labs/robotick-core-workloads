@@ -209,6 +209,7 @@ namespace robotick
 
 				const uint32_t delta_ns = detail::clamp_to_uint32(ns_since_last);
 				child.workload_stats->record_tick_sample(duration_ns, delta_ns, budget_ns);
+				child.workload_stats->tick_count++;
 
 				Thread::hybrid_sleep_until(next_tick_time);
 			}

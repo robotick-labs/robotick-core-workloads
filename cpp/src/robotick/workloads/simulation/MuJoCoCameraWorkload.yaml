@@ -1,8 +1,10 @@
 platforms:
   linux:
     files:
+      - robotick/systems/MuJoCoRenderContext.cpp
       - robotick/systems/MuJoCoPhysics.cpp
       - robotick/systems/MuJoCoSceneRegistry.cpp
+      - robotick/systems/Image.cpp
 
     deps:
       - name: mujoco
@@ -28,3 +30,27 @@ platforms:
         include_dirs:
           - ${CMAKE_CURRENT_SOURCE_DIR}/deps/yaml-cpp/include
         link_target: yaml-cpp
+
+      - name: OpenGL
+        source:
+          type: apt
+          package: libgl1-mesa-dev
+        find_package: OpenGL
+        link_target: OpenGL::GL
+
+      - name: EGL
+        source:
+          type: apt
+          package: libegl1-mesa-dev
+        link_libraries:
+          - EGL
+
+      - name: OpenCV
+        source:
+          type: apt
+          package: libopencv-dev
+        find_package: OpenCV
+        include_dirs:
+          - ${OpenCV_INCLUDE_DIRS}
+        link_libraries:
+          - ${OpenCV_LIBS}

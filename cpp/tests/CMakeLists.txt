@@ -52,6 +52,17 @@ target_link_libraries(robotick_core_workloads_tests PRIVATE curl)
 # Re-enable exceptions just for test target
 target_compile_options(robotick_core_workloads_tests PRIVATE -fexceptions)
 
+# OpenCV is required by MuJoCoRenderContext tests on desktop platforms.
+if(ROBOTICK_PLATFORM_DESKTOP)
+    find_package(OpenCV REQUIRED)
+    target_include_directories(robotick_core_workloads_tests PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(robotick_core_workloads_tests PRIVATE ${OpenCV_LIBS})
+    find_package(SDL2 REQUIRED)
+    target_link_libraries(robotick_core_workloads_tests PRIVATE SDL2::SDL2)
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(robotick_core_workloads_tests PRIVATE OpenGL::GL)
+endif()
+
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_ENABLE_PYTHON=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_TEST_MODE=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE CATCH_CONFIG_ENABLE_EXCEPTIONS)

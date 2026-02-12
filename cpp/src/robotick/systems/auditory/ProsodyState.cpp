@@ -18,6 +18,8 @@ namespace robotick
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, rms)
 	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, is_voiced)
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, voiced_confidence)
+	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, is_harmonic)
+	ROBOTICK_STRUCT_FIELD(ProsodyState, float, harmonic_confidence)
 
 	// ===== Temporal rhythm =====
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, speaking_rate_sps)

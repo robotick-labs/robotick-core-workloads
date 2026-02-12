@@ -14,5 +14,6 @@ namespace robotick
 	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng16k, ImagePngByte);
 	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng64k, ImagePngByte);
 	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng128k, ImagePngByte);
+	ROBOTICK_REGISTER_FIXED_VECTOR(ImagePng256k, ImagePngByte);
 
 } // namespace robotick

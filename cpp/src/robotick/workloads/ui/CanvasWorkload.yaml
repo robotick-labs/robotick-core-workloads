@@ -3,8 +3,17 @@ platforms:
     files:
       - robotick/systems/Renderer_desktop.cpp
       - robotick/systems/Image.cpp
+      - robotick/systems/Canvas.cpp
 
     deps:
+      - name: yaml-cpp
+        source:
+          type: apt
+          package: libyaml-cpp-dev
+        find_package: yaml-cpp
+        link_libraries:
+          - yaml-cpp
+
       - name: SDL2
         source:
           type: apt
@@ -34,20 +43,3 @@ platforms:
           - ${OpenCV_INCLUDE_DIRS}
         link_libraries:
           - ${OpenCV_LIBS}
-
-  esp32:
-    files:
-      - robotick/systems/Renderer_esp32.cpp
-
-    deps:
-      - name: M5GFX
-        source:
-          type: git
-          url: https://github.com/m5stack/M5GFX.git
-          pin: e1bf27b
-
-      - name: M5Unified
-        source:
-          type: git
-          url: https://github.com/m5stack/M5Unified.git
-          pin: bf322a0

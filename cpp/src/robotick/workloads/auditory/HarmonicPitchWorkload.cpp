@@ -1,21 +1,18 @@
 // Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
-//
-// HarmonicPitchWorkload.cpp  (thin wrapper around robotick::HarmonicPitch)
+
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 
 #include "robotick/api.h"
 #include "robotick/systems/audio/AudioSystem.h"
 #include "robotick/systems/auditory/CochlearFrame.h"
-#include "robotick/systems/auditory/HarmonicPitch.h"
-
-#include <cstring>
-#include <fstream>
+#include "robotick/systems/auditory/SnakePitchTracker.h"
 
 namespace robotick
 {
 	struct HarmonicPitchConfig
 	{
-		HarmonicPitchSettings settings;
+		SnakePitchTrackerConfig settings;
 	};
 
 	struct HarmonicPitchInputs
@@ -30,7 +27,7 @@ namespace robotick
 
 	struct HarmonicPitchState
 	{
-		HarmonicPitchResult prev_result = {};
+		SnakePitchTracker tracker;
 	};
 
 	struct HarmonicPitchWorkload
@@ -41,23 +38,26 @@ namespace robotick
 
 		State<HarmonicPitchState> state;
 
+		void start(float /*tick_rate_hz*/)
+		{
+			state->tracker.configure(config.settings);
+			state->tracker.reset();
+		}
+
 		void tick(const TickInfo&)
 		{
-			// reset everything in case we don't find anything
-			outputs.pitch_info = {};
-
-			// analyse our current CochlearFrame
-			HarmonicPitchResult found_result{};
-			const bool has_found = HarmonicPitch::find_or_continue_harmonic_features(
-				config.settings, inputs.cochlear_frame.band_center_hz, inputs.cochlear_frame.envelope, state->prev_result, found_result);
-
-			if (has_found)
+			HarmonicPitchResult result{};
+			if (state->tracker.update(inputs.cochlear_frame, result))
 			{
-				outputs.pitch_info = found_result;
+				outputs.pitch_info = result;
 			}
-
-			state->prev_result = found_result;
+			else
+			{
+				outputs.pitch_info = HarmonicPitchResult{};
+			}
 		}
 	};
 
 } // namespace robotick
+
+#endif // ROBOTICK_PLATFORM_DESKTOP || ROBOTICK_PLATFORM_LINUX

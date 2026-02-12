@@ -3,10 +3,22 @@
 
 #pragma once
 
-#include "robotick/framework/strings/FixedString.h"
 #include "robotick/framework/containers/FixedVector.h"
+#include "robotick/framework/strings/FixedString.h"
 
+#if defined(ROBOTICK_PLATFORM_DESKTOP) || defined(ROBOTICK_PLATFORM_LINUX)
 #include "whisper.h"
+#else
+struct whisper_context;
+struct whisper_context_params
+{
+	uint32_t _placeholder = 0;
+};
+struct whisper_full_params
+{
+	uint32_t _placeholder = 0;
+};
+#endif
 
 #include <atomic>
 #include <cstddef>
@@ -26,6 +38,41 @@ namespace robotick
 
 	using TranscribedWords = FixedVector<TranscribedWord, 64>;
 
+	struct Transcript
+	{
+		TranscribedWords words;
+		FixedString512 text;
+
+		float transcribe_duration_sec = 0.0f;
+		float transcript_mean_confidence = 0.0f;
+		float start_time_sec = 0.0f;
+		float duration_sec = 0.0f;
+
+		void clear()
+		{
+			words.clear();
+			text.clear();
+			transcribe_duration_sec = 0.0f;
+			transcript_mean_confidence = 0.0f;
+			start_time_sec = 0.0f;
+			duration_sec = 0.0f;
+		}
+
+		void update_timing_from_words(const float fallback_start_time_sec, const float fallback_duration_sec)
+		{
+			if (words.empty())
+			{
+				start_time_sec = fallback_start_time_sec;
+				duration_sec = fallback_duration_sec;
+				return;
+			}
+
+			start_time_sec = words[0].start_time_sec;
+			const float end_time_sec = words[words.size() - 1].end_time_sec;
+			duration_sec = (end_time_sec >= start_time_sec) ? (end_time_sec - start_time_sec) : fallback_duration_sec;
+		}
+	};
+
 	struct SpeechToTextSettings
 	{
 		FixedString256 model_path;
@@ -33,6 +80,7 @@ namespace robotick
 
 		float min_voiced_duration_sec = 0.5f;
 		float silence_hangover_sec = 0.2f; // how long after voice is no longer detected, to request a transcribe
+		float proto_refresh_interval_sec = 0.2f;
 	};
 
 	struct SpeechToTextInternalState
