@@ -16,6 +16,8 @@ namespace robotick
 	{
 		int port = 7080;
 		FixedString128 web_root_folder = "engine-data/remote_control_interface_web";
+		Vec2f dead_zone_left = Vec2f{0.1f, 0.1f};
+		Vec2f dead_zone_right = Vec2f{0.1f, 0.1f};
 	};
 
 	struct RemoteControlOutputs
@@ -64,6 +66,18 @@ namespace robotick
 		RemoteControlOutputs outputs;
 
 		State<RemoteControlState> state;
+
+		static float apply_dead_zone(float value, float dead_zone)
+		{
+			const float clamped_dead_zone = robotick::clamp(dead_zone, 0.0f, 0.99f);
+			if (robotick::abs(value) < clamped_dead_zone)
+			{
+				return 0.0f;
+			}
+
+			const float direction = value >= 0.0f ? 1.0f : -1.0f;
+			return (value - (direction * clamped_dead_zone)) / (1.0f - clamped_dead_zone);
+		}
 
 		void setup()
 		{
@@ -150,8 +164,14 @@ namespace robotick
 
 		void tick(const TickInfo&)
 		{
-			// simply copy web-requested inputs to outputs
+			// Copy web-requested inputs to outputs, then apply authoritative dead-zones on sticks.
 			outputs = state->web_inputs.use_web_inputs ? state->web_inputs : RemoteControlOutputs{};
+
+			// apply dead-zones to each stick:
+			outputs.left.x = apply_dead_zone(outputs.left.x, config.dead_zone_left.x);
+			outputs.left.y = apply_dead_zone(outputs.left.y, config.dead_zone_left.y);
+			outputs.right.x = apply_dead_zone(outputs.right.x, config.dead_zone_right.x);
+			outputs.right.y = apply_dead_zone(outputs.right.y, config.dead_zone_right.y);
 		}
 
 		void stop() { state->server.stop(); }
