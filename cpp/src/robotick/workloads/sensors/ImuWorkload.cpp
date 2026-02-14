@@ -70,6 +70,8 @@ namespace robotick
 			M5.Imu.update();
 			const auto& imu_data = M5.Imu.getImuData();
 
+			// Note: these are board-native M5 axes after M5's internal remaps.
+			// Any normalization to Robotick's canonical Z-up frame should happen downstream.
 			outputs.accel.x = imu_data.accel.x;
 			outputs.accel.y = imu_data.accel.y;
 			outputs.accel.z = imu_data.accel.z;

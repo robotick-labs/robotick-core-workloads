@@ -44,8 +44,12 @@ namespace robotick
 			const float speed = inputs.speed;
 			const float turn = inputs.angular_speed;
 
-			float left = speed + turn * config.max_speed_differential;
-			float right = speed - turn * config.max_speed_differential;
+			// Right-handed Z-up yaw convention:
+			// positive angular_speed => positive yaw about +Z => CCW/top-view => left turn.
+			// For a differential drive, a left turn means right motor > left motor.
+			// `speed` preserves the robot's existing model-level forward-axis choice.
+			float left = speed - turn * config.max_speed_differential;
+			float right = speed + turn * config.max_speed_differential;
 
 			// Clamp to [-1, 1]
 			left = max(-1.0f, min(1.0f, left));
