@@ -5,6 +5,7 @@
 
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
+#include "robotick/framework/registry/TypeRegistry.h"
 #include "robotick/framework/strings/FixedString.h"
 #include "robotick/systems/PythonRuntime.h"
 
@@ -48,6 +49,58 @@ namespace robotick
 			{
 				target.data[i] = static_cast<char>(::tolower(static_cast<unsigned char>(target.data[i])));
 			}
+		}
+
+		static bool blackboard_field_to_py_dict(const Blackboard& blackboard, const FieldDescriptor& field, py::dict& py_dict)
+		{
+			const char* key = field.name.c_str();
+			const TypeDescriptor* type_desc = field.find_type_descriptor();
+			if (!type_desc)
+			{
+				return false;
+			}
+
+			const TypeId& type = field.type_id;
+			if (type == GET_TYPE_ID(int))
+				py_dict[key] = blackboard.get<int>(field);
+			else if (type == GET_TYPE_ID(float))
+				py_dict[key] = blackboard.get<float>(field);
+			else if (type == GET_TYPE_ID(double))
+				py_dict[key] = blackboard.get<double>(field);
+			else if (type == GET_TYPE_ID(bool))
+				py_dict[key] = blackboard.get<bool>(field);
+			else if (type == GET_TYPE_ID(FixedString8))
+				py_dict[key] = blackboard.get<FixedString8>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString16))
+				py_dict[key] = blackboard.get<FixedString16>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString32))
+				py_dict[key] = blackboard.get<FixedString32>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString64))
+				py_dict[key] = blackboard.get<FixedString64>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString128))
+				py_dict[key] = blackboard.get<FixedString128>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString256))
+				py_dict[key] = blackboard.get<FixedString256>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString512))
+				py_dict[key] = blackboard.get<FixedString512>(field).c_str();
+			else if (type == GET_TYPE_ID(FixedString1024))
+				py_dict[key] = blackboard.get<FixedString1024>(field).c_str();
+			else if (type_desc->get_enum_desc() != nullptr)
+			{
+				char enum_text[128] = {};
+				void* field_ptr = blackboard.get(field, type_desc->size);
+				if (!field_ptr || !type_desc->to_string(field_ptr, enum_text, sizeof(enum_text)))
+				{
+					return false;
+				}
+				py_dict[key] = enum_text;
+			}
+			else
+			{
+				return false;
+			}
+
+			return true;
 		}
 	} // namespace
 
@@ -117,7 +170,8 @@ namespace robotick
 				field_desc.name = string_storage.push_back(name_str).c_str(); // safe: copied into FixedString
 
 				// Extract and parse type string
-				FixedString64 type_str = py_to_fixed_string<FixedString64>(item.second);
+				const FixedString64 original_type_str = py_to_fixed_string<FixedString64>(item.second);
+				FixedString64 type_str = original_type_str;
 				to_lower(type_str);
 
 				// Set type_id based on known strings
@@ -146,7 +200,17 @@ namespace robotick
 				else if (type_str == "fixedstring1024")
 					field_desc.type_id = TypeId(GET_TYPE_ID(FixedString1024));
 				else
-					ROBOTICK_FATAL_EXIT("Unsupported field type: %s", type_str.c_str());
+				{
+					const TypeDescriptor* custom_type = TypeRegistry::get().find_by_name(original_type_str.c_str());
+					if (custom_type && custom_type->get_enum_desc() != nullptr)
+					{
+						field_desc.type_id = custom_type->id;
+					}
+					else
+					{
+						ROBOTICK_FATAL_EXIT("Unsupported field type: %s (resolved from '%s')", type_str.c_str(), original_type_str.c_str());
+					}
+				}
 
 				// Resolve TypeDescriptor
 				const TypeDescriptor* field_type = field_desc.find_type_descriptor();
@@ -216,36 +280,10 @@ namespace robotick
 			for (size_t i = 0; i < struct_desc.fields.size(); ++i)
 			{
 				const FieldDescriptor& field = struct_desc.fields[i];
-				const char* key = field.name.c_str();
-				const auto& type = field.type_id;
-
-				if (type == GET_TYPE_ID(int))
-					py_cfg[key] = config.script.get<int>(key);
-				else if (type == GET_TYPE_ID(float))
-					py_cfg[key] = config.script.get<float>(key);
-				else if (type == GET_TYPE_ID(double))
-					py_cfg[key] = config.script.get<double>(key);
-				else if (type == GET_TYPE_ID(bool))
-					py_cfg[key] = config.script.get<bool>(key);
-				else if (type == GET_TYPE_ID(FixedString8))
-					py_cfg[key] = config.script.get<FixedString8>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString16))
-					py_cfg[key] = config.script.get<FixedString16>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString32))
-					py_cfg[key] = config.script.get<FixedString32>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString64))
-					py_cfg[key] = config.script.get<FixedString64>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString128))
-					py_cfg[key] = config.script.get<FixedString128>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString256))
-					py_cfg[key] = config.script.get<FixedString256>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString512))
-					py_cfg[key] = config.script.get<FixedString512>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString1024))
-					py_cfg[key] = config.script.get<FixedString1024>(key).c_str();
-
-				else
-					ROBOTICK_FATAL_EXIT("Unsupported config field type for key '%s' in PythonWorkload", key);
+				if (!blackboard_field_to_py_dict(config.script, field, py_cfg))
+				{
+					ROBOTICK_FATAL_EXIT("Unsupported config field type for key '%s' in PythonWorkload", field.name.c_str());
+				}
 			}
 
 			// (note - we allow exceptions in PythonWorkload/Runtime only since Python libs require them - so the below is fine even with the wider
@@ -301,33 +339,10 @@ namespace robotick
 			for (size_t i = 0; i < struct_desc.fields.size(); ++i)
 			{
 				const FieldDescriptor& field = struct_desc.fields[i];
-				const char* key = field.name.c_str();
-				const auto& type = field.type_id;
-
-				if (type == GET_TYPE_ID(int))
-					py_in[key] = inputs.script.get<int>(key);
-				else if (type == GET_TYPE_ID(float))
-					py_in[key] = inputs.script.get<float>(key);
-				else if (type == GET_TYPE_ID(double))
-					py_in[key] = inputs.script.get<double>(key);
-				else if (type == GET_TYPE_ID(bool))
-					py_in[key] = inputs.script.get<bool>(key);
-				else if (type == GET_TYPE_ID(FixedString8))
-					py_in[key] = inputs.script.get<FixedString8>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString16))
-					py_in[key] = inputs.script.get<FixedString16>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString32))
-					py_in[key] = inputs.script.get<FixedString32>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString64))
-					py_in[key] = inputs.script.get<FixedString64>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString128))
-					py_in[key] = inputs.script.get<FixedString128>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString256))
-					py_in[key] = inputs.script.get<FixedString256>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString512))
-					py_in[key] = inputs.script.get<FixedString512>(key).c_str();
-				else if (type == GET_TYPE_ID(FixedString1024))
-					py_in[key] = inputs.script.get<FixedString1024>(key).c_str();
+				if (!blackboard_field_to_py_dict(inputs.script, field, py_in))
+				{
+					ROBOTICK_WARNING("Unsupported input field type for key '%s' in PythonWorkload", field.name.c_str());
+				}
 			}
 
 			// (note - we allow exceptions in PythonWorkload/Runtime only since Python libs require them - so the below is fine even with the wider
@@ -347,8 +362,8 @@ namespace robotick
 				const char* key = key_str.c_str();
 				auto val = item.second;
 
-				const StructDescriptor& struct_desc = outputs.script.get_struct_descriptor();
-				const FieldDescriptor* found_field = struct_desc.find_field(key);
+				const StructDescriptor& output_struct_desc = outputs.script.get_struct_descriptor();
+				const FieldDescriptor* found_field = output_struct_desc.find_field(key);
 
 				if (!found_field)
 					continue;
@@ -377,6 +392,19 @@ namespace robotick
 					outputs.script.set<FixedString512>(key, py_to_fixed_string<FixedString512>(val));
 				else if (found_field->type_id == GET_TYPE_ID(FixedString1024))
 					outputs.script.set<FixedString1024>(key, py_to_fixed_string<FixedString1024>(val));
+				else
+				{
+					const TypeDescriptor* field_type = found_field->find_type_descriptor();
+					if (field_type && field_type->get_enum_desc() != nullptr)
+					{
+						const FixedString128 enum_text = py_to_fixed_string<FixedString128>(py::str(val));
+						void* output_ptr = outputs.script.get(*found_field, field_type->size);
+						if (!output_ptr || !field_type->from_string(enum_text.c_str(), output_ptr))
+						{
+							ROBOTICK_WARNING("Failed enum marshal for Python output field '%s' from value '%s'", key, enum_text.c_str());
+						}
+					}
+				}
 			}
 		}
 	};
