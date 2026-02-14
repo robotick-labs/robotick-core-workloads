@@ -16,7 +16,8 @@ namespace robotick
 		float power_scale_both = 1.0f;
 		float power_scale_left = 1.0f;
 		float power_scale_right = 1.0f;
-		float power_seek_rate = 1.0f;
+		// <= 0 means instant snap (legacy behavior).
+		float power_seek_rate = -1.0f;
 	};
 
 	struct SteeringMixerInputs
@@ -54,23 +55,31 @@ namespace robotick
 			left *= config.power_scale_both * config.power_scale_left;
 			right *= config.power_scale_both * config.power_scale_right;
 
-			const float max_delta = config.power_seek_rate * tick.delta_time;
-			const auto seek_towards = [max_delta](float current, float target)
+			if (config.power_seek_rate <= 0.0f)
 			{
-				const float delta = target - current;
-				if (delta > max_delta)
+				outputs.left_motor = left;
+				outputs.right_motor = right;
+			}
+			else
+			{
+				const float max_delta = config.power_seek_rate * tick.delta_time;
+				const auto seek_towards = [max_delta](float current, float target)
 				{
-					return current + max_delta;
-				}
-				if (delta < -max_delta)
-				{
-					return current - max_delta;
-				}
-				return target;
-			};
+					const float delta = target - current;
+					if (delta > max_delta)
+					{
+						return current + max_delta;
+					}
+					if (delta < -max_delta)
+					{
+						return current - max_delta;
+					}
+					return target;
+				};
 
-			outputs.left_motor = seek_towards(outputs.left_motor, left);
-			outputs.right_motor = seek_towards(outputs.right_motor, right);
+				outputs.left_motor = seek_towards(outputs.left_motor, left);
+				outputs.right_motor = seek_towards(outputs.right_motor, right);
+			}
 		}
 	};
 
