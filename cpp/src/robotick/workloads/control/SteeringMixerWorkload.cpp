@@ -16,8 +16,7 @@ namespace robotick
 		float power_scale_both = 1.0f;
 		float power_scale_left = 1.0f;
 		float power_scale_right = 1.0f;
-		// <= 0 means instant snap (legacy behavior).
-		float power_seek_rate = -1.0f;
+		float power_seek_rate = -1.0f; // <= 0 means instant-snap (no seeking)
 	};
 
 	struct SteeringMixerInputs
