@@ -594,7 +594,7 @@ namespace robotick
 
 				const float rx = node.ellipse_rx * robotick::abs(world_scale.x);
 				const float ry = node.ellipse_ry * robotick::abs(world_scale.y);
-				renderer.draw_ellipse_filled(Vec2(world_translate.x, world_translate.y), rx, ry, color);
+				renderer.draw_ellipse_filled(Vec2f(world_translate.x, world_translate.y), rx, ry, color);
 			}
 			else if (node.type == CanvasNodeType::Rect && node.has_fill)
 			{
@@ -610,8 +610,8 @@ namespace robotick
 
 				const float half_w = 0.5f * node.rect_w * robotick::abs(world_scale.x);
 				const float half_h = 0.5f * node.rect_h * robotick::abs(world_scale.y);
-				const Vec2 p0(world_translate.x - half_w, world_translate.y - half_h);
-				const Vec2 p1(world_translate.x + half_w, world_translate.y + half_h);
+				const Vec2f p0(world_translate.x - half_w, world_translate.y - half_h);
+				const Vec2f p1(world_translate.x + half_w, world_translate.y + half_h);
 				renderer.draw_rect_filled(p0, p1, color);
 			}
 		}

@@ -255,7 +255,7 @@ namespace robotick
 		return true;
 	}
 
-	void Renderer::draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color)
+	void Renderer::draw_ellipse_filled(const Vec2f& center, const float rx, const float ry, const Color& color)
 	{
 		if (!impl || !impl->renderer)
 			return;
@@ -270,7 +270,7 @@ namespace robotick
 		filledEllipseRGBA(impl->renderer, cx_px, cy_px, rx_px, ry_px, color.r, color.g, color.b, color.a);
 	}
 
-	void Renderer::draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color)
+	void Renderer::draw_triangle_filled(const Vec2f& p0, const Vec2f& p1, const Vec2f& p2, const Color& color)
 	{
 		if (!impl || !impl->renderer)
 			return;
@@ -285,15 +285,15 @@ namespace robotick
 		filledTrigonRGBA(impl->renderer, x0, y0, x1, y1, x2, y2, color.r, color.g, color.b, color.a);
 	}
 
-	void Renderer::draw_rect_filled(const Vec2& p0, const Vec2& p1, const Color& color)
+	void Renderer::draw_rect_filled(const Vec2f& p0, const Vec2f& p1, const Color& color)
 	{
-		const Vec2 top_right = {p1.x, p0.y};
-		const Vec2 bottom_left = {p0.x, p1.y};
+		const Vec2f top_right = {p1.x, p0.y};
+		const Vec2f bottom_left = {p0.x, p1.y};
 		draw_triangle_filled(p0, top_right, p1, color);
 		draw_triangle_filled(p0, p1, bottom_left, color);
 	}
 
-	void Renderer::draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color)
+	void Renderer::draw_text(const char* text, const Vec2f& pos, const float size, const TextAlign align, const Color& color)
 	{
 		if (!text || !*text || !impl || !impl->renderer)
 			return;

@@ -27,9 +27,9 @@ namespace robotick
 
 	struct ImuOutputs
 	{
-		Vec3 accel;
-		Vec3 gyro;
-		Vec3 mag;
+		Vec3f accel;
+		Vec3f gyro;
+		Vec3f mag;
 	};
 
 	struct ImuWorkload
@@ -105,9 +105,9 @@ namespace robotick
 		void setup() { ROBOTICK_WARNING("ImuWorkload requires ROBOTICK_PLATFORM_ESP32S3_M5; outputs will remain zero."); }
 		void tick(const TickInfo& /*tick_info*/)
 		{
-			outputs.accel = Vec3();
-			outputs.gyro = Vec3();
-			outputs.mag = Vec3();
+			outputs.accel = Vec3f();
+			outputs.gyro = Vec3f();
+			outputs.mag = Vec3f();
 		}
 #endif // ROBOTICK_IMU_HAS_M5
 	};

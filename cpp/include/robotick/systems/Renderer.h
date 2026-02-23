@@ -64,11 +64,11 @@ namespace robotick
 		}
 
 		// Drawing
-		void draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color);
-		void draw_circle_filled(const Vec2& center, const float radius, const Color& color) { draw_ellipse_filled(center, radius, radius, color); }
-		void draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color);
-		void draw_rect_filled(const Vec2& p0, const Vec2& p1, const Color& color);
-		void draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color);
+		void draw_ellipse_filled(const Vec2f& center, const float rx, const float ry, const Color& color);
+		void draw_circle_filled(const Vec2f& center, const float radius, const Color& color) { draw_ellipse_filled(center, radius, radius, color); }
+		void draw_triangle_filled(const Vec2f& p0, const Vec2f& p1, const Vec2f& p2, const Color& color);
+		void draw_rect_filled(const Vec2f& p0, const Vec2f& p1, const Color& color);
+		void draw_text(const char* text, const Vec2f& pos, const float size, const TextAlign align, const Color& color);
 
 		// New: blit an RGBA8888 image and scale to the current viewport
 		// pixels.size() must be == w*h*4

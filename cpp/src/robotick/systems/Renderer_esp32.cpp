@@ -108,7 +108,7 @@ namespace robotick
 		initialized = false;
 	}
 
-	void Renderer::draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color)
+	void Renderer::draw_ellipse_filled(const Vec2f& center, const float rx, const float ry, const Color& color)
 	{
 		if (!impl || !impl->canvas)
 			return;
@@ -116,7 +116,7 @@ namespace robotick
 		impl->canvas->fillEllipse(to_px_x(center.x), to_px_y(center.y), to_px_w(rx), to_px_h(ry));
 	}
 
-	void Renderer::draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color)
+	void Renderer::draw_triangle_filled(const Vec2f& p0, const Vec2f& p1, const Vec2f& p2, const Color& color)
 	{
 		if (!impl || !impl->canvas)
 			return;
@@ -131,7 +131,7 @@ namespace robotick
 		impl->canvas->fillTriangle(x0, y0, x1, y1, x2, y2, c);
 	}
 
-	void Renderer::draw_rect_filled(const Vec2& p0, const Vec2& p1, const Color& color)
+	void Renderer::draw_rect_filled(const Vec2f& p0, const Vec2f& p1, const Color& color)
 	{
 		if (!impl || !impl->canvas)
 			return;
@@ -152,7 +152,7 @@ namespace robotick
 		impl->canvas->fillRect(x0, y0, w, h, impl->canvas->color565(color.r, color.g, color.b));
 	}
 
-	void Renderer::draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color)
+	void Renderer::draw_text(const char* text, const Vec2f& pos, const float size, const TextAlign align, const Color& color)
 	{
 		if (!text || !*text || !impl || !impl->canvas)
 			return;
@@ -248,19 +248,19 @@ namespace robotick
 	{
 	}
 
-	void Renderer::draw_ellipse_filled(const Vec2&, const float, const float, const Color&)
+	void Renderer::draw_ellipse_filled(const Vec2f&, const float, const float, const Color&)
 	{
 	}
 
-	void Renderer::draw_triangle_filled(const Vec2&, const Vec2&, const Vec2&, const Color&)
+	void Renderer::draw_triangle_filled(const Vec2f&, const Vec2f&, const Vec2f&, const Color&)
 	{
 	}
 
-	void Renderer::draw_rect_filled(const Vec2&, const Vec2&, const Color&)
+	void Renderer::draw_rect_filled(const Vec2f&, const Vec2f&, const Color&)
 	{
 	}
 
-	void Renderer::draw_text(const char*, const Vec2&, const float, const TextAlign, const Color&)
+	void Renderer::draw_text(const char*, const Vec2f&, const float, const TextAlign, const Color&)
 	{
 	}
 
