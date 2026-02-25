@@ -1,11 +1,16 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/boards/m5/BoardSupport.h"
+#include "robotick/framework/WorkloadInstanceInfo.h"
 
-#if defined(ROBOTICK_PLATFORM_ESP32)
+#if defined(ROBOTICK_PLATFORM_ESP32S3) && defined(ROBOTICK_PLATFORM_ESP32S3_M5)
 #include <M5Unified.h>
-#endif // #if defined(ROBOTICK_PLATFORM_ESP32)
+#define ROBOTICK_IMU_HAS_M5 1
+#else
+#define ROBOTICK_IMU_HAS_M5 0
+#endif
 
 namespace robotick
 {
@@ -22,9 +27,9 @@ namespace robotick
 
 	struct ImuOutputs
 	{
-		Vec3 accel;
-		Vec3 gyro;
-		Vec3 mag;
+		Vec3f accel;
+		Vec3f gyro;
+		Vec3f mag;
 	};
 
 	struct ImuWorkload
@@ -33,9 +38,14 @@ namespace robotick
 		ImuInputs inputs;
 		ImuOutputs outputs;
 
-#if defined(ROBOTICK_PLATFORM_ESP32)
+#if ROBOTICK_IMU_HAS_M5
 		void setup()
 		{
+			if (!boards::m5::ensure_initialized())
+			{
+				ROBOTICK_FATAL_EXIT("ImuWorkload requires M5 support but initialization failed.");
+			}
+
 			if (!M5.Imu.isEnabled())
 			{
 				ROBOTICK_INFO("IMU not enabled — attempting init...");
@@ -60,6 +70,8 @@ namespace robotick
 			M5.Imu.update();
 			const auto& imu_data = M5.Imu.getImuData();
 
+			// Note: these are board-native M5 axes after M5's internal remaps.
+			// Any normalization to Robotick's canonical Z-up frame should happen downstream.
 			outputs.accel.x = imu_data.accel.x;
 			outputs.accel.y = imu_data.accel.y;
 			outputs.accel.z = imu_data.accel.z;
@@ -76,19 +88,28 @@ namespace robotick
 			{
 				ROBOTICK_INFO(
 					"IMU: accel[%.2f %.2f %.2f] g\tgyro[%.2f %.2f %.2f] °/s\tmag[%.2f %.2f %.2f] µT\t| tick_duration %.2f ms\t| tick_delta %.2f ms",
-					outputs.accel.x, outputs.accel.y, outputs.accel.z, outputs.gyro.x, outputs.gyro.y, outputs.gyro.z, outputs.mag.x, outputs.mag.y,
-					outputs.mag.z, tick_info.workload_stats->get_last_tick_duration_ms(), tick_info.workload_stats->get_last_time_delta_ms());
+					outputs.accel.x,
+					outputs.accel.y,
+					outputs.accel.z,
+					outputs.gyro.x,
+					outputs.gyro.y,
+					outputs.gyro.z,
+					outputs.mag.x,
+					outputs.mag.y,
+					outputs.mag.z,
+					tick_info.workload_stats->get_last_tick_duration_ms(),
+					tick_info.workload_stats->get_last_time_delta_ms());
 			}
 		}
 #else
-		void setup() {}
+		void setup() { ROBOTICK_WARNING("ImuWorkload requires ROBOTICK_PLATFORM_ESP32S3_M5; outputs will remain zero."); }
 		void tick(const TickInfo& /*tick_info*/)
 		{
-			outputs.accel = Vec3();
-			outputs.gyro = Vec3();
-			outputs.mag = Vec3();
+			outputs.accel = Vec3f();
+			outputs.gyro = Vec3f();
+			outputs.mag = Vec3f();
 		}
-#endif // ROBOTICK_PLATFORM_ESP32
+#endif // ROBOTICK_IMU_HAS_M5
 	};
 
 } // namespace robotick

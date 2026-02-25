@@ -1,0 +1,122 @@
+name: CI - Build Matrix (Linux + ESP32)
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    name: Build & Test (${{ matrix.platform }} - ${{ matrix.preset }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            preset: robotick-core-workloads-tests-linux-debug
+            docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
+            enable_m5: "OFF"
+          - platform: linux
+            preset: robotick-core-workloads-tests-linux-release
+            docker_image: mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04
+            enable_m5: "OFF"
+          - platform: esp32s3
+            preset: esp32s3
+            docker_image: espressif/idf:release-v5.4
+            enable_m5: "OFF"
+          - platform: esp32s3-m5
+            preset: esp32s3
+            docker_image: espressif/idf:release-v5.4
+            enable_m5: "ON"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout robotick-engine (match PR target or fallback to main)
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_BASE_REF:-${GITHUB_REF##*/}}"
+          echo "🔄 Trying robotick-engine branch: $BRANCH"
+
+          ENGINE_URL="https://github.com/robotick-labs/robotick-engine.git"
+          FALLBACK_BRANCH="dev"
+
+          if git ls-remote --exit-code --heads "$ENGINE_URL" "$BRANCH" >/dev/null 2>&1; then
+            git clone --depth=1 --branch "$BRANCH" "$ENGINE_URL" ../robotick-engine
+          else
+            echo "'$BRANCH' not found in robotick-engine — using '$FALLBACK_BRANCH'"
+            git clone --depth=1 --branch "$FALLBACK_BRANCH" "$ENGINE_URL" ../robotick-engine
+          fi
+
+          echo "Fetching submodules for robotick-engine..."
+          cd ../robotick-engine
+          git submodule update --init --recursive
+
+      - name: Pull Docker image
+        run: docker pull ${{ matrix.docker_image }}
+
+      - name: Run Build inside Docker
+        run: |
+          docker run --rm \
+            --user root \
+            -v ${{ github.workspace }}:/workspace/robotick-core-workloads \
+            -v ${{ github.workspace }}/../robotick-engine:/workspace/robotick-engine \
+            -w /workspace/robotick-core-workloads \
+            ${{ matrix.docker_image }} \
+            bash -c "
+              set -Eeuo pipefail
+              export TERM=xterm-256color
+              set -x
+
+              if [[ '${{ matrix.platform }}' == esp32* ]]; then
+                echo '[ESP32-S3 Setup] ${{ matrix.platform }}'
+                if [ '${{ matrix.enable_m5 }}' == 'ON' ]; then
+                  export ROBOTICK_PLATFORM_ESP32S3_M5=1
+                  export IDF_EXTRA_CMAKE_ARGS=\"-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=ON\"
+                else
+                  unset ROBOTICK_PLATFORM_ESP32S3_M5
+                  export IDF_EXTRA_CMAKE_ARGS=\"-DROBOTICK_PLATFORM_ESP32S3=ON -DROBOTICK_PLATFORM_ESP32S3_M5=OFF\"
+                fi
+                cd /workspace/robotick-core-workloads/tools/esp32-compile-check
+
+                if ! command -v ninja >/dev/null 2>&1; then
+                  DEBIAN_FRONTEND=noninteractive apt-get update -yq
+                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ninja-build ccache
+                  apt-get clean
+                  rm -rf /var/lib/apt/lists/*
+                fi
+
+                bash /workspace/robotick-core-workloads/tools/make_esp32_symlinks.sh
+
+                ./1_idf_clean.sh || (echo '[ERROR] IDF clean failed' && exit 1)
+                ./2_idf_build.sh || (echo '[ERROR] IDF build failed' && exit 1)
+              else
+                echo '[Linux Setup]'
+                bash /workspace/robotick-engine/tools/setup_my_env_as_root.linux.sh
+
+                cd /workspace/robotick-core-workloads
+                bash cpp/tests/install_deps.sh
+                
+                cmake --preset ${{ matrix.preset }}
+                cmake --build --preset ${{ matrix.preset }} -j$(nproc)
+
+                if [ '${{ matrix.preset }}' == 'robotick-core-workloads-tests-linux-debug' ]; then
+                  ctest --test-dir build/${{ matrix.preset }}/cpp/tests --output-on-failure --timeout 120 --fail-if-no-tests -j$(nproc)
+                fi
+              fi
+            "

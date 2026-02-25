@@ -1,4 +1,4 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
@@ -33,7 +33,9 @@ namespace robotick
 	{
 		float command;
 		FixedString64 status;
-		Blackboard blackboard; // (see note on TemplateConfig::blackboard)
+		bool sensor_ok = true;
+		Blackboard blackboard;		// (see note on TemplateConfig::blackboard)
+		uint32_t warning_count = 0; // example metric counter you can emit to Hub/telemetry
 
 		bool has_called_set_children = false;
 		bool has_called_set_engine = false;
@@ -132,6 +134,25 @@ namespace robotick
 
 			outputs.has_called_tick = true; // (for unit-testing of this template - not for illustrating suggested usage!)
 			(void)tick_info;				// (just to stop compiler warning is about unused args)
+
+			// --- Recommended error/reporting pattern -----------------------------------
+			// 1. Inspect inputs/config and compute a status
+			const bool sensor_ok = inputs.sensor_value >= config.threshold;
+
+			// 2. Emit an INFO/WARNING/ERROR log entry, depending on severity
+			if (!sensor_ok)
+			{
+				ROBOTICK_WARNING(
+					"TemplateWorkload sensor '%s' below threshold (%d < %d)", inputs.sensor_label.c_str(), inputs.sensor_value, config.threshold);
+				// 3. Update outputs/telemetry counters so Hub/CLI can surface the issue
+				outputs.warning_count++;
+			}
+
+			if (outputs.sensor_ok != sensor_ok)
+			{
+				outputs.sensor_ok = sensor_ok;
+				outputs.status = sensor_ok ? "sensor nominal" : "sensor below threshold";
+			}
 		}
 
 		void stop()

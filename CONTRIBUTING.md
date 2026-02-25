@@ -8,7 +8,7 @@ Whether you're a seasoned robotics engineer, curious maker, or systems tinkerer 
 
 ---
 
-## ⚠️ Project Status
+## Project Status
 
 Robotick is currently in **active development**. While the codebase is public to support tools like [CodeRabbit](https://coderabbit.ai) and foster transparency, we are not yet actively encouraging external contributions until the project stabilizes.
 
@@ -22,9 +22,9 @@ We use a structured branching model to keep development stable and traceable.
 
 ### Main Branches
 
-| Branch | Purpose                          |
-|--------|----------------------------------|
-| `main` | Stable, public-facing releases   |
+| Branch | Purpose                            |
+| ------ | ---------------------------------- |
+| `main` | Stable, public-facing releases     |
 | `dev`  | Active development and integration |
 
 ### Working Branches
@@ -54,7 +54,7 @@ Avoid vague names like `test`, `tmp`, or `wip`.
 
 ---
 
-## ✅ PR Checklist
+## PR Checklist
 
 Before opening a PR, please check:
 

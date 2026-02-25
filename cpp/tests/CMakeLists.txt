@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(robotick_core_workloads_tests)
 
 # ========================
-# ✅ Enable CTest + Warnings
+# Enable CTest + Warnings
 # ========================
 
 enable_testing()
@@ -11,14 +11,14 @@ enable_testing()
 add_compile_options(-Wall -Wextra -Werror)
 
 # ========================
-# ✅ Catch2 (Test Framework)
+# Catch2 (Test Framework)
 # ========================
 
 set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
 find_package(Catch2 3 CONFIG)
 
 if (Catch2_FOUND)
-    message(STATUS "✅ Found Catch2: ${Catch2_DIR}")
+    message(STATUS "Found Catch2: ${Catch2_DIR}")
 else()
     message(FATAL_ERROR "❌ Catch2 v3 not found. Please install it:\n"
                         "    sudo apt install catch2")
@@ -26,7 +26,7 @@ endif()
 
 
 # ========================
-# ✅ Test Sources & Target
+# Test Sources & Target
 # ========================
 
 # Automatically discover test .cpp files
@@ -35,22 +35,8 @@ file(GLOB_RECURSE ROBOTICK_TEST_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/*.test.cpp
 )
 
-if(false) # enable to debug test-sources
-    foreach(source ${ROBOTICK_TEST_SOURCES})
-        message(STATUS "Test source: ${source} from ${CMAKE_CURRENT_SOURCE_DIR}")
-    endforeach()
-endif()
-
 # Build test executable
 add_executable(robotick_core_workloads_tests ${ROBOTICK_TEST_SOURCES})
-
-# AddressSanitizer (optional runtime debug support)
-# Uncomment to enable memory error detection during testing (impacts performance)
-# if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-#   message(STATUS "🔎 Enabling AddressSanitizer for robotick_core_workloads_tests")
-#   target_compile_options(robotick_core_workloads_tests PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-#   target_link_options(robotick_core_workloads_tests PRIVATE -fsanitize=address)
-# endif()
 
 # Link against core framework and Catch2
 target_link_libraries(robotick_core_workloads_tests
@@ -63,14 +49,31 @@ target_link_libraries(robotick_core_workloads_tests
 # Link against curl lib (for WebServer testing)
 target_link_libraries(robotick_core_workloads_tests PRIVATE curl)
 
-# ✅ Re-enable exceptions just for test target
+# Re-enable exceptions just for test target
 target_compile_options(robotick_core_workloads_tests PRIVATE -fexceptions)
+
+# OpenCV is required by MuJoCoRenderContext tests on desktop platforms.
+if(ROBOTICK_PLATFORM_DESKTOP)
+    find_package(OpenCV REQUIRED)
+    target_include_directories(robotick_core_workloads_tests PRIVATE ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(robotick_core_workloads_tests PRIVATE ${OpenCV_LIBS})
+    find_package(SDL2 REQUIRED)
+    target_link_libraries(robotick_core_workloads_tests PRIVATE SDL2::SDL2)
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(robotick_core_workloads_tests PRIVATE OpenGL::GL)
+endif()
 
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_ENABLE_PYTHON=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_TEST_MODE=1)
 target_compile_definitions(robotick_core_workloads_tests PRIVATE CATCH_CONFIG_ENABLE_EXCEPTIONS)
+target_compile_definitions(robotick_core_workloads_tests PRIVATE ROBOTICK_CORE_ROOT="${CMAKE_SOURCE_DIR}")
 
+target_link_libraries(robotick_core_workloads_tests PRIVATE whisper)
+
+# =========================================
 # Discover Catch2 TEST_CASEs automatically
+# =========================================
+
 include(Catch)
 catch_discover_tests(robotick_core_workloads_tests)
 
@@ -78,7 +81,7 @@ catch_discover_tests(robotick_core_workloads_tests)
 add_dependencies(robotick_core_workloads_tests robotick-core-workloads)
 
 # ========================
-# ✅ Runtime DLL Copy (for VS Code / Debugging)
+# Runtime DLL Copy (for VS Code / Debugging)
 # ========================
 
 add_custom_command(TARGET robotick_core_workloads_tests POST_BUILD
@@ -87,3 +90,15 @@ add_custom_command(TARGET robotick_core_workloads_tests POST_BUILD
     $<TARGET_FILE_DIR:robotick_core_workloads_tests>
 )
 
+# =======================================================
+# Test data for WavFile and other tests
+# =======================================================
+
+set(TEST_DATA_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data)
+set(TEST_DATA_DEST_DIR ${CMAKE_CURRENT_BINARY_DIR}/data)
+
+message(STATUS "Copying test data from: ${TEST_DATA_SOURCE_DIR}")
+message(STATUS "Copying test data to:   ${TEST_DATA_DEST_DIR}")
+
+file(COPY ${TEST_DATA_SOURCE_DIR}
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

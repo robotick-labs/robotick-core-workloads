@@ -1,4 +1,7 @@
-#include "robotick/platform/PlatformEvents.h"
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
+
+#include "robotick/framework/system/PlatformEvents.h"
 
 #if defined(ROBOTICK_PLATFORM_DESKTOP)
 #include <SDL2/SDL.h>

@@ -1,0 +1,17 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/audio/AudioFrame.cpp
+      - robotick/systems/audio/AudioSystem.cpp
+      - robotick/systems/auditory/CochlearFrame.cpp
+      - robotick/systems/auditory/HarmonicPitch.cpp
+      - robotick/systems/auditory/SnakePitchTracker.cpp
+
+    deps:
+      - name: SDL2
+        source:
+          type: apt
+          package: libsdl2-dev
+          pin: ">=2.0.14"
+        find_package: SDL2
+        link_target: SDL2::SDL2

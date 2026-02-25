@@ -1,57 +1,57 @@
 {
-    "version": 4,
-    "cmakeMinimumRequired": {
-        "major": 3,
-        "minor": 21
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21
+  },
+  "configurePresets": [
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "description": "Base preset for Linux CI builds (common compiler & generator settings)",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "/usr/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+        "ROBOTICK_PLATFORM_LINUX": "ON",
+        "ROBOTICK_PLATFORM_DESKTOP": "ON",
+        "ROBOTICK_ENABLE_PYTHON": "ON",
+        "ROBOTICK_ENGINE_SOURCE_DIR": "${sourceDir}/../robotick-engine",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-linux-native.cmake"
+      }
     },
-    "configurePresets": [
-        {
-            "name": "linux-base",
-            "hidden": true,
-            "generator": "Ninja",
-            "description": "Base preset for Linux CI builds (common compiler & generator settings)",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "/usr/bin/gcc",
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
-                "ROBOTICK_PLATFORM_LINUX": "ON",
-                "ROBOTICK_PLATFORM_DESKTOP": "ON",
-                "ROBOTICK_ENABLE_PYTHON": "ON",
-                "ROBOTICK_ENGINE_SOURCE_DIR": "${sourceDir}/../robotick-engine",
-                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchain-linux-native.cmake"
-            }
-        },
-        {
-            "name": "robotick-core-workloads-tests-linux-debug",
-            "inherits": "linux-base",
-            "description": "Linux Debug build (no optimizations, full asserts)",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-                "CMAKE_CXX_FLAGS_DEBUG": "-g -O0 -fno-omit-frame-pointer -fdebug-prefix-map=${sourceDir}=/workspace -DROBOTICK_DEBUG -DROBOTICK_ENABLE_MODEL_HEAP -DROBOTICK_PLATFORM_LINUX -DROBOTICK_PLATFORM_DESKTOP -DROBOTICK_BUILD_CORE_WORKLOAD_TESTS",
-                "ROBOTICK_BUILD_CORE_WORKLOAD_TESTS": "ON"
-            }
-        },
-        {
-            "name": "robotick-core-workloads-tests-linux-release",
-            "inherits": "linux-base",
-            "description": "Linux Release build (stripped, fastest)",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -DROBOTICK_RELEASE -DROBOTICK_ENABLE_MODEL_HEAP -DROBOTICK_PLATFORM_LINUX -DROBOTICK_PLATFORM_DESKTOP",
-                "ROBOTICK_BUILD_CONFIG_RELEASE": "ON",
-                "ROBOTICK_STRIP_PROBES": "ON"
-            }
-        }
-    ],
-    "buildPresets": [
-        {
-            "name": "robotick-core-workloads-tests-linux-debug",
-            "configurePreset": "robotick-core-workloads-tests-linux-debug"
-        },
-        {
-            "name": "robotick-core-workloads-tests-linux-release",
-            "configurePreset": "robotick-core-workloads-tests-linux-release"
-        }
-    ]
+    {
+      "name": "robotick-core-workloads-tests-linux-debug",
+      "inherits": "linux-base",
+      "description": "Linux Debug build (no optimizations, full asserts)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_FLAGS_DEBUG": "-g -O0 -fno-omit-frame-pointer -DROBOTICK_DEBUG -DROBOTICK_PLATFORM_LINUX -DROBOTICK_PLATFORM_DESKTOP -DROBOTICK_BUILD_CORE_WORKLOAD_TESTS",
+        "ROBOTICK_BUILD_CORE_WORKLOAD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "robotick-core-workloads-tests-linux-release",
+      "inherits": "linux-base",
+      "description": "Linux Release build (stripped, fastest)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -DROBOTICK_RELEASE -DROBOTICK_PLATFORM_LINUX -DROBOTICK_PLATFORM_DESKTOP",
+        "ROBOTICK_BUILD_CONFIG_RELEASE": "ON",
+        "ROBOTICK_STRIP_PROBES": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "robotick-core-workloads-tests-linux-debug",
+      "configurePreset": "robotick-core-workloads-tests-linux-debug"
+    },
+    {
+      "name": "robotick-core-workloads-tests-linux-release",
+      "configurePreset": "robotick-core-workloads-tests-linux-release"
+    }
+  ]
 }

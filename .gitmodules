@@ -1,0 +1,9 @@
+[submodule "cpp/tests/external/mqtt-c"]
+	path = cpp/tests/external/mqtt-c
+	url = https://github.com/LiamBindle/MQTT-C.git
+[submodule "tools/esp32-compile-check/components/M5GFX"]
+	path = tools/esp32-compile-check/components/M5GFX
+	url = https://github.com/m5stack/M5GFX.git
+[submodule "tools/esp32-compile-check/components/M5Unified"]
+	path = tools/esp32-compile-check/components/M5Unified
+	url = https://github.com/m5stack/M5Unified.git

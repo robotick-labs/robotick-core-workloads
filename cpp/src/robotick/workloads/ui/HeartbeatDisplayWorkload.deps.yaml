@@ -1,8 +1,0 @@
-sources:
-  - systems/Renderer_desktop.cpp
-  - systems/Renderer_esp32.cpp
-
-link_libraries:
-  - SDL2::SDL2
-  - SDL2_gfx
-  - SDL2_ttf

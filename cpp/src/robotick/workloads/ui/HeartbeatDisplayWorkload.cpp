@@ -1,17 +1,37 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
+#include "robotick/systems/Image.h"
 #include "robotick/systems/Renderer.h"
+
+namespace
+{
+	inline float cosine_deg(float degrees)
+	{
+		return cosf(robotick::deg_to_rad(degrees));
+	}
+	inline float sine_deg(float degrees)
+	{
+		return sinf(robotick::deg_to_rad(degrees));
+	}
+
+	inline int round_to_int(float value)
+	{
+		return static_cast<int>(value >= 0.0f ? value + 0.5f : value - 0.5f);
+	}
+} // namespace
 
 namespace robotick
 {
-	struct HeartbeatConfig
+	struct HeartbeatDisplayConfig
 	{
 		float rest_heart_rate = 60.0f;
+		// if true, render off-screen and expose PNG data instead of an on-screen window
+		bool render_to_texture = false;
 	};
 
-	struct HeartbeatInputs
+	struct HeartbeatDisplayInputs
 	{
 		FixedString8 bar1_label = "Ha";
 		float bar1_fraction = 0.9f;
@@ -25,9 +45,10 @@ namespace robotick
 		float heart_rate_scale = 1.0f;
 	};
 
-	struct HeartbeatOutputs
+	struct HeartbeatDisplayOutputs
 	{
 		float activation_amount = 1.0f;
+		ImagePng64k display_png;
 	};
 
 	struct HeartbeatState
@@ -38,20 +59,26 @@ namespace robotick
 
 	struct HeartbeatDisplayWorkload
 	{
-		HeartbeatConfig config;
-		HeartbeatInputs inputs;
-		HeartbeatOutputs outputs;
+		HeartbeatDisplayConfig config;
+		HeartbeatDisplayInputs inputs;
+		HeartbeatDisplayOutputs outputs;
 		State<HeartbeatState> state;
+
+		void start(float)
+		{
+			auto& s = state.get();
+			if (s.has_init_renderer)
+				return;
+
+			s.renderer.set_texture_only_size(800, 480);
+			s.renderer.set_viewport(320, 240);
+			s.renderer.init(config.render_to_texture);
+			s.has_init_renderer = true;
+		}
 
 		void tick(const TickInfo& tick_info)
 		{
 			auto& s = state.get();
-
-			if (!s.has_init_renderer)
-			{
-				s.renderer.init();
-				s.has_init_renderer = true;
-			}
 
 			const float time_now_sec = tick_info.time_now;
 			const float bpm = config.rest_heart_rate * inputs.heart_rate_scale;
@@ -67,7 +94,23 @@ namespace robotick
 			draw_stats(s.renderer, inputs);
 
 			// present ui:
-			s.renderer.present();
+			if (config.render_to_texture)
+			{
+				size_t png_size = 0;
+				if (s.renderer.capture_as_png(outputs.display_png.data(), outputs.display_png.capacity(), png_size))
+				{
+					outputs.display_png.set_size(png_size);
+				}
+				else
+				{
+					outputs.display_png.set_size(0);
+				}
+			}
+			else
+			{
+				outputs.display_png.set_size(0);
+				s.renderer.present();
+			}
 		}
 
 		void update_heart(const float beat_phase)
@@ -86,7 +129,7 @@ namespace robotick
 
 			auto ramp = [](float f)
 			{
-				return 0.5f * (1.0f - cosf(f * M_PI));
+				return 0.5f * (1.0f - cosf(f * robotick::kPi));
 			};
 
 			outputs.activation_amount = min_activation_lo;
@@ -104,13 +147,14 @@ namespace robotick
 			else
 			{
 				const float settle = (beat_phase - (dub_start + dub_up + dub_down)) / (1.0f - (dub_start + dub_up + dub_down));
-				outputs.activation_amount = min_activation_lo + (min_activation_hi - min_activation_lo) * (1.0f - std::clamp(settle, 0.0f, 1.0f));
+				outputs.activation_amount =
+					min_activation_lo + (min_activation_hi - min_activation_lo) * (1.0f - robotick::clamp(settle, 0.0f, 1.0f));
 			}
 		}
 
 		void draw_heart(Renderer& r, float brightness)
 		{
-			const Vec2 center(160, 120);
+			const Vec2f center(160, 120);
 			const float radius = 75.f + 15.f * brightness;
 			constexpr float color_scale = 0.2f;
 			const float scaled = (1.0f - color_scale) + (color_scale * brightness);
@@ -127,7 +171,7 @@ namespace robotick
 			r.draw_triangle_filled({xo1, yo1}, {xi1, yi1}, {xi0, yi0}, c);
 		}
 
-		void draw_stats(Renderer& r, const HeartbeatInputs& in)
+		void draw_stats(Renderer& r, const HeartbeatDisplayInputs& in)
 		{
 			static constexpr int BASE_RADIUS = 90;
 			static constexpr int BASE_OFFSET = 20;
@@ -166,14 +210,15 @@ namespace robotick
 
 				const int r0 = BASE_RADIUS + BASE_OFFSET + index * (BAR_THICKNESS + BAR_SPACING);
 				const int r1 = r0 + BAR_THICKNESS;
-				const int fill_steps = static_cast<int>(std::round(std::clamp(b.frac, 0.0f, 1.0f) * ANGLE_STEPS));
+				const float clamped_frac = robotick::clamp(b.frac, 0.0f, 1.0f);
+				const int fill_steps = round_to_int(clamped_frac * static_cast<float>(ANGLE_STEPS));
 
 				float cos_table[ANGLE_STEPS + 1], sin_table[ANGLE_STEPS + 1];
 				for (int i = 0; i <= ANGLE_STEPS; ++i)
 				{
-					float angle = (base_deg + (deg_span * i) / ANGLE_STEPS) * M_PI / 180.0f;
-					cos_table[i] = cosf(angle);
-					sin_table[i] = sinf(angle);
+					const float angle_deg = base_deg + (deg_span * i) / ANGLE_STEPS;
+					cos_table[i] = cosine_deg(angle_deg);
+					sin_table[i] = sine_deg(angle_deg);
 				}
 
 				for (int i = 0; i < ANGLE_STEPS; ++i)
@@ -199,10 +244,10 @@ namespace robotick
 				// Label
 				if (b.label && b.label[0] != '\0')
 				{
-					const float label_deg = LABEL_ANGLE * M_PI / 180.0f;
+					const float label_deg = static_cast<float>(LABEL_ANGLE);
 					const float mid_r = 0.5f * (r0 + r1);
-					const float label_x = cx + (mid_r * cosf(label_deg)) * (left ? -1.0f : 1.0f);
-					const float label_y = cy - (mid_r * sinf(label_deg));
+					const float label_x = cx + (mid_r * cosine_deg(label_deg)) * (left ? -1.0f : 1.0f);
+					const float label_y = cy - (mid_r * sine_deg(label_deg));
 					r.draw_text(b.label, {label_x, label_y}, 12, TextAlign::Center, Colors::White);
 				}
 			};

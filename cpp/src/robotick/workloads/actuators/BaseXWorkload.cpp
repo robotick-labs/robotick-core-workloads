@@ -1,13 +1,19 @@
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
 
 #include <chrono>
 
-#if defined(ROBOTICK_PLATFORM_ESP32)
+#include "robotick/boards/m5/BoardSupport.h"
+
+#if defined(ROBOTICK_PLATFORM_ESP32S3) && defined(ROBOTICK_PLATFORM_ESP32S3_M5)
 #include "driver/i2c.h"
 #include <M5Unified.h>
-#endif // #if defined(ROBOTICK_PLATFORM_ESP32)
+#define ROBOTICK_BASEX_HAS_M5 1
+#else
+#define ROBOTICK_BASEX_HAS_M5 0
+#endif
 
 namespace robotick
 {
@@ -56,21 +62,33 @@ namespace robotick
 
 		void set_motor_speeds()
 		{
-#if defined(ROBOTICK_PLATFORM_ESP32)
+#if ROBOTICK_BASEX_HAS_M5
+			if (!boards::m5::ensure_initialized())
+			{
+				ROBOTICK_WARNING("BaseXWorkload: M5 initialization failed, skipping motor update.");
+				return;
+			}
 
 			// Create duty values
 			uint8_t duties[4] = {
-				static_cast<uint8_t>(std::clamp(inputs.motor1_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
-				static_cast<uint8_t>(std::clamp(inputs.motor2_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
-				static_cast<uint8_t>(std::clamp(inputs.motor3_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
-				static_cast<uint8_t>(std::clamp(inputs.motor4_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor1_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor2_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor3_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
+				static_cast<uint8_t>(clamp(inputs.motor4_speed, -config.max_motor_speed, config.max_motor_speed) * 127.0f),
 			};
 
 			constexpr uint32_t BASEX_I2C_FREQ = 400000;
 
 			// Begin I2C transaction manually
 			m5::In_I2C.writeRegister(BASEX_I2C_ADDR, BASEX_PWM_DUTY_ADDR, duties, sizeof(duties), BASEX_I2C_FREQ);
-#endif
+#else
+			static bool warned = false;
+			if (!warned)
+			{
+				ROBOTICK_WARNING("BaseXWorkload requires ROBOTICK_PLATFORM_ESP32S3_M5; outputs are mirrored without hardware control.");
+				warned = true;
+			}
+#endif // ROBOTICK_BASEX_HAS_M5
 
 			outputs.motor1_speed = inputs.motor1_speed;
 			outputs.motor2_speed = inputs.motor2_speed;

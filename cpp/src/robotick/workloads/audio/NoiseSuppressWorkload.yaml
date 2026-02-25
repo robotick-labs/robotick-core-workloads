@@ -1,0 +1,17 @@
+platforms:
+  linux:
+    # Noise suppressor uses FFTs (KissFFT) and fixed-heap audio buffers.
+    files:
+      - robotick/systems/audio/AudioFrame.cpp
+      - robotick/systems/audio/NoiseSuppressor.cpp
+
+    deps:
+      - name: KissFFT
+        source:
+          type: apt
+          package: libkissfft-dev
+          pin: ">=130"
+        include_dirs:
+          - /usr/include
+        link_libraries:
+          - kissfft-float

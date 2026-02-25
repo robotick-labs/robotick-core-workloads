@@ -1,17 +1,15 @@
-// Copyright Robotick Labs
+// Copyright Robotick contributors
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
 #include "robotick/framework/WorkloadInstanceInfo.h"
+#include "robotick/framework/concurrency/Atomic.h"
+#include "robotick/framework/concurrency/Sync.h"
+#include "robotick/framework/concurrency/Thread.h"
 #include "robotick/framework/data/DataConnection.h"
-#include "robotick/platform/Threading.h"
+#include "robotick/framework/time/Clock.h"
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <mutex>
-#include <unordered_map>
-#include <vector>
+#include <string>
 
 namespace robotick
 {
@@ -21,7 +19,7 @@ namespace robotick
 		struct ChildWorkloadInfo
 		{
 			Thread thread;
-			std::shared_ptr<std::atomic<uint32_t>> tick_counter = std::make_shared<std::atomic<uint32_t>>(0);
+			AtomicValue<uint32_t> tick_counter;
 			const WorkloadInstanceInfo* workload_info = nullptr;
 			void* workload_ptr = nullptr;
 		};
@@ -29,8 +27,8 @@ namespace robotick
 		const Engine* engine = nullptr;
 		HeapVector<ChildWorkloadInfo> children;
 
-		std::condition_variable tick_cv;
-		std::mutex tick_mutex;
+		ConditionVariable tick_cv;
+		Mutex tick_mutex;
 
 		bool running = false;
 
@@ -106,7 +104,7 @@ namespace robotick
 
 				ThreadContext* ctx = new ThreadContext{this, &child};
 
-				const std::string thread_name(child.workload_info->seed->unique_name.c_str(), 15);
+				FixedString32 thread_name(child.workload_info->seed->unique_name.c_str());
 
 				child.thread = Thread(
 					[](void* raw)
@@ -115,7 +113,9 @@ namespace robotick
 						ctx->impl->child_tick_loop(*ctx->child);
 						delete ctx;
 					},
-					ctx, thread_name, -1);
+					ctx,
+					thread_name.c_str(),
+					-1);
 			}
 		}
 
@@ -126,10 +126,10 @@ namespace robotick
 
 			for (auto& child : children)
 			{
-				child.tick_counter->fetch_add(1);
+				child.tick_counter.fetch_add(1);
 			}
 
-			std::lock_guard<std::mutex> lock(tick_mutex);
+			LockGuard lock(tick_mutex);
 			tick_cv.notify_all();
 		}
 
@@ -155,36 +155,42 @@ namespace robotick
 			ROBOTICK_ASSERT(child.type && child.workload_descriptor->tick_fn && child.seed->tick_rate_hz > 0.0);
 
 			uint32_t last_tick = 0;
-			const auto child_start_time = std::chrono::steady_clock::now();
+			const auto child_start_time = Clock::now();
 			auto last_tick_time = child_start_time;
 			auto next_tick_time = child_start_time;
 
-			const auto tick_interval_sec = std::chrono::duration<float>(1.0f / child.seed->tick_rate_hz);
-			const auto tick_interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(tick_interval_sec);
+			const auto tick_interval = Clock::from_seconds(1.0f / child.seed->tick_rate_hz);
+			const uint32_t budget_ns = detail::clamp_to_uint32(Clock::to_nanoseconds(tick_interval).count());
 
 			TickInfo tick_info;
-			tick_info.workload_stats = &child.mutable_stats;
+			tick_info.workload_stats = child.workload_stats;
+			tick_info.tick_rate_hz = child.seed->tick_rate_hz;
 
 			auto workload_tick_fn = child.workload_descriptor->tick_fn;
+
+			if (child.workload_descriptor->start_fn)
+			{
+				child.workload_descriptor->start_fn(child_info.workload_ptr, child.seed->tick_rate_hz);
+			}
 
 			while (true)
 			{
 				{
-					std::unique_lock<std::mutex> lock(tick_mutex);
+					UniqueLock lock(tick_mutex);
 					tick_cv.wait(lock,
 						[&]
 						{
-							return child_info.tick_counter->load() > last_tick || !running;
+							return child_info.tick_counter.load() > last_tick || !running;
 						});
-					last_tick = child_info.tick_counter->load();
+					last_tick = child_info.tick_counter.load();
 				}
 
 				if (!running)
 					return;
 
-				const auto now = std::chrono::steady_clock::now();
-				const auto ns_since_start = std::chrono::duration_cast<std::chrono::nanoseconds>(now - child_start_time).count();
-				const auto ns_since_last = std::chrono::duration_cast<std::chrono::nanoseconds>(now - last_tick_time).count();
+				const auto now = Clock::now();
+				const uint64_t ns_since_start = Clock::to_nanoseconds(now - child_start_time).count();
+				const uint64_t ns_since_last = Clock::to_nanoseconds(now - last_tick_time).count();
 
 				tick_info.tick_count += 1;
 				tick_info.time_now_ns = ns_since_start;
@@ -193,19 +199,19 @@ namespace robotick
 
 				last_tick_time = now;
 
-				std::atomic_thread_fence(std::memory_order_acquire);
+				thread_fence_acquire();
 
 				workload_tick_fn(child_info.workload_ptr, tick_info);
 				next_tick_time += tick_interval;
 
-				const auto now_post = std::chrono::steady_clock::now();
-				child.mutable_stats.last_tick_duration_ns =
-					static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now_post - now).count());
+				const auto now_post = Clock::now();
+				const uint32_t duration_ns = detail::clamp_to_uint32(Clock::to_nanoseconds(now_post - now).count());
 
-				constexpr float NanosecondsPerSecond = 1e9f;
-				child.mutable_stats.last_time_delta_ns = static_cast<uint32_t>(tick_info.delta_time * NanosecondsPerSecond);
+				const uint32_t delta_ns = detail::clamp_to_uint32(ns_since_last);
+				child.workload_stats->record_tick_sample(duration_ns, delta_ns, budget_ns);
+				child.workload_stats->tick_count++;
 
-				Thread::hybrid_sleep_until(std::chrono::time_point_cast<std::chrono::steady_clock::duration>(next_tick_time));
+				Thread::hybrid_sleep_until(next_tick_time);
 			}
 		}
 	};
@@ -214,7 +220,10 @@ namespace robotick
 	{
 		SyncedGroupWorkloadImpl* impl = nullptr;
 
-		SyncedGroupWorkload() : impl(new SyncedGroupWorkloadImpl()) {}
+		SyncedGroupWorkload()
+			: impl(new SyncedGroupWorkloadImpl())
+		{
+		}
 		~SyncedGroupWorkload()
 		{
 			stop();

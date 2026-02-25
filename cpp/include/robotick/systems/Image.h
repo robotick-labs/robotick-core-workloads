@@ -1,0 +1,21 @@
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include "robotick/framework/containers/FixedVector.h"
+
+#include <stdint.h>
+
+namespace robotick
+{
+	using ImageJpegByte = uint8_t;
+	using ImageJpeg128k = FixedVector<ImageJpegByte, 128 * 1024>;
+
+	using ImagePngByte = uint8_t;
+	using ImagePng16k = FixedVector<ImagePngByte, 16 * 1024>;
+	using ImagePng64k = FixedVector<ImagePngByte, 64 * 1024>;
+	using ImagePng128k = FixedVector<ImagePngByte, 128 * 1024>;
+	using ImagePng256k = FixedVector<ImagePngByte, 256 * 1024>;
+
+} // namespace robotick

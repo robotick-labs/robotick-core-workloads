@@ -1,0 +1,5 @@
+<mujoco model="minimal">
+  <compiler angle="radian"/>
+  <option timestep="0.001"/>
+  <worldbody/>
+</mujoco>

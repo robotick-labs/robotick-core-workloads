@@ -1,7 +1,11 @@
+// Copyright Robotick contributors
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 
 #include "robotick/framework/math/Vec2.h"
 
+#include <cstddef>
 #include <stdint.h>
 
 namespace robotick
@@ -34,12 +38,25 @@ namespace robotick
 		~Renderer() { cleanup(); }
 
 		// Lifecycle
-		void init();
+		void init(bool texture_only);
 		void clear(const Color& color = Colors::Black);
+		bool capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size);
 		void present();
 		void cleanup();
 
-		// Viewport
+		// Render-to-texture (physical) target size in pixels.
+		// This is the pixel resolution used for on-screen presentation and/or PNG capture.
+		// Note: this is distinct from the logical coordinate space set by set_viewport().
+		void set_texture_only_size(float w, float h)
+		{
+			physical_w = static_cast<int>(w);
+			physical_h = static_cast<int>(h);
+			update_scale();
+		}
+
+		// Logical viewport size (authoring coordinate space).
+		// Drawing APIs take positions/sizes in this logical space; they are scaled into the
+		// physical target size set by set_texture_only_size(), preserving aspect ratio and centering.
 		void set_viewport(float w, float h)
 		{
 			logical_w = w;
@@ -47,17 +64,23 @@ namespace robotick
 		}
 
 		// Drawing
-		void draw_ellipse_filled(const Vec2& center, const float rx, const float ry, const Color& color);
-		void draw_circle_filled(const Vec2& center, const float radius, const Color& color) { draw_ellipse_filled(center, radius, radius, color); }
-		void draw_triangle_filled(const Vec2& p0, const Vec2& p1, const Vec2& p2, const Color& color);
-		void draw_text(const char* text, const Vec2& pos, const float size, const TextAlign align, const Color& color);
+		void draw_ellipse_filled(const Vec2f& center, const float rx, const float ry, const Color& color);
+		void draw_circle_filled(const Vec2f& center, const float radius, const Color& color) { draw_ellipse_filled(center, radius, radius, color); }
+		void draw_triangle_filled(const Vec2f& p0, const Vec2f& p1, const Vec2f& p2, const Color& color);
+		void draw_rect_filled(const Vec2f& p0, const Vec2f& p1, const Color& color);
+		void draw_text(const char* text, const Vec2f& pos, const float size, const TextAlign align, const Color& color);
+
+		// New: blit an RGBA8888 image and scale to the current viewport
+		// pixels.size() must be == w*h*4
+		void draw_image_rgba8888_fit(const uint8_t* pixels, int w, int h);
 
 	  protected:
 		void update_scale()
 		{
 			const float scale_x = static_cast<float>(physical_w) / logical_w;
 			const float scale_y = static_cast<float>(physical_h) / logical_h;
-			scale = std::min(scale_x, scale_y);
+			const float s = (scale_x < scale_y) ? scale_x : scale_y;
+			scale = s;
 
 			offset_x = (physical_w - static_cast<int>(logical_w * scale)) / 2;
 			offset_y = (physical_h - static_cast<int>(logical_h * scale)) / 2;
@@ -76,5 +99,9 @@ namespace robotick
 		float scale = 1.0f;
 		int offset_x = 0;
 		int offset_y = 0;
+
+		bool initialized = false;
+		struct RendererImpl;
+		RendererImpl* impl = nullptr;
 	};
 } // namespace robotick

@@ -1,0 +1,44 @@
+canvas:
+  logical_size: { width: 320, height: 240 }
+  output_size: { width: 800, height: 480 }
+  background: { r: 255, g: 255, b: 255, a: 255 }
+
+scene:
+  type: group
+  id: root
+  translate: { x: 0, y: 0 }
+  rotate_deg: 0
+  children:
+    - type: group
+      id: left_eye
+      translate: { x: 60, y: 120 }
+      rotate_deg: 0
+      children:
+        - type: ellipse
+          id: left_eye_blob
+          translate: { x: 0, y: 0 }
+          rotate_deg: 0
+          style: { fill: { r: 0, g: 0, b: 0, a: 255 } }
+          geometry: { rx: 40, ry: 65 }
+
+    - type: group
+      id: right_eye
+      translate: { x: 260, y: 120 }
+      rotate_deg: 0
+      children:
+        - type: ellipse
+          id: right_eye_blob
+          translate: { x: 0, y: 0 }
+          rotate_deg: 0
+          style: { fill: { r: 0, g: 0, b: 0, a: 255 } }
+          geometry: { rx: 40, ry: 65 }
+
+controls:
+  - target: left_eye.translate
+    alias: left_eye_translate
+  - target: right_eye.translate
+    alias: right_eye_translate
+  - target: left_eye.scale
+    alias: left_eye_scale
+  - target: right_eye.scale
+    alias: right_eye_scale

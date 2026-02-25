@@ -1,0 +1,56 @@
+platforms:
+  linux:
+    files:
+      - robotick/systems/MuJoCoRenderContext.cpp
+      - robotick/systems/MuJoCoPhysics.cpp
+      - robotick/systems/MuJoCoSceneRegistry.cpp
+      - robotick/systems/Image.cpp
+
+    deps:
+      - name: mujoco
+        source:
+          type: git_source_archive
+          repo: https://github.com/google-deepmind/mujoco
+          pin: 3.1.5
+          asset: mujoco-3.1.5-linux-x86_64.tar.gz
+          strip_components: 1
+        include_dirs:
+          - ${CMAKE_CURRENT_SOURCE_DIR}/deps/mujoco/include
+        link_libraries:
+          - ${CMAKE_CURRENT_SOURCE_DIR}/deps/mujoco/lib/libmujoco.so
+
+      - name: yaml-cpp
+        source:
+          type: git
+          url: https://github.com/jbeder/yaml-cpp.git
+          pin: yaml-cpp-0.7.0
+        cmake_subdir: .
+        cmake_options:
+          YAML_CPP_BUILD_TESTS: OFF
+        include_dirs:
+          - ${CMAKE_CURRENT_SOURCE_DIR}/deps/yaml-cpp/include
+        link_target: yaml-cpp
+
+      - name: OpenGL
+        source:
+          type: apt
+          package: libgl1-mesa-dev
+        find_package: OpenGL
+        link_target: OpenGL::GL
+
+      - name: EGL
+        source:
+          type: apt
+          package: libegl1-mesa-dev
+        link_libraries:
+          - EGL
+
+      - name: OpenCV
+        source:
+          type: apt
+          package: libopencv-dev
+        find_package: OpenCV
+        include_dirs:
+          - ${OpenCV_INCLUDE_DIRS}
+        link_libraries:
+          - ${OpenCV_LIBS}
