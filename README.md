@@ -152,6 +152,17 @@ if (!sensor_ok)
 
 Use `ROBOTICK_INFO/WARNING/ERROR` depending on severity, and update an output/telemetry counter each time to keep systems observable.
 
+## Coordinate Convention
+
+Robotick control and orientation signals follow ROS REP-103:
+
+- Right-handed orientation convention.
+- `+X` is forward.
+- `+Y` is left.
+- `+Z` is up.
+- Positive yaw / `angular_speed` is counter-clockwise when viewed from above (rotation about `+Z`).
+- Roll/pitch/yaw are rotations about `+X`, `+Y`, and `+Z` respectively.
+
 ---
 
 ## 📁 Project Structure

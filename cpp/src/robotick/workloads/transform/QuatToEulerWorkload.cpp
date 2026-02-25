@@ -3,7 +3,6 @@
 
 #include "robotick/api.h"
 
-
 namespace robotick
 {
 	struct QuatToEulerConfig
@@ -45,7 +44,8 @@ namespace robotick
 			const float y = quat_norm.y;
 			const float z = quat_norm.z;
 
-			// Standard aerospace convention (ZYX extrinsic / XYZ intrinsic)
+			// Standard REP-103 convention
+			// In Robotick orientation semantics, yaw is about +Z in a right-handed frame.
 			const float sinr_cosp = 2.0f * (w * x + y * z);
 			const float cosr_cosp = 1.0f - 2.0f * (x * x + y * y);
 			const float roll = atan2f(sinr_cosp, cosr_cosp);

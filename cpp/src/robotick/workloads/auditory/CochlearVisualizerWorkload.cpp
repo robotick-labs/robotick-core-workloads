@@ -77,25 +77,25 @@ namespace robotick
 		CochlearVisualizerOutputs outputs;
 		State<CochlearVisualizerState> state;
 
-		static void draw_line_segment(Renderer& renderer, const Vec2& a, const Vec2& b, const float thickness, const Color& color)
+		static void draw_line_segment(Renderer& renderer, const Vec2f& a, const Vec2f& b, const float thickness, const Color& color)
 		{
-			const Vec2 diff = b - a;
+			const Vec2f diff = b - a;
 			const float length = diff.length();
 			if (length < 1e-3f)
 			{
-				const Vec2 min = {a.x - thickness * 0.5f, a.y - thickness * 0.5f};
-				const Vec2 max = {a.x + thickness * 0.5f, a.y + thickness * 0.5f};
+				const Vec2f min = {a.x - thickness * 0.5f, a.y - thickness * 0.5f};
+				const Vec2f max = {a.x + thickness * 0.5f, a.y + thickness * 0.5f};
 				renderer.draw_rect_filled(min, max, color);
 				return;
 			}
 
 			const float nx = -diff.y / length;
 			const float ny = diff.x / length;
-			const Vec2 offset(nx * thickness * 0.5f, ny * thickness * 0.5f);
-			const Vec2 p0 = a + offset;
-			const Vec2 p1 = a - offset;
-			const Vec2 p2 = b - offset;
-			const Vec2 p3 = b + offset;
+			const Vec2f offset(nx * thickness * 0.5f, ny * thickness * 0.5f);
+			const Vec2f p0 = a + offset;
+			const Vec2f p1 = a - offset;
+			const Vec2f p2 = b - offset;
+			const Vec2f p3 = b + offset;
 
 			renderer.draw_triangle_filled(p0, p1, p2, color);
 			renderer.draw_triangle_filled(p0, p2, p3, color);
@@ -366,7 +366,7 @@ namespace robotick
 				}
 
 				const float segment_duration = segment.end_time_sec - segment.start_time_sec;
-				Vec2 prev_point = {};
+				Vec2f prev_point = {};
 				bool has_prev = false;
 
 				const size_t mask_count = segment.pitch_link_mask.size();
@@ -391,7 +391,7 @@ namespace robotick
 						continue;
 					}
 
-					const Vec2 current_point = {x, y};
+					const Vec2f current_point = {x, y};
 					if (has_prev)
 					{
 						const bool link_allowed = (i < mask_count) && (segment.pitch_link_mask[i] != 0);
@@ -418,12 +418,12 @@ namespace robotick
 					continue;
 				}
 
-				const Vec2 start_bar_min = {overlay.start_x, 0.0f};
-				const Vec2 start_bar_max = {overlay.start_x + 2.0f, viewport_height};
+				const Vec2f start_bar_min = {overlay.start_x, 0.0f};
+				const Vec2f start_bar_max = {overlay.start_x + 2.0f, viewport_height};
 				s.renderer.draw_rect_filled(start_bar_min, start_bar_max, overlay.bar_color);
 
-				const Vec2 end_bar_min = {overlay.end_x - 2.0f, 0.0f};
-				const Vec2 end_bar_max = {overlay.end_x, viewport_height};
+				const Vec2f end_bar_min = {overlay.end_x - 2.0f, 0.0f};
+				const Vec2f end_bar_max = {overlay.end_x, viewport_height};
 				s.renderer.draw_rect_filled(end_bar_min, end_bar_max, overlay.bar_color);
 
 				if (overlay.segment && !overlay.segment->words.empty() && window_seconds > 0.0f)
@@ -444,7 +444,7 @@ namespace robotick
 
 						const float word_x = clampf(norm, 0.0f, 1.0f) * static_cast<float>(config.viewport_width);
 						const float line_offset = static_cast<float>((w % 2) * 12);
-						const Vec2 label_pos = {word_x, 4.0f + line_offset};
+						const Vec2f label_pos = {word_x, 4.0f + line_offset};
 						s.renderer.draw_text(word.text.c_str(), label_pos, 10.0f, TextAlign::Center, overlay.bar_color);
 					}
 				}

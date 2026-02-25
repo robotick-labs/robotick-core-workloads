@@ -6,17 +6,13 @@
 #include "robotick/api.h"
 #include "robotick/framework/data/Blackboard.h"
 #include "robotick/framework/utility/Algorithm.h"
-#include "robotick/systems/Image.h"
 #include "robotick/systems/MuJoCoPhysics.h"
 #include "robotick/systems/MuJoCoSceneRegistry.h"
 
 #include <mujoco/mujoco.h>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include <cstdio>
-#include <cstring>
 
 namespace robotick
 {
@@ -86,23 +82,6 @@ namespace robotick
 		FieldDescriptor* blackboard_field = nullptr;
 	};
 
-	struct MuJoCoTextureBinding
-	{
-		FixedString64 texture_name;
-		FixedString64 input_alias;
-		FixedString64 input_type_name;
-		uint32_t width = 0;
-		uint32_t height = 0;
-		TypeId input_type_id;
-
-		FieldDescriptor* input_field = nullptr;
-
-		int tex_id = -1;
-		int tex_adr = 0;
-		int tex_width = 0;
-		int tex_height = 0;
-	};
-
 	// ---------- State ----------
 
 	struct MuJoCoPhysicsState
@@ -115,7 +94,6 @@ namespace robotick
 		HeapVector<MuJoCoBinding> config_bindings;
 		HeapVector<MuJoCoBinding> input_bindings;
 		HeapVector<MuJoCoBinding> output_bindings;
-		HeapVector<MuJoCoTextureBinding> texture_bindings;
 
 		HeapVector<FieldDescriptor> config_fields;
 		HeapVector<FieldDescriptor> input_fields;
@@ -185,37 +163,19 @@ namespace robotick
 
 		// --- YAML → binding set up ---
 
-		size_t count_yaml_entries(YAML::Node yaml_node, const char* skip_key = nullptr)
+		void configure_io_fields(YAML::Node yaml_node, HeapVector<MuJoCoBinding>& bindings, HeapVector<FieldDescriptor>& fields)
 		{
-			if (!yaml_node)
-				return 0;
+			const size_t num_entries = yaml_node ? yaml_node.size() : 0;
+			bindings.initialize(num_entries);
+			fields.initialize(num_entries);
 
-			size_t count = 0;
-			for (const auto& item : yaml_node)
-			{
-				const char* alias_scalar = item.first.Scalar().c_str();
-				if (skip_key && strcmp(alias_scalar, skip_key) == 0)
-					continue;
-				++count;
-			}
-			return count;
-		}
-
-		void configure_io_fields_into(YAML::Node yaml_node,
-			HeapVector<MuJoCoBinding>& bindings,
-			HeapVector<FieldDescriptor>& fields,
-			size_t field_offset = 0,
-			const char* skip_key = nullptr)
-		{
 			size_t index = 0;
 			for (const auto& item : yaml_node)
 			{
 				const char* alias_scalar = item.first.Scalar().c_str();
-				if (skip_key && strcmp(alias_scalar, skip_key) == 0)
-					continue;
 				const auto& val = item.second;
 
-				FieldDescriptor& fd = fields[field_offset + index];
+				FieldDescriptor& fd = fields[index];
 				MuJoCoBinding& b = bindings[index];
 
 				b.alias = alias_scalar;
@@ -246,77 +206,6 @@ namespace robotick
 				ROBOTICK_ASSERT(TypeRegistry::get().find_by_id(fd.type_id) != nullptr);
 
 				index++;
-			}
-		}
-
-		void configure_io_fields(YAML::Node yaml_node, HeapVector<MuJoCoBinding>& bindings, HeapVector<FieldDescriptor>& fields)
-		{
-			const size_t num_entries = count_yaml_entries(yaml_node);
-			bindings.initialize(num_entries);
-			fields.initialize(num_entries);
-			if (num_entries > 0)
-				configure_io_fields_into(yaml_node, bindings, fields);
-		}
-
-		TypeId resolve_texture_input_type(const YAML::Node& type_node)
-		{
-			if (!type_node || !type_node.IsScalar())
-			{
-				ROBOTICK_FATAL_EXIT("Texture input_type must be a scalar string (e.g. ImagePng128k).");
-			}
-
-			const char* type_name = type_node.Scalar().c_str();
-			const TypeDescriptor* desc = TypeRegistry::get().find_by_name(type_name);
-			if (!desc)
-			{
-				ROBOTICK_FATAL_EXIT("Unknown texture input_type '%s' (no registered type).", type_name);
-			}
-			return desc->id;
-		}
-
-		void configure_texture_inputs(YAML::Node textures_node, size_t field_offset)
-		{
-			if (!textures_node)
-				return;
-			if (!textures_node.IsSequence())
-			{
-				ROBOTICK_FATAL_EXIT("mujoco.inputs.textures must be a list.");
-			}
-
-			const size_t texture_count = textures_node.size();
-			state->texture_bindings.initialize(texture_count);
-
-			for (size_t i = 0; i < texture_count; ++i)
-			{
-				const YAML::Node entry = textures_node[i];
-				if (!entry || !entry.IsMap())
-				{
-					ROBOTICK_FATAL_EXIT("Texture entry %zu must be a map.", i);
-				}
-
-				MuJoCoTextureBinding& binding = state->texture_bindings[i];
-				const YAML::Node name_node = entry["name"];
-				const YAML::Node alias_node = entry["input_alias"];
-				const YAML::Node type_node = entry["input_type"];
-				if (name_node && name_node.IsScalar())
-					binding.texture_name = name_node.Scalar().c_str();
-				if (alias_node && alias_node.IsScalar())
-					binding.input_alias = alias_node.Scalar().c_str();
-				if (type_node && type_node.IsScalar())
-					binding.input_type_name = type_node.Scalar().c_str();
-				binding.width = entry["width"].as<uint32_t>(0);
-				binding.height = entry["height"].as<uint32_t>(0);
-				binding.input_type_id = resolve_texture_input_type(entry["input_type"]);
-
-				ROBOTICK_ASSERT_MSG(!binding.texture_name.empty(), "Texture entry %zu missing 'name'.", i);
-				ROBOTICK_ASSERT_MSG(!binding.input_alias.empty(), "Texture entry %zu missing 'input_alias'.", i);
-				ROBOTICK_ASSERT_MSG(!binding.input_type_name.empty(), "Texture entry %zu missing 'input_type'.", i);
-				ROBOTICK_ASSERT_MSG(binding.width > 0 && binding.height > 0, "Texture '%s' needs width/height.", binding.texture_name.c_str());
-
-				FieldDescriptor& fd = state->input_fields[field_offset + i];
-				fd.name = binding.input_alias.c_str();
-				fd.type_id = binding.input_type_id;
-				binding.input_field = &fd;
 			}
 		}
 
@@ -416,21 +305,10 @@ namespace robotick
 
 			config.sim_tick_rate_hz = mujoco["sim_tick_rate_hz"].as<float>(-1.0f);
 
-			const YAML::Node inputs_node = mujoco["inputs"];
-			const YAML::Node textures_node = inputs_node ? inputs_node["textures"] : YAML::Node();
-
 			// Build binding lists and field descriptors
 			configure_io_fields(mujoco["config"], state->config_bindings, state->config_fields);
+			configure_io_fields(mujoco["inputs"], state->input_bindings, state->input_fields);
 			configure_io_fields(mujoco["outputs"], state->output_bindings, state->output_fields);
-
-			const size_t input_binding_count = count_yaml_entries(inputs_node, "textures");
-			const size_t texture_count = textures_node ? textures_node.size() : 0;
-
-			state->input_bindings.initialize(input_binding_count);
-			state->input_fields.initialize(input_binding_count + texture_count);
-			if (input_binding_count > 0)
-				configure_io_fields_into(inputs_node, state->input_bindings, state->input_fields, 0, "textures");
-			configure_texture_inputs(textures_node, input_binding_count);
 
 			// Initialize blackboards with those descriptors
 			config.mj_initial.initialize_fields(state->config_fields);
@@ -494,104 +372,6 @@ namespace robotick
 				resolve_binding_ids(b);
 			for (auto& b : state->output_bindings)
 				resolve_binding_ids(b);
-
-			resolve_texture_bindings();
-		}
-
-		void resolve_texture_bindings()
-		{
-			if (state->texture_bindings.empty())
-				return;
-
-			const mjModel* mujoco_model = state->physics.model();
-			ROBOTICK_ASSERT(mujoco_model != nullptr);
-
-			for (auto& binding : state->texture_bindings)
-			{
-				binding.tex_id = mj_name2id(mujoco_model, mjOBJ_TEXTURE, binding.texture_name.c_str());
-				ROBOTICK_ASSERT_MSG(binding.tex_id >= 0, "Texture '%s' not found in model.", binding.texture_name.c_str());
-
-				binding.tex_width = mujoco_model->tex_width[binding.tex_id];
-				binding.tex_height = mujoco_model->tex_height[binding.tex_id];
-				binding.tex_adr = mujoco_model->tex_adr[binding.tex_id];
-
-				if (binding.tex_width != static_cast<int>(binding.width) || binding.tex_height != static_cast<int>(binding.height))
-				{
-					ROBOTICK_WARNING("Texture '%s' size mismatch (model=%dx%d, config=%ux%u); will fit on update.",
-						binding.texture_name.c_str(),
-						binding.tex_width,
-						binding.tex_height,
-						binding.width,
-						binding.height);
-				}
-			}
-		}
-
-		bool decode_png_to_rgb(const uint8_t* png_data, size_t png_size, cv::Mat& out_rgb)
-		{
-			if (!png_data || png_size == 0)
-				return false;
-
-			cv::Mat png_buf(1, static_cast<int>(png_size), CV_8UC1, const_cast<uint8_t*>(png_data));
-			cv::Mat decoded = cv::imdecode(png_buf, cv::IMREAD_UNCHANGED);
-			if (decoded.empty())
-				return false;
-
-			if (decoded.channels() == 4)
-			{
-				cv::cvtColor(decoded, out_rgb, cv::COLOR_BGRA2RGB);
-				return true;
-			}
-			if (decoded.channels() == 3)
-			{
-				cv::cvtColor(decoded, out_rgb, cv::COLOR_BGR2RGB);
-				return true;
-			}
-			if (decoded.channels() == 1)
-			{
-				cv::cvtColor(decoded, out_rgb, cv::COLOR_GRAY2RGB);
-				return true;
-			}
-
-			return false;
-		}
-
-		template <typename TPng> bool get_png_bytes_for_typed_binding(const MuJoCoTextureBinding& binding, const uint8_t*& data_out, size_t& size_out)
-		{
-			const TPng* png = static_cast<const TPng*>(inputs.mujoco.get(*binding.input_field, sizeof(TPng)));
-			if (!png)
-				return false;
-			data_out = png->data();
-			size_out = png->size();
-			return true;
-		}
-
-		bool get_png_bytes_for_binding(const MuJoCoTextureBinding& binding, const uint8_t*& data_out, size_t& size_out)
-		{
-			data_out = nullptr;
-			size_out = 0;
-
-			if (!binding.input_field)
-				return false;
-
-			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng16k)))
-			{
-				return get_png_bytes_for_typed_binding<ImagePng16k>(binding, data_out, size_out);
-			}
-			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng64k)))
-			{
-				return get_png_bytes_for_typed_binding<ImagePng64k>(binding, data_out, size_out);
-			}
-			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng128k)))
-			{
-				return get_png_bytes_for_typed_binding<ImagePng128k>(binding, data_out, size_out);
-			}
-			if (binding.input_type_id == TypeId(GET_TYPE_ID(ImagePng256k)))
-			{
-				return get_png_bytes_for_typed_binding<ImagePng256k>(binding, data_out, size_out);
-			}
-
-			return false;
 		}
 
 		// --- Blackboard <-> MuJoCo ---
@@ -818,50 +598,19 @@ namespace robotick
 			(void)tick_info;
 
 			auto physics_lock = state->physics.lock();
-			mjModel* model_mutable = state->physics.model_mutable();
+			const mjModel* model = state->physics.model();
 			mjData* mujoco_data = state->physics.data_mutable();
-			if (!model_mutable || !mujoco_data)
+			if (!model || !mujoco_data)
 				return;
-			const mjModel* model = model_mutable;
-
-			// Apply texture updates from PNG inputs (if configured).
-			if (!state->texture_bindings.empty())
-			{
-				for (const auto& binding : state->texture_bindings)
-				{
-					const uint8_t* png_data = nullptr;
-					size_t png_size = 0;
-					if (!get_png_bytes_for_binding(binding, png_data, png_size))
-						continue;
-					if (png_size == 0)
-						continue;
-
-					cv::Mat rgb;
-					if (!decode_png_to_rgb(png_data, png_size, rgb))
-						continue;
-					if (!rgb.isContinuous())
-						rgb = rgb.clone();
-
-					if (rgb.cols != binding.tex_width || rgb.rows != binding.tex_height)
-					{
-						cv::Mat resized;
-						cv::resize(rgb, resized, cv::Size(binding.tex_width, binding.tex_height), 0.0, 0.0, cv::INTER_AREA);
-						rgb = resized;
-					}
-
-					const size_t rgb_bytes = static_cast<size_t>(binding.tex_width * binding.tex_height * 3);
-					uint8_t* tex_rgb = model_mutable->tex_rgb + binding.tex_adr;
-					memcpy(tex_rgb, rgb.data, rgb_bytes);
-				}
-			}
 
 			// Write inputs to sim
-			bool needs_kinematics = false;
+			bool wrote_joint_qpos_target = false;
 			for (const auto& b : state->input_bindings)
 			{
-				needs_kinematics = assign_mj_from_blackboard(b, inputs.mujoco) || needs_kinematics;
+				wrote_joint_qpos_target = assign_mj_from_blackboard(b, inputs.mujoco) || wrote_joint_qpos_target;
 			}
-			if (needs_kinematics)
+
+			if (wrote_joint_qpos_target)
 			{
 				mj_kinematics(model, mujoco_data);
 			}

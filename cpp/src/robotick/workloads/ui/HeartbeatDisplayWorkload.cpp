@@ -154,7 +154,7 @@ namespace robotick
 
 		void draw_heart(Renderer& r, float brightness)
 		{
-			const Vec2 center(160, 120);
+			const Vec2f center(160, 120);
 			const float radius = 75.f + 15.f * brightness;
 			constexpr float color_scale = 0.2f;
 			const float scaled = (1.0f - color_scale) + (color_scale * brightness);

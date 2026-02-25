@@ -12,10 +12,25 @@
 
 namespace robotick
 {
+	enum class StickShapeTransform : uint8_t
+	{
+		None = 0,
+		CircleToSquare
+	};
+
+	ROBOTICK_REGISTER_ENUM_BEGIN(StickShapeTransform)
+	ROBOTICK_ENUM_VALUE("None", StickShapeTransform::None)
+	ROBOTICK_ENUM_VALUE("CircleToSquare", StickShapeTransform::CircleToSquare)
+	ROBOTICK_REGISTER_ENUM_END(StickShapeTransform)
+
 	struct RemoteControlConfig
 	{
 		int port = 7080;
 		FixedString128 web_root_folder = "engine-data/remote_control_interface_web";
+		Vec2f dead_zone_left = Vec2f{0.1f, 0.1f};
+		Vec2f dead_zone_right = Vec2f{0.1f, 0.1f};
+		StickShapeTransform stick_shape_transform_left = StickShapeTransform::CircleToSquare;
+		StickShapeTransform stick_shape_transform_right = StickShapeTransform::CircleToSquare;
 	};
 
 	struct RemoteControlOutputs
@@ -64,6 +79,43 @@ namespace robotick
 		RemoteControlOutputs outputs;
 
 		State<RemoteControlState> state;
+
+		static float apply_dead_zone(float value, float dead_zone)
+		{
+			const float clamped_dead_zone = robotick::clamp(dead_zone, 0.0f, 0.99f);
+			if (robotick::abs(value) < clamped_dead_zone)
+			{
+				return 0.0f;
+			}
+
+			const float direction = value >= 0.0f ? 1.0f : -1.0f;
+			return (value - (direction * clamped_dead_zone)) / (1.0f - clamped_dead_zone);
+		}
+
+		static Vec2f apply_circle_to_square(const Vec2f& input)
+		{
+			const float radius = robotick::sqrt((input.x * input.x) + (input.y * input.y));
+			if (radius <= 1e-6f)
+			{
+				return Vec2f{0.0f, 0.0f};
+			}
+
+			const float max_axis = robotick::max(robotick::abs(input.x), robotick::abs(input.y));
+			const float scale = radius / max_axis;
+			return Vec2f{robotick::clamp(input.x * scale, -1.0f, 1.0f), robotick::clamp(input.y * scale, -1.0f, 1.0f)};
+		}
+
+		static Vec2f apply_stick_shape_transform(const Vec2f& input, StickShapeTransform transform)
+		{
+			switch (transform)
+			{
+			case StickShapeTransform::CircleToSquare:
+				return apply_circle_to_square(input);
+			case StickShapeTransform::None:
+			default:
+				return input;
+			}
+		}
 
 		void setup()
 		{
@@ -150,8 +202,17 @@ namespace robotick
 
 		void tick(const TickInfo&)
 		{
-			// simply copy web-requested inputs to outputs
+			// Copy web-requested inputs to outputs, then apply authoritative shape and dead-zones on sticks.
 			outputs = state->web_inputs.use_web_inputs ? state->web_inputs : RemoteControlOutputs{};
+
+			outputs.left = apply_stick_shape_transform(outputs.left, config.stick_shape_transform_left);
+			outputs.right = apply_stick_shape_transform(outputs.right, config.stick_shape_transform_right);
+
+			// apply dead-zones to each stick:
+			outputs.left.x = apply_dead_zone(outputs.left.x, config.dead_zone_left.x);
+			outputs.left.y = apply_dead_zone(outputs.left.y, config.dead_zone_left.y);
+			outputs.right.x = apply_dead_zone(outputs.right.x, config.dead_zone_right.x);
+			outputs.right.y = apply_dead_zone(outputs.right.y, config.dead_zone_right.y);
 		}
 
 		void stop() { state->server.stop(); }
