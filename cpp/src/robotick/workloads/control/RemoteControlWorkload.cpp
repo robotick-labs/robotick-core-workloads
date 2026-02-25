@@ -101,11 +101,6 @@ namespace robotick
 			}
 
 			const float max_axis = robotick::max(robotick::abs(input.x), robotick::abs(input.y));
-			if (max_axis <= 1e-6f)
-			{
-				return Vec2f{0.0f, 0.0f};
-			}
-
 			const float scale = radius / max_axis;
 			return Vec2f{robotick::clamp(input.x * scale, -1.0f, 1.0f), robotick::clamp(input.y * scale, -1.0f, 1.0f)};
 		}

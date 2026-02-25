@@ -594,7 +594,7 @@ namespace robotick
 
 				const float rx = node.ellipse_rx * robotick::abs(world_scale.x);
 				const float ry = node.ellipse_ry * robotick::abs(world_scale.y);
-				renderer.draw_ellipse_filled(Vec2f(world_translate.x, world_translate.y), rx, ry, color);
+				renderer.draw_ellipse_filled(world_translate, rx, ry, color);
 			}
 			else if (node.type == CanvasNodeType::Rect && node.has_fill)
 			{

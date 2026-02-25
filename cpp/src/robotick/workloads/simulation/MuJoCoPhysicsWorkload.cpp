@@ -494,7 +494,7 @@ namespace robotick
 			bb.set<float>(fd, value);
 		}
 
-		void assign_mj_from_blackboard(const MuJoCoBinding& b, const Blackboard& bb)
+		bool assign_mj_from_blackboard(const MuJoCoBinding& b, const Blackboard& bb)
 		{
 			const FieldDescriptor& fd = *b.blackboard_field;
 			const float field_value = bb.get<float>(fd);
@@ -512,7 +512,7 @@ namespace robotick
 				{
 					float rad = (b.field == MjField::QPosTargetDeg) ? deg_to_rad(field_value) : field_value;
 					mujoco_data->qpos[qpos_adr] = rad;
-					mj_kinematics(mujoco_model, mujoco_data);
+					return true;
 				}
 				else
 				{
@@ -527,6 +527,7 @@ namespace robotick
 				if (b.field == MjField::Ctrl)
 				{
 					mujoco_data->ctrl[actuator_index] = field_value;
+					return false;
 				}
 				else
 				{
@@ -538,6 +539,8 @@ namespace robotick
 			default:
 				ROBOTICK_FATAL_EXIT("Unsupported entity type for inputs on '%s'", b.alias.c_str());
 			}
+
+			return false;
 		}
 
 		void initialize_blackboard_from_mujoco(const HeapVector<MuJoCoBinding>& bindings, Blackboard& bb)
@@ -601,20 +604,21 @@ namespace robotick
 				return;
 
 			// Write inputs to sim
+			bool wrote_joint_qpos_target = false;
 			for (const auto& b : state->input_bindings)
 			{
-				assign_mj_from_blackboard(b, inputs.mujoco);
+				wrote_joint_qpos_target = assign_mj_from_blackboard(b, inputs.mujoco) || wrote_joint_qpos_target;
 			}
 
-			const bool should_pause = false;
+			if (wrote_joint_qpos_target)
+			{
+				mj_kinematics(model, mujoco_data);
+			}
 
 			// Advance physics
-			if (!should_pause)
+			for (uint32_t i = 0; i < state->sim_num_sub_ticks; ++i)
 			{
-				for (uint32_t i = 0; i < state->sim_num_sub_ticks; ++i)
-				{
-					mj_step(model, mujoco_data);
-				}
+				mj_step(model, mujoco_data);
 			}
 
 			// Read outputs from sim

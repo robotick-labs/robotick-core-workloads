@@ -39,7 +39,7 @@ namespace robotick
 		SteeringMixerOutputs outputs;
 		SteeringMixerConfig config;
 
-		void tick(const TickInfo& tick)
+		void tick(const TickInfo& tick_info)
 		{
 			const float speed = inputs.speed;
 			const float turn = inputs.angular_speed;
@@ -65,7 +65,7 @@ namespace robotick
 			}
 			else
 			{
-				const float max_delta = config.power_seek_rate * tick.delta_time;
+				const float max_delta = config.power_seek_rate * tick_info.delta_time;
 				const auto seek_towards = [max_delta](float current, float target)
 				{
 					const float delta = target - current;
