@@ -177,7 +177,7 @@ namespace robotick
 			static constexpr int BASE_OFFSET = 20;
 			static constexpr int BAR_THICKNESS = 10;
 			static constexpr int BAR_SPACING = 6;
-			static constexpr int ANGLE_STEPS = 24;
+			static constexpr int ANGLE_STEPS = 96; // Higher step count reduces visible quantization in bar fill.
 			static constexpr int LABEL_ANGLE = 305;
 
 			struct StatBar
