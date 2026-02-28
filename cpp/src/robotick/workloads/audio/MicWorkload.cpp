@@ -14,8 +14,11 @@ namespace robotick
 	// === MicWorkload ===============================
 	// ===============================================
 
-	// Tunables kept tiny on purpose; adjust as needed.
 	struct MicConfig
+	{
+	};
+
+	struct MicInputs
 	{
 		float amplitude_gain_db = 0.0f; // Linear gain multiplier = pow(10, amplitude_gain_db / 20)
 	};
@@ -31,6 +34,7 @@ namespace robotick
 	struct MicWorkload
 	{
 		MicConfig config;
+		MicInputs inputs;
 		MicOutputs outputs;
 
 		// One-time bring-up. Safe to call multiple times if the engine does.
@@ -75,7 +79,7 @@ namespace robotick
 
 			const size_t num_samples_read = read_result.samples_read;
 
-			const float gain_db = config.amplitude_gain_db;
+			const float gain_db = inputs.amplitude_gain_db;
 			if (fabsf(gain_db) > 1e-6f)
 			{
 				const float gain = powf(10.0f, gain_db / 20.0f);
