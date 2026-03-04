@@ -24,7 +24,7 @@ namespace robotick
 
 	struct CanvasOutputs
 	{
-		ImagePng128k face_png_data;
+		ImagePng256k face_png_data;
 	};
 
 	struct CanvasState
