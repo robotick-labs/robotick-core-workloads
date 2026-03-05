@@ -17,6 +17,7 @@ namespace robotick
 		float speaking_rate_decay = 0.95f; // slower EMA smoothing for multi-second trend
 
 		float rms_smooth_alpha = 0.2f;	 // ~100 ms amplitude smoothing
+		float signal_rms_threshold = 0.015f; // basic non-silence gate
 
 		float voiced_falloff_rate_hz = 5.0f; // how quickly voiced confidence fades (1/s)
 
@@ -94,14 +95,16 @@ namespace robotick
 			// --- Smoothed RMS ---
 			state->smoothed_rms = apply_exponential_smoothing(state->smoothed_rms, rms, config.rms_smooth_alpha);
 			prosody.rms = state->smoothed_rms;
+			prosody.has_signal = (prosody.rms >= config.signal_rms_threshold);
 
 			const float current_pitch = pitch_info.h1_f0_hz;
 			const bool has_pitch = (current_pitch > 0.0f);
+			prosody.has_pitch = has_pitch;
 
 			state->voiced_confidence =
 				update_voiced_confidence(has_pitch, state->voiced_confidence, delta_time, config.voiced_falloff_rate_hz);
 
-			prosody.is_voiced = has_pitch;
+			prosody.is_voiced = has_pitch; // legacy alias for compatibility
 			prosody.voiced_confidence = state->voiced_confidence;
 			prosody.rms = state->smoothed_rms;
 
