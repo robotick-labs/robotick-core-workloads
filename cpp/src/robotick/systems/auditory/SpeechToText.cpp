@@ -49,7 +49,7 @@ namespace robotick
 		}
 		else if (level == GGML_LOG_LEVEL_WARN)
 		{
-			ROBOTICK_WARNING("[WHISPER WARN] %s", text);
+			ROBOTICK_WARNING_ONCE("[WHISPER WARN] %s", text);
 		}
 		// else ignore all other logs
 	}

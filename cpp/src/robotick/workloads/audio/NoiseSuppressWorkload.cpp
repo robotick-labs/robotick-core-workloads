@@ -15,6 +15,7 @@ namespace robotick
 	struct NoiseSuppressInputs
 	{
 		AudioFrame mono;
+		bool bypass = false; // DAW-style bypass: true = pass input through unchanged
 	};
 
 	struct NoiseSuppressOutputs
@@ -53,6 +54,14 @@ namespace robotick
 			if (!state->is_initialized)
 			{
 				load();
+			}
+
+			if (inputs.bypass)
+			{
+				outputs.mono = inputs.mono;
+				outputs.is_noise_only = false;
+				outputs.noise_floor_rms = 0.0f;
+				return;
 			}
 
 			// Apply suppression to the incoming audio block and publish metadata.

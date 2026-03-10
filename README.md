@@ -6,9 +6,9 @@
 
 > **Work In Progress**
 >
-> This project is under active development and not yet production-ready.
-> The repo is public to support tools like [CodeRabbit](https://coderabbit.ai) and promote early collaboration and transparency.
-> Expect incomplete features, ongoing changes, and occasional mess.
+> This is a personal spare-time hobby codebase and not a production-ready project.
+> The repo is public mainly for visibility, documentation, and easy sharing of experiments.
+> Expect incomplete features, ongoing changes, and rough edges.
 
 ---
 
@@ -31,7 +31,7 @@ Robotick is a modern control engine designed to execute structured workloads wit
 - Full lifecycle management (load, start, tick, stop)
 - Remote telemetry and future remote control
 
-Built for early learners and industry professionals alike, Robotick is simple enough for educational bots and sophisticated enough for serious research and development.
+This is primarily a hobby codebase, but the runtime is being written clearly enough to be educational, inspectable, and reusable.
 
 ---
 
@@ -199,7 +199,7 @@ Compiled and deployed executables are tested across an expanding range of target
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ Things I'm Experimenting With
 
 - [ ] Python zero-copy memory overlay
 - [ ] Live telemetry viewer (web + Python)
@@ -216,8 +216,8 @@ Licensed under the **Apache 2.0 License** – free to use, adapt, and build upon
 
 ---
 
-## 💬 Get Involved
+## 💬 Feedback
 
-Robotick is in active development. If you're passionate about robotics, real-time systems, or modular control architectures, your feedback and ideas are very welcome.
+This repository is public so people can follow along, but I am keeping it as a simple solo project for now and am not currently taking on outside bug reports or contribution flow.
 
-Visit [https://robotick.org](https://robotick.org) for updates, demos, and documentation (coming soon).
+Visit [https://robotick.org](https://robotick.org) for broader project context.

@@ -2,13 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "robotick/api.h"
-#include "robotick/framework/services/WebServer.h"
-#include "robotick/framework/strings/FixedString.h"
-#include "robotick/systems/Image.h"
-
-#if defined(ROBOTICK_PLATFORM_DESKTOP)
-#include <nlohmann/json.hpp>
-#endif // #if defined(ROBOTICK_PLATFORM_DESKTOP)
 
 namespace robotick
 {
@@ -25,18 +18,14 @@ namespace robotick
 
 	struct RemoteControlConfig
 	{
-		int port = 7080;
-		FixedString128 web_root_folder = "engine-data/remote_control_interface_web";
 		Vec2f dead_zone_left = Vec2f{0.1f, 0.1f};
 		Vec2f dead_zone_right = Vec2f{0.1f, 0.1f};
 		StickShapeTransform stick_shape_transform_left = StickShapeTransform::CircleToSquare;
 		StickShapeTransform stick_shape_transform_right = StickShapeTransform::CircleToSquare;
 	};
 
-	struct RemoteControlOutputs
+	struct GamepadState
 	{
-		bool use_web_inputs = true;
-
 		// Analog sticks (normalized -1..1)
 		Vec2f left;
 		Vec2f right;
@@ -67,18 +56,22 @@ namespace robotick
 		bool dpad_right = false;
 	};
 
-	struct RemoteControlState
+	struct RemoteControlInputs
 	{
-		RemoteControlOutputs web_inputs;
-		WebServer server;
+		bool use_web_inputs = true;
+		GamepadState gamepad_state_raw;
+	};
+
+	struct RemoteControlOutputs
+	{
+		GamepadState gamepad_state;
 	};
 
 	struct RemoteControlWorkload
 	{
 		RemoteControlConfig config;
+		RemoteControlInputs inputs;
 		RemoteControlOutputs outputs;
-
-		State<RemoteControlState> state;
 
 		static float apply_dead_zone(float value, float dead_zone)
 		{
@@ -117,105 +110,50 @@ namespace robotick
 			}
 		}
 
-		void setup()
-		{
-#if defined(ROBOTICK_PLATFORM_DESKTOP)
-			state->server.start("RemoteControl",
-				config.port,
-				config.web_root_folder.c_str(),
-				[&](const WebRequest& request, WebResponse& response)
-				{
-					if (request.method == "POST" && request.uri == "/api/rc_state")
-					{
-						const auto json_opt = nlohmann::json::parse(request.body, nullptr, /*allow exceptions*/ false);
-						if (json_opt.is_discarded())
-						{
-							response.set_status_code(WebResponseCode::BadRequest);
-							const FixedString128 invalid_json_body("Invalid JSON format.");
-							response.set_body_string(invalid_json_body.c_str());
-							return true; // handled
-						}
-
-						const nlohmann::json& json = json_opt;
-						auto& web_inputs = state->web_inputs;
-
-						// Helper setters
-						auto try_set_vec2_from_json = [&](const char* name, Vec2f& out_vec2)
-						{
-							if (!json.contains(name))
-								return;
-							const auto& obj = json[name];
-							if (!obj.is_object())
-								return;
-
-							if (obj.contains("x") && obj["x"].is_number())
-								out_vec2.x = obj["x"].get<float>();
-							if (obj.contains("y") && obj["y"].is_number())
-								out_vec2.y = obj["y"].get<float>();
-						};
-
-						auto try_set_bool = [&](const char* name, bool& out_bool)
-						{
-							if (json.contains(name) && json[name].is_boolean())
-								out_bool = json[name].get<bool>();
-						};
-
-						auto try_set_number = [&](const char* name, float& out_f32)
-						{
-							if (json.contains(name) && json[name].is_number())
-								out_f32 = json[name].get<float>();
-						};
-
-						// Core fields
-						try_set_bool("use_web_inputs", web_inputs.use_web_inputs);
-						try_set_vec2_from_json("left", web_inputs.left);
-						try_set_vec2_from_json("right", web_inputs.right);
-
-						try_set_number("left_trigger", web_inputs.left_trigger);
-						try_set_number("right_trigger", web_inputs.right_trigger);
-
-						// --- Added: Xbox 360 button booleans ---
-						try_set_bool("a", web_inputs.a);
-						try_set_bool("b", web_inputs.b);
-						try_set_bool("x", web_inputs.x);
-						try_set_bool("y", web_inputs.y);
-						try_set_bool("left_bumper", web_inputs.left_bumper);
-						try_set_bool("right_bumper", web_inputs.right_bumper);
-						try_set_bool("back", web_inputs.back);
-						try_set_bool("start", web_inputs.start);
-						try_set_bool("guide", web_inputs.guide);
-						try_set_bool("left_stick_button", web_inputs.left_stick_button);
-						try_set_bool("right_stick_button", web_inputs.right_stick_button);
-						try_set_bool("dpad_up", web_inputs.dpad_up);
-						try_set_bool("dpad_down", web_inputs.dpad_down);
-						try_set_bool("dpad_left", web_inputs.dpad_left);
-						try_set_bool("dpad_right", web_inputs.dpad_right);
-
-						response.set_status_code(WebResponseCode::OK);
-						return true; // handled
-					}
-
-					return false; // not handled
-				});
-#endif // #if defined(ROBOTICK_PLATFORM_DESKTOP)
-		}
-
 		void tick(const TickInfo&)
 		{
-			// Copy web-requested inputs to outputs, then apply authoritative shape and dead-zones on sticks.
-			outputs = state->web_inputs.use_web_inputs ? state->web_inputs : RemoteControlOutputs{};
+			// Copy requested gamepad state to outputs, then apply authoritative transforms/dead-zones/scales.
+			outputs.gamepad_state = inputs.use_web_inputs ? inputs.gamepad_state_raw : GamepadState{};
 
-			outputs.left = apply_stick_shape_transform(outputs.left, config.stick_shape_transform_left);
-			outputs.right = apply_stick_shape_transform(outputs.right, config.stick_shape_transform_right);
+			outputs.gamepad_state.left = apply_stick_shape_transform(outputs.gamepad_state.left, config.stick_shape_transform_left);
+			outputs.gamepad_state.right = apply_stick_shape_transform(outputs.gamepad_state.right, config.stick_shape_transform_right);
 
 			// apply dead-zones to each stick:
-			outputs.left.x = apply_dead_zone(outputs.left.x, config.dead_zone_left.x);
-			outputs.left.y = apply_dead_zone(outputs.left.y, config.dead_zone_left.y);
-			outputs.right.x = apply_dead_zone(outputs.right.x, config.dead_zone_right.x);
-			outputs.right.y = apply_dead_zone(outputs.right.y, config.dead_zone_right.y);
-		}
+			outputs.gamepad_state.left.x = apply_dead_zone(outputs.gamepad_state.left.x, config.dead_zone_left.x);
+			outputs.gamepad_state.left.y = apply_dead_zone(outputs.gamepad_state.left.y, config.dead_zone_left.y);
+			outputs.gamepad_state.right.x = apply_dead_zone(outputs.gamepad_state.right.x, config.dead_zone_right.x);
+			outputs.gamepad_state.right.y = apply_dead_zone(outputs.gamepad_state.right.y, config.dead_zone_right.y);
 
-		void stop() { state->server.stop(); }
+			// Optional per-axis scaling applied after dead-zones.
+			outputs.gamepad_state.left.x = robotick::clamp(outputs.gamepad_state.left.x * outputs.gamepad_state.scale_left.x, -1.0f, 1.0f);
+			outputs.gamepad_state.left.y = robotick::clamp(outputs.gamepad_state.left.y * outputs.gamepad_state.scale_left.y, -1.0f, 1.0f);
+			outputs.gamepad_state.right.x = robotick::clamp(outputs.gamepad_state.right.x * outputs.gamepad_state.scale_right.x, -1.0f, 1.0f);
+			outputs.gamepad_state.right.y = robotick::clamp(outputs.gamepad_state.right.y * outputs.gamepad_state.scale_right.y, -1.0f, 1.0f);
+		}
 	};
+
+	ROBOTICK_REGISTER_STRUCT_BEGIN(GamepadState)
+	ROBOTICK_STRUCT_FIELD(GamepadState, Vec2f, left)
+	ROBOTICK_STRUCT_FIELD(GamepadState, Vec2f, right)
+	ROBOTICK_STRUCT_FIELD(GamepadState, Vec2f, scale_left)
+	ROBOTICK_STRUCT_FIELD(GamepadState, Vec2f, scale_right)
+	ROBOTICK_STRUCT_FIELD(GamepadState, float, left_trigger)
+	ROBOTICK_STRUCT_FIELD(GamepadState, float, right_trigger)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, a)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, b)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, x)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, y)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, left_bumper)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, right_bumper)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, back)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, start)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, guide)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, left_stick_button)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, right_stick_button)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, dpad_up)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, dpad_down)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, dpad_left)
+	ROBOTICK_STRUCT_FIELD(GamepadState, bool, dpad_right)
+	ROBOTICK_REGISTER_STRUCT_END(GamepadState)
 
 } // namespace robotick
