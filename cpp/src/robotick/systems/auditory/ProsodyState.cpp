@@ -16,6 +16,8 @@ namespace robotick
 
 	// ===== Core =====
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, rms)
+	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, has_signal)
+	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, has_pitch)
 	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, is_voiced)
 	ROBOTICK_STRUCT_FIELD(ProsodyState, float, voiced_confidence)
 	ROBOTICK_STRUCT_FIELD(ProsodyState, bool, is_harmonic)

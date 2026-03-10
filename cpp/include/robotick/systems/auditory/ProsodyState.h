@@ -9,7 +9,9 @@ namespace robotick
 	{
 		// --- Core ---
 		float rms = 0.0f;				// loudness (captures voiced + unvoiced)
-		bool is_voiced = false;			// true if harmonic pitch present
+		bool has_signal = false;		// true when frame energy exceeds the configured signal floor
+		bool has_pitch = false;			// true when a stable fundamental is present
+		bool is_voiced = false;			// legacy alias for has_pitch (kept for compatibility)
 		float voiced_confidence = 0.0f; // based on harmonic energy
 		bool is_harmonic = false;		// true when harmonic content dominates
 		float harmonic_confidence = 0.0f;
