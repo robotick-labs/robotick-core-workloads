@@ -68,6 +68,7 @@ namespace robotick
 		{
 			logical_w = w;
 			logical_h = h;
+			update_scale();
 		}
 
 		// Drawing

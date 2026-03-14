@@ -54,7 +54,7 @@ namespace robotick
 
 	void Renderer::init(RenderMode render_mode)
 	{
-		ROBOTICK_WARNING_IF(render_mode == RenderMode::Texture, "Renderer - texture render mode is not yet supported on esp32 platforms");
+		ROBOTICK_WARNING_IF((render_mode == RenderMode::Texture), "Renderer - texture render mode is not yet supported on esp32 platforms");
 
 		if (initialized)
 			return;
@@ -70,6 +70,7 @@ namespace robotick
 		M5.Lcd.setRotation(3);
 		physical_w = 320;
 		physical_h = 240;
+		update_scale();
 		impl->canvas = new M5Canvas(&M5.Lcd);
 		impl->canvas->createSprite(physical_w, physical_h);
 		initialized = true;
