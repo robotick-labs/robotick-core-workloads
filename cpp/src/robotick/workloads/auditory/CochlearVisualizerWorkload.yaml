@@ -1,6 +1,7 @@
 platforms:
   linux:
     files:
+      - robotick/systems/RenderMode.cpp
       - robotick/systems/audio/AudioFrame.cpp
       - robotick/systems/audio/AudioSystem.cpp
       - robotick/systems/auditory/CochlearFrame.cpp

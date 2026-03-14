@@ -33,9 +33,9 @@ namespace robotick
 		float pitch_visual_gain = 1.0f;
 		float pitch_min_amplitude = 0.2f;
 
-		// If true: render offscreen and export PNG bytes to outputs.visualization_png
-		// If false: present to the active display/window
-		bool render_to_texture = true;
+		// Texture mode captures PNG bytes into outputs.visualization_png.
+		// Screen mode presents directly to the active display/window.
+		RenderMode render_mode = RenderMode::Texture;
 		float fusion_link_alpha_gain = 100.0f;
 	};
 
@@ -148,7 +148,7 @@ namespace robotick
 
 			s.renderer.set_texture_only_size(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
 			s.renderer.set_viewport(static_cast<float>(config.viewport_width), static_cast<float>(config.viewport_height));
-			s.renderer.init(config.render_to_texture);
+			s.renderer.init(config.render_mode);
 
 			s.initialized = true;
 		}
@@ -450,7 +450,7 @@ namespace robotick
 				}
 			}
 
-			if (config.render_to_texture)
+			if (config.render_mode == RenderMode::Texture)
 			{
 				size_t png_size = 0;
 				if (s.renderer.capture_as_png(outputs.visualization_png.data(), outputs.visualization_png.capacity(), png_size))

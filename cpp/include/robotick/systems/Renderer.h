@@ -10,6 +10,12 @@
 
 namespace robotick
 {
+	enum class RenderMode : uint8_t
+	{
+		Texture = 0,
+		Screen
+	};
+
 	struct Color
 	{
 		uint8_t r = 0, g = 0, b = 0, a = 255;
@@ -38,7 +44,8 @@ namespace robotick
 		~Renderer() { cleanup(); }
 
 		// Lifecycle
-		void init(bool texture_only);
+		void init(RenderMode render_mode);
+		void set_hide_cursor(bool hide) { hide_cursor = hide; }
 		void clear(const Color& color = Colors::Black);
 		bool capture_as_png(uint8_t* dst, size_t capacity, size_t& out_size);
 		void present();
@@ -101,6 +108,7 @@ namespace robotick
 		int offset_y = 0;
 
 		bool initialized = false;
+		bool hide_cursor = false;
 		struct RendererImpl;
 		RendererImpl* impl = nullptr;
 	};

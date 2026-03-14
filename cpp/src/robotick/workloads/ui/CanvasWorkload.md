@@ -11,7 +11,8 @@ to drive the exposed controls.
 | Field | Type | Description |
 | --- | --- | --- |
 | `scene_path` | `FixedString256` | Path to a `.canvas.yaml` scene file (required). |
-| `render_to_texture` | `bool` | `true` → capture PNG into the output; `false` → present via `Renderer`. |
+| `render_mode` | `RenderMode` | `texture` → capture PNG into the output; `screen` → present via `Renderer`. Defaults to `texture`. |
+| `hide_cursor` | `bool` | `true` → hide the OS mouse cursor when presenting to screen; ignored when `render_mode=texture`. |
 
 Size policy: the scene file’s `canvas.logical_size` and `canvas.output_size`
 define the logical viewport and physical render target dimensions. The config
@@ -27,8 +28,8 @@ currently does not override those values.
 
 ### Outputs
 
-- `face_png_data` (`ImagePng128k`): when `render_to_texture=true`, contains the
-  rendered PNG bytes; when `false`, the buffer size is zero and the renderer
+- `face_png_data` (`ImagePng128k`): when `render_mode=texture`, contains the
+  rendered PNG bytes; when `render_mode=screen`, the buffer size is zero and the renderer
   presents to the screen directly.
 
 ### Scene File Summary (`*.canvas.yaml`)
@@ -104,7 +105,7 @@ Validation performed during load:
 
 ### Usage Notes
 
-1. Configure the workload with the scene file and render mode.
+1. Configure the workload with the scene file and `render_mode`.
 2. Connect upstream workloads to the generated control blackboard fields.
 3. CanvasWorkload applies the control values each tick and renders the updated
    scene; expressive behavior such as blinking or look offsets remains entirely

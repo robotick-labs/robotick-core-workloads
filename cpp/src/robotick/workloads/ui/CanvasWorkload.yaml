@@ -1,6 +1,7 @@
 platforms:
   linux:
     files:
+      - robotick/systems/RenderMode.cpp
       - robotick/systems/Renderer_desktop.cpp
       - robotick/systems/Image.cpp
       - robotick/systems/Canvas.cpp

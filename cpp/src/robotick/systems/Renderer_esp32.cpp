@@ -52,9 +52,9 @@ namespace robotick
 		}
 	};
 
-	void Renderer::init(bool texture_only)
+	void Renderer::init(RenderMode render_mode)
 	{
-		ROBOTICK_WARNING_IF(texture_only, "Renderer - texture_only not yet supported on esp32 platforms");
+		ROBOTICK_WARNING_IF(render_mode == RenderMode::Texture, "Renderer - texture render mode is not yet supported on esp32 platforms");
 
 		if (initialized)
 			return;
@@ -224,7 +224,7 @@ namespace robotick
 
 #else // ROBOTICK_RENDERER_HAS_M5
 
-	void Renderer::init(bool /*texture_only*/)
+	void Renderer::init(RenderMode /*render_mode*/)
 	{
 		ROBOTICK_WARNING("Renderer (ESP32-S3) requires ROBOTICK_PLATFORM_ESP32S3_M5; rendering disabled.");
 		initialized = false;

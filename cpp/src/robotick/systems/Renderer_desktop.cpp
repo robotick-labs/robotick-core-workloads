@@ -25,7 +25,7 @@ namespace robotick
 		int blit_tex_h = 0;
 		TTF_Font* font = nullptr;
 		int current_font_size = 0;
-		bool texture_only = false;
+		bool render_to_texture = false;
 	};
 
 	static bool sdl_video_owned = false;
@@ -43,7 +43,7 @@ namespace robotick
 #endif
 	}
 
-	void Renderer::init(bool texture_only)
+	void Renderer::init(RenderMode render_mode)
 	{
 		if (initialized)
 			return;
@@ -51,11 +51,13 @@ namespace robotick
 		if (!impl)
 			impl = new RendererImpl();
 
+		const bool render_to_texture = (render_mode == RenderMode::Texture);
+
 		SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-		if (texture_only)
+		if (render_to_texture)
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0"); // nearest for texture captures
 
-		impl->texture_only = texture_only;
+		impl->render_to_texture = render_to_texture;
 
 		if ((SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) == 0)
 		{
@@ -71,7 +73,7 @@ namespace robotick
 			ttf_owned = true;
 		}
 
-		if (texture_only)
+		if (render_to_texture)
 		{
 			impl->window =
 				SDL_CreateWindow("OffscreenRenderer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, physical_w, physical_h, SDL_WINDOW_HIDDEN);
@@ -112,6 +114,8 @@ namespace robotick
 		if (!impl->window)
 			ROBOTICK_FATAL_EXIT("SDL_CreateWindow failed: %s", SDL_GetError());
 
+		// Kiosk-style face renderers can suppress the OS cursor when presenting directly to screen.
+		SDL_ShowCursor(hide_cursor ? SDL_DISABLE : SDL_ENABLE);
 		SDL_ShowWindow(impl->window);
 		SDL_RaiseWindow(impl->window);
 

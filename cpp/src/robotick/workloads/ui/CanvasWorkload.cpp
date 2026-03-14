@@ -14,7 +14,8 @@ namespace robotick
 	struct CanvasConfig
 	{
 		FixedString256 scene_path;
-		bool render_to_texture = false;
+		RenderMode render_mode = RenderMode::Texture;
+		bool hide_cursor = false;
 	};
 
 	struct CanvasInputs
@@ -107,7 +108,8 @@ namespace robotick
 				const CanvasSurface& surface = s.scene.surface();
 				s.renderer.set_texture_only_size(surface.output_width, surface.output_height);
 				s.renderer.set_viewport(surface.logical_width, surface.logical_height);
-				s.renderer.init(config.render_to_texture);
+				s.renderer.set_hide_cursor(config.hide_cursor);
+				s.renderer.init(config.render_mode);
 				s.renderer_initialized = true;
 			}
 		}
@@ -123,7 +125,7 @@ namespace robotick
 			s.renderer.clear(s.scene.surface().background);
 			s.scene.draw(s.renderer);
 
-			if (config.render_to_texture)
+			if (config.render_mode == RenderMode::Texture)
 			{
 				size_t png_size = 0;
 				if (s.renderer.capture_as_png(outputs.face_png_data.data(), outputs.face_png_data.capacity(), png_size))

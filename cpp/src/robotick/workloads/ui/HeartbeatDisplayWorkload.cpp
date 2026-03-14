@@ -27,8 +27,8 @@ namespace robotick
 	struct HeartbeatDisplayConfig
 	{
 		float rest_heart_rate = 60.0f;
-		// if true, render off-screen and expose PNG data instead of an on-screen window
-		bool render_to_texture = false;
+		// Render to an off-screen PNG buffer by default; use screen mode for direct display output.
+		RenderMode render_mode = RenderMode::Texture;
 	};
 
 	struct HeartbeatDisplayInputs
@@ -72,7 +72,7 @@ namespace robotick
 
 			s.renderer.set_texture_only_size(800, 480);
 			s.renderer.set_viewport(320, 240);
-			s.renderer.init(config.render_to_texture);
+			s.renderer.init(config.render_mode);
 			s.has_init_renderer = true;
 		}
 
@@ -94,7 +94,7 @@ namespace robotick
 			draw_stats(s.renderer, inputs);
 
 			// present ui:
-			if (config.render_to_texture)
+			if (config.render_mode == RenderMode::Texture)
 			{
 				size_t png_size = 0;
 				if (s.renderer.capture_as_png(outputs.display_png.data(), outputs.display_png.capacity(), png_size))

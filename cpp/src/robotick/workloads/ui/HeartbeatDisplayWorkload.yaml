@@ -1,6 +1,7 @@
 platforms:
   linux:
     files:
+      - robotick/systems/RenderMode.cpp
       - robotick/systems/Renderer_desktop.cpp
       - robotick/systems/Image.cpp
 
@@ -37,6 +38,7 @@ platforms:
 
   esp32:
     files:
+      - robotick/systems/RenderMode.cpp
       - robotick/systems/Renderer_esp32.cpp
 
     deps:
